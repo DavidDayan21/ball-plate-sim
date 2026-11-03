@@ -25,6 +25,8 @@ class ParametresPoutre:
     longueur: float = 0.40       # longueur totale de la poutre (m)
     rayon_balle: float = 0.02    # rayon de la balle (m), utile plus tard (vision, contact)
     k_inertie: float = 2 / 3     # J = k·m·r² : 2/3 balle creuse (ping-pong), 2/5 bille pleine
+    biais_theta: float = 0.0     # défaut d'étalonnage (rad) : angle réel = θ commandé + biais.
+                                 # Le contrôleur ne le connaît pas (utilisé en phase 1c).
 
     @property
     def coefficient(self) -> float:
@@ -33,11 +35,12 @@ class ParametresPoutre:
 
 
 def acceleration(theta: float, p: ParametresPoutre) -> float:
-    """Accélération de la balle le long de la poutre (m/s²). θ en radians.
+    """Accélération de la balle le long de la poutre (m/s²). θ = angle commandé, en radians.
 
     La masse de la balle n'apparaît pas : elle se simplifie dans l'équation.
+    L'angle réel de la poutre inclut le défaut d'étalonnage p.biais_theta (0 par défaut).
     """
-    return p.coefficient * G * math.sin(theta)
+    return p.coefficient * G * math.sin(theta + p.biais_theta)
 
 
 def pas_euler(x: float, v: float, theta: float, dt: float, p: ParametresPoutre):
