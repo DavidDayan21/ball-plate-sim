@@ -6,8 +6,8 @@ Objectif : valider les algorithmes de contrôle en simulation avant une éventue
 ## Avancement
 
 - [x] Phase 0 — Environnement (Python, MuJoCo)
-- [ ] Phase 1 — Balle sur poutre en 1D
-- [ ] Phase 2 — Balle sur plateau en 2D
+- [x] Phase 1 — Balle sur poutre en 1D (P, PD, PID)
+- [x] Phase 2 — Balle sur plateau en 2D (bruit, retard, saturation, anticipation)
 - [ ] Phase 3 — Mécanisme à 3 bras et moteurs
 - [ ] Phase 4 — Simulation physique MuJoCo
 - [ ] Phase 5 — Capteur caméra (OpenCV)
@@ -22,6 +22,14 @@ python -m venv .venv
 pip install -r requirements.txt
 python test_env.py
 ```
+
+## Tests
+
+```powershell
+python -m pytest
+```
+
+Chaque résultat théorique (erreur d'Euler, période, dépassement, erreur statique, critère de Routh, suivi de trajectoire) est vérifié automatiquement.
 
 ## Technologies
 

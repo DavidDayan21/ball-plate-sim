@@ -4,6 +4,7 @@
 # Cache Python
 __pycache__/
 *.py[cod]
+.pytest_cache/
 
 # Journal d'erreurs écrit par MuJoCo
 MUJOCO_LOG.TXT
