@@ -19,3 +19,6 @@ desktop.ini
 
 # Modèles MuJoCo exportés (se régénèrent avec python -m simulation.physique_mujoco)
 results/*.xml
+
+# Données des tentatives du bac à sable (propres à chaque essai)
+results/tentatives/

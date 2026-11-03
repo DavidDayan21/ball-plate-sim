@@ -4,7 +4,7 @@ Chaîne de référence : MuJoCo (robot à 3 bras, rampes moteurs) + caméra 160�
 La caméra 160×120 est aussi précise que 320×240, et plus rapide à simuler.
 
     0. Du modèle simple à la chaîne complète : ce que chaque niveau de réalisme ajoute
-    1. Limites théoriques : condition de non-glissement
+    1. Limites théoriques : condition de non-glissement ; rebond conforme à la règle ITTF
     2. Balle lancée : vitesse maximale rattrapée (inclinaison max 10° puis 20°)
     3. Poussée sur une balle au repos au centre : choc maximal encaissé
     4. Robustesse aux paramètres physiques
@@ -12,7 +12,7 @@ La caméra 160×120 est aussi précise que 320×240, et plus rapide à simuler.
     6. Trajectoire carrée
 
 Lancement (depuis ball-plate-sim, environnement activé) :
-    python campagne.py        (1 à 3 min : une trentaine de simulations)
+    python campagne.py        (quelques minutes : une trentaine de simulations)
 """
 import math
 import os
@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt
 from simulation.boucle import simuler
 from simulation.config import G, Config, ParametresCamera, carre, centre
 from simulation.indicateurs import ecart_type_theta, erreur_suivi_rms, temps_reponse_5
-from simulation.physique_mujoco import acceleration_roulement
+from simulation.physique_mujoco import acceleration_roulement, restitution_mesuree
 
 BASE = Config(capteur="camera", camera=ParametresCamera(largeur=160, hauteur_image=120))
 PM = BASE.mujoco_params
@@ -79,14 +79,14 @@ niveaux = {
 lignes = []
 for nom, cfg in niveaux.items():
     r = simuler(cfg)
-    contact = f"{100 * r.part_sans_contact:.1f} %" if cfg.physique == "mujoco" else "-"
+    contact = f"{100 * r.part_decollee:.1f} %" if cfg.physique == "mujoco" else "-"
     lignes.append([nom, "oui" if r.tombee else "non", f"{temps_reponse_5(r, 4):.2f} s",
                    f"{erreur_suivi_rms(r, 12, 20) * 1000:.2f} mm",
                    f"{math.degrees(ecart_type_theta(r, 2.5, 4)):.2f}°", contact])
-tableau(["Niveau", "Tombée", "Retour 5 %", "Erreur cercle", "Agitation θ", "Sans contact"], lignes)
+tableau(["Niveau", "Tombée", "Retour 5 %", "Erreur cercle", "Agitation θ", "Décollée"], lignes)
 
 # --- 1. Limites théoriques ----------------------------------------------------------------
-section("1. Limites théoriques")
+section("1. Limites théoriques et étalonnage du contact")
 mu_10 = K * math.tan(math.radians(10)) / (1 + K)
 a_roul = acceleration_roulement(K, math.radians(10), frottement=1.3 * mu_10)
 a_gliss = acceleration_roulement(K, math.radians(10), frottement=0.7 * mu_10)
@@ -95,6 +95,7 @@ tableau(["Grandeur", "Théorie", "MuJoCo"], [
     ["Accélération à 10°, frottement 1,3×min (roule)", f"{G * math.sin(math.radians(10)) / (1 + K):.3f} m/s²", f"{a_roul:.3f} m/s²"],
     ["Accélération à 10°, frottement 0,7×min (glisse)",
      f"{G * (math.sin(math.radians(10)) - 0.7 * mu_10 * math.cos(math.radians(10))):.3f} m/s²", f"{a_gliss:.3f} m/s²"],
+    ["Restitution, lâcher de 30,5 cm sur plan fixe (règle ITTF)", "0,85 à 0,91", f"{restitution_mesuree():.3f}"],
 ])
 
 # --- 2. Balle lancée ----------------------------------------------------------------------
@@ -133,8 +134,8 @@ for nom, cfg in variantes.items():
     nominal = nominal or r
     erreurs_param[nom] = erreur_suivi_rms(r, 12, 20) * 1000
     lignes.append([nom, "oui" if r.tombee else "non", f"{temps_reponse_5(r, 4):.2f} s",
-                   f"{erreur_suivi_rms(r, 12, 20) * 1000:.2f} mm", f"{100 * r.part_sans_contact:.1f} %"])
-tableau(["Variante", "Tombée", "Retour 5 %", "Erreur cercle", "Sans contact"], lignes)
+                   f"{erreur_suivi_rms(r, 12, 20) * 1000:.2f} mm", f"{100 * r.part_decollee:.1f} %"])
+tableau(["Variante", "Tombée", "Retour 5 %", "Erreur cercle", "Décollée"], lignes)
 
 # --- 5. Latence et compensation --------------------------------------------------------------
 section("5. Latence de la caméra : sans et avec compensation par prédiction")

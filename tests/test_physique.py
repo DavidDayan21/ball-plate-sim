@@ -6,7 +6,7 @@ import pytest
 
 from controller.cinematique import Geometrie, cinematique_inverse
 from simulation.config import G, Config, ParametresPlateau
-from simulation.physique_mujoco import acceleration_roulement, construire, inclinaison_plateau
+from simulation.physique_mujoco import acceleration_roulement, construire, inclinaison_plateau, restitution_mesuree
 from simulation.physique_simple import acceleration
 
 K = 2 / 3
@@ -33,6 +33,11 @@ def test_condition_de_non_glissement():
     glisse = acceleration_roulement(K, th, frottement=0.7 * mu_min)
     assert abs(roule / (G * math.sin(th) / (1 + K)) - 1) < 0.01
     assert abs(glisse / (G * (math.sin(th) - 0.7 * mu_min * math.cos(th))) - 1) < 0.02
+
+
+def test_rebond_conforme_a_la_regle_ittf():
+    # Lâchée de 30,5 cm, une balle de ping-pong réglementaire remonte de 22 à 25 cm : e ∈ [0,85 ; 0,91]
+    assert 0.85 <= restitution_mesuree(hauteur=0.305) <= 0.91
 
 
 def test_robot_mujoco_au_repos_plateau_horizontal():

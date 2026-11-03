@@ -49,12 +49,13 @@ def test_mujoco_robot_avec_rampes():
     r = simuler(Config())
     assert not r.tombee and r.poses_hors_portee == 0
     assert erreur_suivi_rms(r, 12, 20) < 0.008
-    assert r.part_sans_contact < 0.01                  # la balle ne décolle quasiment pas
+    assert r.part_decollee < 0.01                      # la balle ne décolle quasiment pas
 
 
 def test_rampes_suppriment_les_rebonds():
-    sans = simuler(Config(acceleration_max=math.inf)).part_sans_contact
-    assert sans > 10 * simuler(Config()).part_sans_contact
+    # Balle élastique (e ≈ 0,88) : sans rampes, les à-coups du plateau la font rebondir
+    assert simuler(Config(acceleration_max=math.inf)).part_decollee > 0.5
+    assert simuler(Config()).part_decollee < 0.01
 
 
 def test_robot_pilote_par_la_camera():

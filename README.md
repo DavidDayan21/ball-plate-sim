@@ -13,8 +13,9 @@ Objectif : maîtriser entièrement la simulation (chaque écart expliqué et chi
 | Mécanisme | 3 bras, cinématique inverse exacte et directe, moteurs pas à pas avec rampes | Fait |
 | Capteur | Caméra virtuelle, détection OpenCV, projection sténopé | Fait |
 | Robustesse | Balle lancée, poussées, paramètres physiques, latence (`campagne.py`) | Fait |
-| Bac à sable 3D | Lancers, rebonds, consignes au clavier, données de chaque tentative | **Prochaine étape** |
-| Écarts | Expliquer et chiffrer chaque écart entre modèles et objectifs | À faire |
+| Contact réaliste | Rebond de balle de ping-pong conforme à la règle ITTF (e = 0,874) | Fait |
+| Bac à sable 3D | Lancers, lâchers, rebonds, poussées, consignes, données de chaque tentative | Fait |
+| Écarts | Expliquer et chiffrer chaque écart entre modèles et objectifs | **Prochaine étape** |
 | Contrôleur optimisé | Réglage systématique, LQR, approche de la limite physique | À faire |
 | Conception | Taille et forme du plateau, longueur et nombre de bras | À faire |
 | Défauts réels | Caméra (bruit, flou), jeu mécanique, courbe couple-vitesse | À faire |
@@ -32,14 +33,16 @@ simulation/
   config.py              Configuration unique, paramètres physiques, trajectoires de consigne
   boucle.py              Boucle fermée unique : capteur -> contrôleur -> moteurs -> physique
   physique_simple.py     Physique maison (référence théorique)
-  physique_mujoco.py     Physique MuJoCo : génération des modèles 3D, interface, validation
+  physique_mujoco.py     Physique MuJoCo : génération des modèles 3D, contact, interface, validation
   moteur.py              Moteur pas à pas : vitesse max, micro-pas, butées, rampes
   capteur.py             Capteur fictif : bruit + latence
   camera.py              Caméra virtuelle : rendu, détection OpenCV, projection
   indicateurs.py         Indicateurs : erreur de suivi, temps de réponse, agitation de la commande
-tests/                   Tests automatiques, par thème (contrôleur, mécanique, capteurs, physique, scénarios)
+  session.py             Bac à sable : suite de tentatives, fin automatique, enregistrement CSV
+tests/                   Tests automatiques, par thème (contrôleur, mécanique, capteurs, physique,
+                         scénarios, session)
 campagne.py              Campagne de mesures complète -> results/bilan.md
-bac_a_sable.py           Le robot en 3D et en temps réel (version de base)
+bac_a_sable.py           Le robot en 3D et en temps réel, piloté depuis un panneau de commandes
 ```
 
 ## Installation (Windows)
@@ -54,9 +57,10 @@ python -m pytest
 ## Utilisation
 
 ```powershell
-python -m pytest              # tous les tests (environ 30 s)
-python campagne.py            # campagne de mesures complète, écrit results/bilan.md (1 à 3 min)
-python bac_a_sable.py         # le robot en 3D ; double-clic sur la balle + Ctrl + clic droit pour la pousser
+python -m pytest              # tous les tests
+python campagne.py            # campagne de mesures complète, écrit results/bilan.md (quelques minutes)
+python bac_a_sable.py         # bac à sable 3D (voir ci-dessous)
+python bac_a_sable.py --camera                         # idem, balle mesurée par la caméra virtuelle
 python -m simulation.physique_mujoco                   # exporte les modèles dans results/
 python -m mujoco.viewer --mjcf=results/robot.xml       # ouvre le modèle seul dans MuJoCo
 ```
@@ -72,6 +76,27 @@ r = simuler(Config(physique="simple", mecanisme=False))           # modèle thé
 r = simuler(Config(trajectoire=centre, depart=(-0.1, 0.0), vitesse_depart=(0.4, 0.0)))  # balle lancée
 ```
 
+## Bac à sable 3D
+
+Deux fenêtres : la vue 3D MuJoCo et un panneau de commandes avec une vue de dessus et des courbes en direct.
+
+| Commande | Effet |
+|---|---|
+| Lancer | Balle posée au point de départ (distance, angle), à la hauteur choisie, lancée vers le centre (déviation possible) |
+| Lâcher | Même point de départ, même hauteur, sans vitesse : la balle tombe et rebondit |
+| Centre | Balle posée immobile au centre |
+| Tentative libre | Enregistre sans toucher à la balle |
+| Clic dans la vue de dessus | Choisit le point de départ |
+| Consigne, latence, compensation | Changent le comportement du contrôleur en direct |
+| Barre d'espace (vue 3D) ou Pause | Pause / reprise |
+| Double-clic sur la balle puis Ctrl + clic droit glissé (vue 3D) | Pousse la balle : une tentative « perturbation » démarre seule dès que la balle s'écarte de plus de 2 cm |
+
+Une tentative se termine quand la balle tombe, reste 2 s à moins de 1 cm de la consigne (stabilisée),
+dure plus de 30 s, ou quand une autre commence. Chaque tentative est enregistrée dans
+`results/tentatives/<date_heure>/` : `tentative_001.csv`… (toutes les mesures à 50 Hz) et `resume.csv`
+(une ligne par tentative : paramètres, résultat, temps de stabilisation, rebonds, marge au bord…).
+Format Excel français : séparateur `;`, virgule décimale.
+
 ## Conventions
 
 - Unités SI : mètres, secondes, radians (degrés seulement à l'affichage).
@@ -85,6 +110,7 @@ r = simuler(Config(trajectoire=centre, depart=(-0.1, 0.0), vitesse_depart=(0.4, 
 |---|---|
 | Plateau | Disque de 15 cm de rayon, 0,25 kg |
 | Balle | Ping-pong : 2 cm de rayon, 2,7 g, creuse (J = 2/3·m·r²) |
+| Contact balle-plateau | Restitution 0,88 visée (règle ITTF : lâchée de 30,5 cm, remonte de 22 à 25 cm), raideur 200 Hz, pas de simulation 0,5 ms |
 | Mécanisme | 3 bras de 5 cm, biellettes de 12 cm, rotules à 10 cm du centre |
 | Moteurs | 10 rad/s, 1/16 de pas, rampes à 50 rad/s², couple max 0,4 N·m |
 | Capteur | Caméra 50 cm au-dessus du plateau, 50 Hz, latence 20 ms |

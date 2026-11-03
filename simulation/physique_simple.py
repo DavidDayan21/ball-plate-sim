@@ -66,9 +66,19 @@ class PhysiqueSimple:
     def angles_moteurs(self):
         return self.alphas if self.mecanisme else ()
 
+    def vitesse_balle(self):
+        return self.vx, self.vy
+
+    def hauteur_balle(self) -> float:
+        return 0.0                              # modèle plan : la balle reste au contact
+
     def pousser(self, dvx: float, dvy: float) -> None:
         self.vx += dvx
         self.vy += dvy
+
+    def placer_balle(self, x, y, z=0.0, vx=0.0, vy=0.0, vz=0.0) -> None:
+        """Téléporte la balle (repère du plateau). Le modèle plan ignore la hauteur z et vz."""
+        self.x, self.y, self.vx, self.vy = x, y, vx, vy
 
     def pas(self, dt: float) -> None:
         if self.mecanisme:

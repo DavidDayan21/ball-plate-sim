@@ -38,7 +38,11 @@ class ParametresMujoco:
     kv_servo: float = 0.5              # amortissement de l'asservissement (N·m·s/rad)
     couple_max: float = 0.4            # couple max d'un moteur (N·m, ordre de grandeur d'un NEMA 17)
     armature: float = 5e-6             # inertie du rotor (kg·m²)
-    solref_contact: str = "0.005 1"    # contact balle-plateau plus rigide que par défaut
+    restitution: float = 0.88          # coefficient de restitution balle-plateau visé. Règle ITTF :
+                                       # lâchée de 30,5 cm, la balle remonte de 22 à 25 cm, soit
+                                       # e = √(h2/h1) entre 0,85 et 0,91 (pertes dans l'air incluses)
+    frequence_contact: float = 200.0   # raideur du contact, exprimée en fréquence propre (Hz).
+                                       # Exige dt_physique ≤ 0,5 ms (sinon rebonds parasites)
     frottement: float = 1.0            # balle-plateau ; MuJoCo garde le plus grand des deux geoms,
                                        # on le met donc sur les deux
     k_reel: float = None               # inertie réelle de la balle ; None : celle que croit le contrôleur
@@ -64,15 +68,20 @@ def reference(t: float):
         return 0.0, 0.0, 0.0, 0.0
     if t < 8.0:
         return 0.05, 0.05, 0.0, 0.0
-    R, w = 0.06, 2 * math.pi / 4.0
-    phi = w * (t - 8.0) + math.pi / 4
-    x, y = R * math.cos(phi), R * math.sin(phi)
-    return x, y, -w ** 2 * x, -w ** 2 * y
+    return cercle(t - 8.0)
 
 
 def centre(t: float):
     """Balle maintenue au centre."""
     return 0.0, 0.0, 0.0, 0.0
+
+
+def cercle(t: float):
+    """Cercle de 6 cm de rayon parcouru en 4 s (vitesse 9,4 cm/s), départ à 45°."""
+    R, w = 0.06, 2 * math.pi / 4.0
+    phi = w * t + math.pi / 4
+    x, y = R * math.cos(phi), R * math.sin(phi)
+    return x, y, -w ** 2 * x, -w ** 2 * y
 
 
 def carre(t: float):
@@ -93,7 +102,7 @@ class Config:
         biais_x=math.radians(0.5), biais_y=math.radians(-0.3)))
     geometrie: Geometrie = field(default_factory=Geometrie)
     mujoco_params: ParametresMujoco = field(default_factory=ParametresMujoco)
-    dt_physique: float = 0.001         # (s)
+    dt_physique: float = 0.0005        # (s) : 0,5 ms, imposé par le contact élastique
     duree: float = 20.0                # (s)
     # Scénario
     depart: tuple = (0.08, -0.06)      # position initiale de la balle (m)
