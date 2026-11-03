@@ -35,16 +35,21 @@ class ParametresMujoco:
     couple_max: float = 0.4            # couple max d'un moteur (N·m, ordre de grandeur d'un NEMA 17)
     armature: float = 5e-6             # inertie du rotor du moteur (kg·m²)
     solref_contact: str = "0.005 1"    # contact balle-plateau plus rigide que par défaut (voir le cours)
+    frottement: float = 1.0            # coefficient de frottement balle-plateau (phase 6) ; MuJoCo
+                                       # garde le plus grand des deux, on le met donc sur les deux
+    k_reel: float = None               # inertie réelle de la balle J = k·m·r² ; None : celle du
+                                       # modèle du contrôleur (phase 6 : tester une erreur de modèle)
 
 
 def _balle(pp: ParametresPlateau, pm: ParametresMujoco, x0: float, y0: float, hauteur: float) -> str:
     r = pp.rayon_balle
-    inertie = pp.k_inertie * pm.masse_balle * r * r     # J = k·m·r², donnée explicitement
+    k = pp.k_inertie if pm.k_reel is None else pm.k_reel
+    inertie = k * pm.masse_balle * r * r                # J = k·m·r², donnée explicitement
     return f"""
     <body name="balle" pos="{x0} {y0} {hauteur + r}">
       <freejoint/>
       <geom name="balle" type="sphere" size="{r}" contype="1" conaffinity="1"
-            solref="{pm.solref_contact}" rgba="1 0.5 0 1"/>
+            solref="{pm.solref_contact}" friction="{pm.frottement} 0.005 0.0001" rgba="1 0.5 0 1"/>
       <inertial pos="0 0 0" mass="{pm.masse_balle}" diaginertia="{inertie} {inertie} {inertie}"/>
     </body>"""
 
@@ -52,7 +57,8 @@ def _balle(pp: ParametresPlateau, pm: ParametresMujoco, x0: float, y0: float, ha
 def _plateau_geom(pp: ParametresPlateau, pm: ParametresMujoco) -> str:
     e = pm.epaisseur_plateau
     return (f'<geom name="plateau" type="cylinder" size="{pp.rayon_plateau} {e / 2}" pos="0 0 {-e / 2}" '
-            f'mass="{pm.masse_plateau}" contype="1" conaffinity="1" rgba="0.7 0.85 1 0.5"/>')
+            f'mass="{pm.masse_plateau}" contype="1" conaffinity="1" friction="{pm.frottement} 0.005 0.0001" '
+            f'rgba="0.7 0.85 1 0.5"/>')
 
 
 ENTETE = """<mujoco model="{nom}">

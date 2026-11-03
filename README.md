@@ -11,7 +11,7 @@ Objectif : valider les algorithmes de contrôle en simulation avant une éventue
 - [x] Phase 3 — Mécanisme à 3 bras et moteurs (cinématique inverse et directe, moteurs pas à pas)
 - [x] Phase 4 — Simulation physique MuJoCo (chaîne fermée, contacts, rampes des moteurs)
 - [x] Phase 5 — Capteur caméra (rendu MuJoCo, détection OpenCV, latence)
-- [ ] Phase 6 — Tests et robustesse
+- [x] Phase 6 — Tests et robustesse (balle lancée, poussées, paramètres physiques, compensation de latence) — bilan : results/bilan_phase6.md
 - [ ] Phase 7 — Robot réel (optionnel)
 
 ## Installation (Windows)
@@ -37,7 +37,7 @@ python -m mujoco.viewer --mjcf=sim_mujoco/robot.xml
 python -m pytest
 ```
 
-Chaque résultat théorique (erreur d'Euler, période, dépassement, erreur statique, critère de Routh, suivi de trajectoire, cinématique, physique MuJoCo, mesure par caméra) est vérifié automatiquement.
+Chaque résultat théorique (erreur d'Euler, période, dépassement, erreur statique, critère de Routh, suivi de trajectoire, cinématique, physique MuJoCo, mesure par caméra, non-glissement, prédicteur de latence) est vérifié automatiquement.
 
 ## Technologies
 

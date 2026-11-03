@@ -10,27 +10,6 @@ from sim_simple.capteur import Capteur
 from sim_simple.plateau import G, ParametresPlateau, pas_semi_implicite, sur_le_plateau
 
 
-@dataclass
-class Config:
-    # Physique
-    plateau: ParametresPlateau = field(default_factory=lambda: ParametresPlateau(
-        biais_x=math.radians(0.5), biais_y=math.radians(-0.3)))
-    dt_physique: float = 0.001      # pas de la simulation physique (s)
-    duree: float = 20.0             # durée simulée (s)
-    depart: tuple = (0.08, -0.06)   # position initiale de la balle, au repos (m)
-    # Capteur
-    sigma: float = 0.001            # écart-type du bruit de mesure (m)
-    retard: int = 1                 # retard de mesure, en périodes de contrôle
-    # Contrôleur
-    periode_controle: float = 0.02  # 50 Hz
-    kp: float = 1.0                 # rad/m
-    ki: float = 1.0                 # rad/(m·s)
-    zeta: float = 0.7               # amortissement visé, donne Kd
-    theta_max: float = math.radians(10)
-    tau_d: float = 0.05             # filtre de la dérivée (s) ; 0 = pas de filtre
-    anticipation: bool = True
-
-
 def consigne(t: float):
     """Trajectoire voulue : (x_ref, y_ref, ax_ref, ay_ref).
 
@@ -45,6 +24,30 @@ def consigne(t: float):
     phi = w * (t - 8.0) + math.pi / 4
     x, y = R * math.cos(phi), R * math.sin(phi)
     return x, y, -w ** 2 * x, -w ** 2 * y
+
+
+@dataclass
+class Config:
+    # Physique
+    plateau: ParametresPlateau = field(default_factory=lambda: ParametresPlateau(
+        biais_x=math.radians(0.5), biais_y=math.radians(-0.3)))
+    dt_physique: float = 0.001      # pas de la simulation physique (s)
+    duree: float = 20.0             # durée simulée (s)
+    depart: tuple = (0.08, -0.06)   # position initiale de la balle (m)
+    vitesse_depart: tuple = (0.0, 0.0)  # vitesse initiale de la balle (m/s) : balle lancée (phase 6)
+    poussees: tuple = ()            # chocs (t, Δvx, Δvy) appliqués à la balle (MuJoCo, phase 6)
+    trajectoire: object = consigne  # fonction t -> (x_ref, y_ref, ax_ref, ay_ref)
+    # Capteur
+    sigma: float = 0.001            # écart-type du bruit de mesure (m)
+    retard: int = 1                 # retard de mesure, en périodes de contrôle
+    # Contrôleur
+    periode_controle: float = 0.02  # 50 Hz
+    kp: float = 1.0                 # rad/m
+    ki: float = 1.0                 # rad/(m·s)
+    zeta: float = 0.7               # amortissement visé, donne Kd
+    theta_max: float = math.radians(10)
+    tau_d: float = 0.05             # filtre de la dérivée (s) ; 0 = pas de filtre
+    anticipation: bool = True
 
 
 @dataclass
@@ -75,7 +78,7 @@ def simuler(cfg: Config) -> Resultats:
                              gain_modele=p.coefficient * G, anticipation=cfg.anticipation)
     pas_par_controle = round(cfg.periode_controle / cfg.dt_physique)
     x, y = cfg.depart
-    vx = vy = 0.0
+    vx, vy = cfg.vitesse_depart
     theta_x = theta_y = 0.0
     r = Resultats()
 
@@ -84,7 +87,7 @@ def simuler(cfg: Config) -> Resultats:
         if n % pas_par_controle == 0:
             # Le contrôleur ne s'exécute qu'à 50 Hz ; entre deux calculs, θ reste constant
             xm, ym = capteur.mesurer(x, y)
-            xr, yr, axr, ayr = consigne(t)
+            xr, yr, axr, ayr = cfg.trajectoire(t)
             theta_x, theta_y = ctrl.calculer((xr, yr), (xm, ym), (axr, ayr), cfg.periode_controle)
             for liste, val in ((r.t, t), (r.x, x), (r.y, y), (r.x_mes, xm), (r.y_mes, ym),
                                (r.x_ref, xr), (r.y_ref, yr), (r.theta_x, theta_x), (r.theta_y, theta_y)):

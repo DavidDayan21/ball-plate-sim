@@ -20,7 +20,7 @@ from controller.cinematique import cinematique_inverse
 from controller.plateau import ControleurPlateau
 from sim_mujoco.camera import CameraBalle, ParametresCamera
 from sim_mujoco.modeles import ParametresMujoco, xml_plateau, xml_robot
-from sim_simple.boucle_plateau import consigne, kd_pour
+from sim_simple.boucle_plateau import kd_pour
 from sim_simple.boucle_robot import ConfigRobot, ResultatsRobot
 from sim_simple.capteur import Capteur
 from sim_simple.moteur import Moteur
@@ -36,6 +36,8 @@ class ConfigMujoco(ConfigRobot):
     capteur: str = "fictif"                      # "fictif" (bruit gaussien) ou "camera" (image + OpenCV)
     camera: ParametresCamera = field(default_factory=ParametresCamera)
     correction_inclinaison: bool = True          # caméra : tenir compte de l'inclinaison du plateau
+    # Phase 6
+    compensation_retard: bool = False            # prédire la position actuelle malgré la latence
 
 
 @dataclass
@@ -56,8 +58,23 @@ def construire(cfg: ConfigMujoco):
         xml = xml_plateau(cfg.plateau, cfg.mujoco_params, cfg.depart, cfg.geometrie.hauteur, cfg.camera)
     model = mujoco.MjModel.from_xml_string(xml)
     data = mujoco.MjData(model)
+    # Vitesse initiale (balle lancée), avec la rotation qui correspond au roulement sans glissement :
+    # v + ω × (-r·ez) = 0  =>  ω = (-vy/r, vx/r, 0)
+    vx, vy = cfg.vitesse_depart
+    r = cfg.plateau.rayon_balle
+    adr = model.jnt_dofadr[model.body("balle").jntadr[0]]
+    data.qvel[adr:adr + 6] = (vx, vy, 0.0, -vy / r, vx / r, 0.0)
     mujoco.mj_forward(model, data)        # calcule les positions initiales (sinon xpos vaut 0)
     return model, data
+
+
+def pousser(model, data, dvx: float, dvy: float, rayon: float) -> None:
+    """Choc sur la balle : ajoute (Δvx, Δvy) à sa vitesse, avec la rotation de roulement associée."""
+    adr = model.jnt_dofadr[model.body("balle").jntadr[0]]
+    data.qvel[adr:adr + 2] += (dvx, dvy)
+    # La vitesse de rotation d'une liberté (freejoint) s'exprime dans le repère de la balle
+    R = data.body("balle").xmat.reshape(3, 3)
+    data.qvel[adr + 3:adr + 6] += R.T @ np.array([-dvy / rayon, dvx / rayon, 0.0])
 
 
 def balle_dans_repere_plateau(model, data):
@@ -83,7 +100,10 @@ def simuler(cfg: ConfigMujoco, vue: bool = False) -> ResultatsMujoco:
     else:
         capteur = Capteur(cfg.sigma, cfg.retard)
     ctrl = ControleurPlateau(cfg.kp, cfg.ki, kd_pour(cfg), cfg.theta_max, cfg.tau_d,
-                             gain_modele=p.coefficient * G, anticipation=cfg.anticipation)
+                             gain_modele=p.coefficient * G, anticipation=cfg.anticipation,
+                             compensation_retard=cfg.retard if cfg.compensation_retard else 0,
+                             periode=cfg.periode_controle)
+    pas_poussees = {round(tp / cfg.dt_physique): (dvx, dvy) for tp, dvx, dvy in cfg.poussees}
     moteurs = ([Moteur(0.0, cfg.vitesse_max, cfg.resolution, acceleration_max=cfg.acceleration_max)
                 for _ in range(3)] if cfg.mecanisme else [])
     pas_par_controle = round(cfg.periode_controle / cfg.dt_physique)
@@ -123,7 +143,7 @@ def simuler(cfg: ConfigMujoco, vue: bool = False) -> ResultatsMujoco:
             if camera is None:            # capteur fictif : mesure bruitée de cet instant (avant retard)
                 mx, my = capteur.file[-1] if capteur.file else (xm, ym)
             r.erreur_mesure.append(math.hypot(mx - bx, my - by))
-            xr, yr, axr, ayr = consigne(t)
+            xr, yr, axr, ayr = cfg.trajectoire(t)
             theta_x, theta_y = ctrl.calculer((xr, yr), (xm, ym), (axr, ayr), cfg.periode_controle)
             # Défaut d'étalonnage : l'angle réellement visé = angle commandé + biais (inconnu du PID)
             cible_x, cible_y = theta_x + p.biais_x, theta_y + p.biais_y
@@ -146,6 +166,8 @@ def simuler(cfg: ConfigMujoco, vue: bool = False) -> ResultatsMujoco:
                 liste.append(val)
             sans_contact_periode = 0
 
+        if n in pas_poussees:
+            pousser(model, data, *pas_poussees[n], p.rayon_balle)
         if cfg.mecanisme:
             for i, m in enumerate(moteurs):
                 data.ctrl[i] = m.avancer(cfg.dt_physique)
@@ -173,7 +195,8 @@ def simuler(cfg: ConfigMujoco, vue: bool = False) -> ResultatsMujoco:
     return r
 
 
-def acceleration_roulement(k: float, theta: float, solref: str = "0.005 1", duree: float = 1.0) -> float:
+def acceleration_roulement(k: float, theta: float, solref: str = "0.005 1", duree: float = 1.0,
+                           frottement: float = 1.0) -> float:
     """Accélération mesurée par MuJoCo d'une balle (J = k·m·r²) sur un plan fixe incliné de θ.
 
     Sert à vérifier que MuJoCo retrouve ẍ = g·sin θ / (1 + k).
@@ -181,8 +204,8 @@ def acceleration_roulement(k: float, theta: float, solref: str = "0.005 1", dure
     r, m = 0.02, 0.0027
     inertie = k * m * r * r
     xml = f"""<mujoco><option timestep="0.001" integrator="implicitfast"/><worldbody>
-      <body euler="0 {math.degrees(theta)} 0"><geom type="box" size="0.5 0.5 0.005" pos="0 0 -0.005"/></body>
-      <body name="balle"><freejoint/><geom type="sphere" size="{r}" solref="{solref}"/>
+      <body euler="0 {math.degrees(theta)} 0"><geom type="box" size="0.5 0.5 0.005" pos="0 0 -0.005" friction="{frottement} 0.005 0.0001"/></body>
+      <body name="balle"><freejoint/><geom type="sphere" size="{r}" solref="{solref}" friction="{frottement} 0.005 0.0001"/>
         <inertial pos="0 0 0" mass="{m}" diaginertia="{inertie} {inertie} {inertie}"/></body>
     </worldbody></mujoco>"""
     model = mujoco.MjModel.from_xml_string(xml)

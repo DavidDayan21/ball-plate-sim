@@ -8,7 +8,7 @@ import math
 
 from controller.cinematique import Geometrie, cinematique_directe, cinematique_inverse
 from controller.plateau import ControleurPlateau
-from sim_simple.boucle_plateau import Config, Resultats, consigne, kd_pour
+from sim_simple.boucle_plateau import Config, Resultats, kd_pour
 from sim_simple.capteur import Capteur
 from sim_simple.moteur import Moteur
 from sim_simple.plateau import G, pas_semi_implicite, sur_le_plateau
@@ -44,7 +44,7 @@ def simuler(cfg: ConfigRobot) -> ResultatsRobot:
     alphas = alphas0
     pas_par_controle = round(cfg.periode_controle / cfg.dt_physique)
     x, y = cfg.depart
-    vx = vy = 0.0
+    vx, vy = cfg.vitesse_depart
     theta_x = theta_y = 0.0
     n_limite = n_total = 0
     r = ResultatsRobot()
@@ -53,7 +53,7 @@ def simuler(cfg: ConfigRobot) -> ResultatsRobot:
         t = n * cfg.dt_physique
         if n % pas_par_controle == 0:
             xm, ym = capteur.mesurer(x, y)
-            xr, yr, axr, ayr = consigne(t)
+            xr, yr, axr, ayr = cfg.trajectoire(t)
             theta_x, theta_y = ctrl.calculer((xr, yr), (xm, ym), (axr, ayr), cfg.periode_controle)
             if cfg.moteurs:
                 try:
