@@ -16,3 +16,6 @@ MUJOCO_LOG.TXT
 # Fichiers système Windows
 Thumbs.db
 desktop.ini
+
+# Modèles MuJoCo exportés (se régénèrent avec python -m simulation.physique_mujoco)
+results/*.xml

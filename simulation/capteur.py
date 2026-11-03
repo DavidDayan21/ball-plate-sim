@@ -1,6 +1,6 @@
-"""Modèle de capteur de position (phase 2) : bruit gaussien + retard.
+"""Capteur fictif de position : bruit gaussien + retard (latence).
 
-Remplacé en phase 5 par une vraie caméra virtuelle et une détection OpenCV.
+Sert aussi de file d'attente pour la latence de la caméra (simulation/camera.py).
 """
 from collections import deque
 import random

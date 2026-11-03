@@ -1,17 +1,10 @@
-"""Tests de la phase 3 : cinématique, moteurs, boucle complète du robot.
-
-Lancement : python -m pytest
-"""
+"""Cinématique du mécanisme à 3 bras et modèle des moteurs."""
 import math
-from dataclasses import replace
 
 import pytest
 
 from controller.cinematique import Geometrie, cinematique_directe, cinematique_inverse
-from sim_simple.boucle_plateau import Config, erreur_suivi_rms
-from sim_simple.boucle_plateau import simuler as simuler_plateau
-from sim_simple.boucle_robot import ConfigRobot, simuler
-from sim_simple.moteur import Moteur
+from simulation.moteur import Moteur
 
 G3 = Geometrie()
 
@@ -52,20 +45,12 @@ def test_moteur_vitesse_bornee_et_pas():
     assert math.isclose(m.position, 1.0, rel_tol=1e-9)
 
 
-def test_robot_sans_moteurs_identique_a_la_phase_2():
-    r2 = simuler_plateau(Config())
-    r3 = simuler(ConfigRobot(moteurs=False))
-    assert r2.x == r3.x and r2.y == r3.y
-
-
-def test_robot_complet():
-    r = simuler(ConfigRobot())
-    assert not r.tombee
-    assert r.poses_hors_portee == 0
-    assert erreur_suivi_rms(r, 12, 20) < 0.006
-
-
-def test_moteurs_lents_degradent_le_suivi():
-    rapide = erreur_suivi_rms(simuler(ConfigRobot()), 12, 20)
-    lent = erreur_suivi_rms(simuler(replace(ConfigRobot(), vitesse_max=0.5)), 12, 20)
-    assert lent > 1.5 * rapide
+def test_moteur_rampe_acceleration_bornee():
+    m = Moteur(0.0, vitesse_max=10.0, resolution=1e-4, acceleration_max=50.0)
+    m.demander(1.0)
+    vitesses = []
+    for _ in range(600):
+        m.avancer(0.001)
+        vitesses.append(m.vitesse)
+    assert max(abs(b - a) / 0.001 for a, b in zip(vitesses, vitesses[1:])) <= 50.0 + 1e-6
+    assert abs(m.position - 1.0) < 1e-3

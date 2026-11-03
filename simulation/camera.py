@@ -1,4 +1,4 @@
-"""Caméra virtuelle + détection de la balle par OpenCV (phase 5).
+"""Caméra virtuelle + détection de la balle par OpenCV.
 
 Chaîne de mesure, identique à ce que ferait le vrai robot :
     image RGB -> seuillage de couleur (HSV) -> centre de la tache (moments) -> pixel (u, v)
@@ -7,7 +7,6 @@ Chaîne de mesure, identique à ce que ferait le vrai robot :
 
 La caméra est fixe, au-dessus du plateau, et regarde vers le bas.
 """
-from dataclasses import dataclass
 import math
 
 import cv2
@@ -15,18 +14,7 @@ import mujoco
 import numpy as np
 
 from controller.cinematique import rotation
-
-
-@dataclass(frozen=True)
-class ParametresCamera:
-    hauteur: float = 0.50            # hauteur de la caméra au-dessus du centre du plateau (m)
-    fovy: float = 40.0               # champ de vision vertical (°)
-    largeur: int = 320               # résolution (pixels)
-    hauteur_image: int = 240
-    teinte: tuple = (5, 35)          # plage de teinte OpenCV (0-179) de la balle orange
-    saturation_min: int = 100
-    valeur_min: int = 80
-    pixels_min: int = 20             # en dessous : balle considérée comme non détectée
+from simulation.config import ParametresCamera
 
 
 def rotation_inverse(theta_x: float, theta_y: float, v):

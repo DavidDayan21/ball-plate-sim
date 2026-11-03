@@ -1,11 +1,11 @@
-"""Modèle de commande d'un moteur pas à pas asservi en position (phases 3 et 4).
+"""Modèle de commande d'un moteur pas à pas asservi en position.
 
 Hypothèses : la position demandée est arrondie au pas (ou micro-pas) le plus proche et bornée
 par des butées ; le moteur la rejoint avec une vitesse bornée et, si acceleration_max est fini,
 une accélération bornée (profil trapézoïdal, comme les drivers de moteurs pas à pas).
 
-    acceleration_max = inf : profil « en créneau » de la phase 3 (vitesse max immédiate)
-    acceleration_max finie : rampes d'accélération et de freinage (phase 4)
+    acceleration_max = inf : profil « en créneau » (vitesse max immédiate)
+    acceleration_max finie : rampes d'accélération et de freinage
 
 Le couple et l'inertie ne sont pas modélisés ici : dans MuJoCo, ce profil sert de consigne
 à l'asservissement du moteur, qui lui a un couple limité.
@@ -24,7 +24,6 @@ class Moteur:
         self.acceleration_max = acceleration_max  # rad/s²
         self.resolution = resolution      # rad par pas
         self.angle_min, self.angle_max = angle_min, angle_max
-        self.limite_vitesse = False       # vrai si le dernier pas a été limité en vitesse
 
     def demander(self, angle: float) -> None:
         """Nouvelle consigne d'angle : arrondie au pas le plus proche, puis bornée par les butées."""
@@ -36,7 +35,6 @@ class Moteur:
         ecart = self.cible - self.position
         if math.isinf(self.acceleration_max):
             max_pas = self.vitesse_max * dt
-            self.limite_vitesse = abs(ecart) > max_pas
             self.position += max(-max_pas, min(max_pas, ecart))
             return self.position
         # Rampe : on vise la plus grande vitesse qui permet encore de s'arrêter sur la cible
@@ -45,6 +43,5 @@ class Moteur:
         v_voulue = math.copysign(min(self.vitesse_max, math.sqrt(2 * self.acceleration_max * abs(ecart))), ecart)
         dv = self.acceleration_max * dt
         self.vitesse += max(-dv, min(dv, v_voulue - self.vitesse))
-        self.limite_vitesse = abs(self.vitesse) >= self.vitesse_max
         self.position += self.vitesse * dt
         return self.position

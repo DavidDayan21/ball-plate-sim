@@ -1,6 +1,17 @@
-# Bilan de la phase 6 : robustesse du robot équilibriste simulé
+# Bilan de la campagne de mesures du robot équilibriste simulé
 
 Chaîne simulée : MuJoCo (robot à 3 bras, rampes moteurs) + caméra 160×120 + OpenCV + PID.
+
+
+## 0. Du modèle simple à la chaîne complète (scénario de référence, mêmes réglages)
+
+| Niveau | Tombée | Retour 5 % | Erreur cercle | Agitation θ | Sans contact |
+|---|---|---|---|---|---|
+| Maison : plateau en angles | non | 2.76 s | 3.32 mm | 0.55° | - |
+| Maison : robot 3 bras | non | 2.68 s | 4.43 mm | 0.58° | - |
+| MuJoCo : plateau en angles | non | 3.98 s | 5.76 mm | 0.55° | 9.3 % |
+| MuJoCo : robot 3 bras | non | 2.74 s | 5.15 mm | 0.57° | 0.1 % |
+| MuJoCo : robot 3 bras + caméra | non | 2.78 s | 4.41 mm | 0.11° | 0.1 % |
 
 
 ## 1. Limites théoriques

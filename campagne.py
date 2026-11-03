@@ -1,18 +1,18 @@
-"""Phase 6 - Tests de robustesse et bilan avant une éventuelle construction.
+"""Campagne de mesures : cohérence des modèles, robustesse, latence. Écrit results/bilan.md.
 
-Chaîne complète et réaliste : MuJoCo (robot à 3 bras, rampes moteurs) + caméra + OpenCV.
-La caméra est en 160×120 : aussi précise que 320×240 (phase 5), et plus rapide à simuler.
+Chaîne de référence : MuJoCo (robot à 3 bras, rampes moteurs) + caméra 160×120 + OpenCV + PID.
+La caméra 160×120 est aussi précise que 320×240, et plus rapide à simuler.
 
-    1. Limites théoriques : condition de non-glissement, vitesse maximale rattrapable
+    0. Du modèle simple à la chaîne complète : ce que chaque niveau de réalisme ajoute
+    1. Limites théoriques : condition de non-glissement
     2. Balle lancée : vitesse maximale rattrapée (inclinaison max 10° puis 20°)
     3. Poussée sur une balle au repos au centre : choc maximal encaissé
-    4. Robustesse aux paramètres physiques (scénario des phases 2 à 5)
+    4. Robustesse aux paramètres physiques
     5. Latence de la caméra, avec et sans compensation par prédiction
     6. Trajectoire carrée
 
 Lancement (depuis ball-plate-sim, environnement activé) :
-    python phase6_robustesse.py     (1 à 3 min : une trentaine de simulations avec caméra)
-Le bilan est aussi écrit dans results/bilan_phase6.md.
+    python campagne.py        (1 à 3 min : une trentaine de simulations)
 """
 import math
 import os
@@ -20,18 +20,18 @@ from dataclasses import replace
 
 import matplotlib.pyplot as plt
 
-from sim_mujoco.boucle_mujoco import ConfigMujoco, acceleration_roulement, simuler
-from sim_mujoco.camera import ParametresCamera
-from sim_simple.boucle_plateau import erreur_suivi_rms, temps_reponse_5
-from sim_simple.plateau import G
+from simulation.boucle import simuler
+from simulation.config import G, Config, ParametresCamera, carre, centre
+from simulation.indicateurs import ecart_type_theta, erreur_suivi_rms, temps_reponse_5
+from simulation.physique_mujoco import acceleration_roulement
 
-BASE = ConfigMujoco(capteur="camera", camera=ParametresCamera(largeur=160, hauteur_image=120))
+BASE = Config(capteur="camera", camera=ParametresCamera(largeur=160, hauteur_image=120))
 PM = BASE.mujoco_params
 K = BASE.plateau.k_inertie
 CG = BASE.plateau.coefficient * G
 R_PLATEAU = BASE.plateau.rayon_plateau
 DEPART_LANCER = -0.10                 # la balle est lancée depuis x = -10 cm vers +x
-md = ["# Bilan de la phase 6 : robustesse du robot équilibriste simulé\n",
+md = ["# Bilan de la campagne de mesures du robot équilibriste simulé\n",
       "Chaîne simulée : MuJoCo (robot à 3 bras, rampes moteurs) + caméra 160×120 + OpenCV + PID.\n"]
 
 
@@ -50,18 +50,6 @@ def tableau(entetes, lignes) -> None:
     md.append("")
 
 
-def centre(t: float):
-    return 0.0, 0.0, 0.0, 0.0
-
-
-def carre(t: float):
-    """Carré de 10 cm de côté parcouru à 5 cm/s (2 s par côté), départ au coin (5 cm, 5 cm)."""
-    coins = [(0.05, 0.05), (-0.05, 0.05), (-0.05, -0.05), (0.05, -0.05)]
-    k, s = int(t // 2.0) % 4, (t % 2.0) / 2.0
-    (x0, y0), (x1, y1) = coins[k], coins[(k + 1) % 4]
-    return x0 + (x1 - x0) * s, y0 + (y1 - y0) * s, 0.0, 0.0
-
-
 def v_max_theorique(theta_max: float, distance: float) -> float:
     """Freinage maximal a = c·g·sin θmax sur la distance disponible : v = √(2·a·d)."""
     return math.sqrt(2 * CG * math.sin(theta_max) * distance)
@@ -78,6 +66,24 @@ def balayage(cfg_de_v, vitesses):
         meilleure = v
     return meilleure, resultats
 
+
+# --- 0. Du modèle simple à la chaîne complète -----------------------------------------------
+section("0. Du modèle simple à la chaîne complète (scénario de référence, mêmes réglages)")
+niveaux = {
+    "Maison : plateau en angles": Config(physique="simple", mecanisme=False),
+    "Maison : robot 3 bras": Config(physique="simple"),
+    "MuJoCo : plateau en angles": Config(mecanisme=False),
+    "MuJoCo : robot 3 bras": Config(),
+    "MuJoCo : robot 3 bras + caméra": BASE,
+}
+lignes = []
+for nom, cfg in niveaux.items():
+    r = simuler(cfg)
+    contact = f"{100 * r.part_sans_contact:.1f} %" if cfg.physique == "mujoco" else "-"
+    lignes.append([nom, "oui" if r.tombee else "non", f"{temps_reponse_5(r, 4):.2f} s",
+                   f"{erreur_suivi_rms(r, 12, 20) * 1000:.2f} mm",
+                   f"{math.degrees(ecart_type_theta(r, 2.5, 4)):.2f}°", contact])
+tableau(["Niveau", "Tombée", "Retour 5 %", "Erreur cercle", "Agitation θ", "Sans contact"], lignes)
 
 # --- 1. Limites théoriques ----------------------------------------------------------------
 section("1. Limites théoriques")
@@ -151,9 +157,9 @@ for comp in (False, True):
 tableau(["Compensation", "Tombée", "Erreur (2e tour)"], lignes)
 
 os.makedirs("results", exist_ok=True)
-with open(os.path.join("results", "bilan_phase6.md"), "w", encoding="utf-8") as f:
+with open(os.path.join("results", "bilan.md"), "w", encoding="utf-8") as f:
     f.write("\n".join(md) + "\n")
-print("\nBilan écrit dans results/bilan_phase6.md")
+print("\nBilan écrit dans results/bilan.md")
 
 # --- Figures -------------------------------------------------------------------------------------
 fig, ((a1, a2), (a3, a4)) = plt.subplots(2, 2, figsize=(11, 7.5))
