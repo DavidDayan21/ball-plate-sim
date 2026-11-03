@@ -52,6 +52,21 @@ def pas_euler(x: float, v: float, theta: float, dt: float, p: ParametresPoutre):
     return x + v * dt, v + a * dt
 
 
+def pas_euler_semi_implicite(x: float, v: float, theta: float, dt: float, p: ParametresPoutre):
+    """Un pas de la méthode d'Euler semi-implicite (dite symplectique).
+
+    v_{n+1} = v_n + a(θ_n)·dt
+    x_{n+1} = x_n + v_{n+1}·dt      <- utilise la NOUVELLE vitesse
+
+    Même coût qu'Euler explicite, mais n'amplifie pas artificiellement les oscillations
+    (voir le mini-cours de la phase 1b). C'est la méthode utilisée à partir de la phase 1b.
+
+    Renvoie (x, v) à l'instant t + dt.
+    """
+    v = v + acceleration(theta, p) * dt
+    return x + v * dt, v
+
+
 def sur_la_poutre(x: float, p: ParametresPoutre) -> bool:
     """Vrai tant que la balle n'a pas dépassé une extrémité de la poutre."""
     return abs(x) <= p.longueur / 2
