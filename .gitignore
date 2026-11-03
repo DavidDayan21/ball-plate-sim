@@ -1,0 +1,17 @@
+# Environnement virtuel (se recrée avec requirements.txt)
+.venv/
+
+# Cache Python
+__pycache__/
+*.py[cod]
+
+# Journal d'erreurs écrit par MuJoCo
+MUJOCO_LOG.TXT
+
+# Éditeurs
+.vscode/
+.idea/
+
+# Fichiers système Windows
+Thumbs.db
+desktop.ini
