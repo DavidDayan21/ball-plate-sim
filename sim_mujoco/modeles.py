@@ -3,6 +3,8 @@
 Générer le XML depuis Python garantit que MuJoCo utilise exactement la même géométrie
 que la cinématique de la phase 3.
 
+Les deux modèles contiennent une caméra fixe « camera_haut » au-dessus du plateau (phase 5).
+
 Deux modèles :
     - xml_plateau : plateau sur un cardan (2 articulations), commandé directement en angles (4a)
     - xml_robot   : mécanisme complet à 3 bras, chaîne fermée par des contraintes « connect » (4b)
@@ -15,6 +17,7 @@ from dataclasses import dataclass
 import os
 
 from controller.cinematique import Geometrie
+from sim_mujoco.camera import ParametresCamera
 from sim_simple.plateau import ParametresPlateau
 
 
@@ -58,17 +61,18 @@ ENTETE = """<mujoco model="{nom}">
   <visual><global azimuth="120" elevation="-30"/></visual>
   <worldbody>
     <light pos="0 0 1.5" dir="0 0 -1"/>
-    <geom name="sol" type="plane" size="0.4 0.4 0.01" pos="0 0 -0.04" rgba="0.85 0.85 0.85 1"/>"""
+    <geom name="sol" type="plane" size="0.4 0.4 0.01" pos="0 0 -0.04" rgba="0.85 0.85 0.85 1"/>
+    <camera name="camera_haut" pos="0 0 {z_camera}" xyaxes="1 0 0 0 1 0" fovy="{fovy}"/>"""
 
 
 def xml_plateau(pp: ParametresPlateau = None, pm: ParametresMujoco = None,
-                depart=(0.0, 0.0), hauteur: float = 0.12) -> str:
+                depart=(0.0, 0.0), hauteur: float = 0.12, cam: ParametresCamera = None) -> str:
     """Plateau sur cardan au-dessus d'un pied. Articulations : θx (axe y), puis θy (axe -x).
 
     L'ordre des articulations reproduit la rotation R = Ry(θx)·Rx(-θy) de la phase 3.
     """
-    pp, pm = pp or ParametresPlateau(), pm or ParametresMujoco()
-    return ENTETE.format(nom="plateau en angles", dt=pm.dt) + f"""
+    pp, pm, cam = pp or ParametresPlateau(), pm or ParametresMujoco(), cam or ParametresCamera()
+    return ENTETE.format(nom="plateau en angles", dt=pm.dt, z_camera=hauteur + cam.hauteur, fovy=cam.fovy) + f"""
     <geom name="pied" type="cylinder" size="0.01 {hauteur / 2 + 0.02}" pos="0 0 {hauteur / 2 - 0.02}" rgba="0.3 0.3 0.3 1"/>
     <body name="cardan" pos="0 0 {hauteur}">
       <joint name="inclinaison_x" type="hinge" axis="0 1 0" range="-30 30"/>
@@ -88,7 +92,7 @@ def xml_plateau(pp: ParametresPlateau = None, pm: ParametresMujoco = None,
 
 
 def xml_robot(g: Geometrie = None, pp: ParametresPlateau = None, pm: ParametresMujoco = None,
-              depart=(0.0, 0.0)) -> str:
+              depart=(0.0, 0.0), cam: ParametresCamera = None) -> str:
     """Mécanisme complet : 3 × (moteur -> bras -> coude -> biellette), plateau libre (6 DDL).
 
     Le coude est une articulation parallèle à l'axe moteur : chaque biellette reste dans son
@@ -98,6 +102,7 @@ def xml_robot(g: Geometrie = None, pp: ParametresPlateau = None, pm: ParametresM
     pilotés par les 3 moteurs.
     """
     g, pp, pm = g or Geometrie(), pp or ParametresPlateau(), pm or ParametresMujoco()
+    cam = cam or ParametresCamera()
     l1, l2 = g.longueur_bras, g.longueur_biellette
     jambes, contraintes, actionneurs = "", "", ""
     for i in range(3):
@@ -111,13 +116,14 @@ def xml_robot(g: Geometrie = None, pp: ParametresPlateau = None, pm: ParametresM
       <geom type="capsule" fromto="0 0 0 {l1 * ux} {l1 * uy} 0" size="0.006" mass="{pm.masse_bras}" rgba="0.2 0.4 0.8 1"/>
       <body name="biellette{i + 1}" pos="{l1 * ux} {l1 * uy} 0">
         <joint name="coude{i + 1}" type="hinge" axis="{axe}" damping="1e-4"/>
-        <geom type="capsule" fromto="0 0 0 0 0 {l2}" size="0.004" mass="{pm.masse_biellette}" rgba="1 0.6 0.2 1"/>
+        <geom type="capsule" fromto="0 0 0 0 0 {l2}" size="0.004" mass="{pm.masse_biellette}" rgba="0.55 0.55 0.6 1"/>
       </body>
     </body>"""
         contraintes += f'\n    <connect body1="biellette{i + 1}" body2="plateau" anchor="0 0 {l2}" solref="0.005 1"/>'
         actionneurs += (f'\n    <position name="servo{i + 1}" joint="moteur{i + 1}" kp="{pm.kp_servo}" '
                         f'kv="{pm.kv_servo}" forcerange="{-pm.couple_max} {pm.couple_max}"/>')
-    return ENTETE.format(nom="robot equilibriste", dt=pm.dt) + jambes + f"""
+    entete = ENTETE.format(nom="robot equilibriste", dt=pm.dt, z_camera=g.hauteur + cam.hauteur, fovy=cam.fovy)
+    return entete + jambes + f"""
     <body name="plateau" pos="0 0 {g.hauteur}">
       <freejoint/>
       {_plateau_geom(pp, pm)}

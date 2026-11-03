@@ -5,6 +5,8 @@ EXACTEMENT ceux des phases 2 et 3 : seule la physique change (MuJoCo au lieu des
 
     4a (mecanisme=False) : plateau sur cardan, angles θ appliqués par deux servos
     4b (mecanisme=True)  : robot complet, angles moteurs issus de la cinématique inverse
+
+Phase 5 : capteur="camera" remplace le capteur fictif par la caméra virtuelle + OpenCV.
 """
 from dataclasses import dataclass, field
 import math
@@ -16,6 +18,7 @@ import numpy as np
 
 from controller.cinematique import cinematique_inverse
 from controller.plateau import ControleurPlateau
+from sim_mujoco.camera import CameraBalle, ParametresCamera
 from sim_mujoco.modeles import ParametresMujoco, xml_plateau, xml_robot
 from sim_simple.boucle_plateau import consigne, kd_pour
 from sim_simple.boucle_robot import ConfigRobot, ResultatsRobot
@@ -29,6 +32,10 @@ class ConfigMujoco(ConfigRobot):
     mecanisme: bool = True                       # False : plateau commandé en angles (4a)
     acceleration_max: float = 50.0               # rampes des moteurs (rad/s²) ; inf : sans rampe
     mujoco_params: ParametresMujoco = field(default_factory=ParametresMujoco)
+    # Phase 5 : capteur
+    capteur: str = "fictif"                      # "fictif" (bruit gaussien) ou "camera" (image + OpenCV)
+    camera: ParametresCamera = field(default_factory=ParametresCamera)
+    correction_inclinaison: bool = True          # caméra : tenir compte de l'inclinaison du plateau
 
 
 @dataclass
@@ -37,13 +44,16 @@ class ResultatsMujoco(ResultatsRobot):
     sans_contact: list = field(default_factory=list)  # part des pas sans contact balle-plateau,
                                                        # sur chaque période de contrôle
     part_sans_contact: float = 0.0                     # sur toute la simulation
+    erreur_mesure: list = field(default_factory=list)  # |mesure - vraie position| avant retard (m)
+    non_detectee: int = 0                              # caméra : images sans balle détectée
+    image_exemple: tuple = None                        # caméra : (image, masque, centre) vers t = 2 s
 
 
 def construire(cfg: ConfigMujoco):
     if cfg.mecanisme:
-        xml = xml_robot(cfg.geometrie, cfg.plateau, cfg.mujoco_params, cfg.depart)
+        xml = xml_robot(cfg.geometrie, cfg.plateau, cfg.mujoco_params, cfg.depart, cfg.camera)
     else:
-        xml = xml_plateau(cfg.plateau, cfg.mujoco_params, cfg.depart, cfg.geometrie.hauteur)
+        xml = xml_plateau(cfg.plateau, cfg.mujoco_params, cfg.depart, cfg.geometrie.hauteur, cfg.camera)
     model = mujoco.MjModel.from_xml_string(xml)
     data = mujoco.MjData(model)
     mujoco.mj_forward(model, data)        # calcule les positions initiales (sinon xpos vaut 0)
@@ -66,7 +76,12 @@ def inclinaison_plateau(data):
 def simuler(cfg: ConfigMujoco, vue: bool = False) -> ResultatsMujoco:
     model, data = construire(cfg)
     p, g = cfg.plateau, cfg.geometrie
-    capteur = Capteur(cfg.sigma, cfg.retard)
+    camera = None
+    if cfg.capteur == "camera":
+        camera = CameraBalle(model, cfg.camera, g.hauteur, p.rayon_balle, cfg.correction_inclinaison)
+        capteur = Capteur(sigma=0.0, retard=cfg.retard)   # le bruit vient de l'image ; reste le retard
+    else:
+        capteur = Capteur(cfg.sigma, cfg.retard)
     ctrl = ControleurPlateau(cfg.kp, cfg.ki, kd_pour(cfg), cfg.theta_max, cfg.tau_d,
                              gain_modele=p.coefficient * G, anticipation=cfg.anticipation)
     moteurs = ([Moteur(0.0, cfg.vitesse_max, cfg.resolution, acceleration_max=cfg.acceleration_max)
@@ -74,6 +89,8 @@ def simuler(cfg: ConfigMujoco, vue: bool = False) -> ResultatsMujoco:
     pas_par_controle = round(cfg.periode_controle / cfg.dt_physique)
     n_limite = 0
     n_sans_contact = 0                    # total
+    theta_x = theta_y = 0.0               # dernière commande (connue du robot, sert à la caméra)
+    derniere_mesure = cfg.depart
     sans_contact_periode = 0              # sur la période de contrôle en cours
     r = ResultatsMujoco()
 
@@ -93,7 +110,19 @@ def simuler(cfg: ConfigMujoco, vue: bool = False) -> ResultatsMujoco:
             break
 
         if n % pas_par_controle == 0:
-            xm, ym = capteur.mesurer(bx, by)
+            if camera is not None:
+                mx, my = camera.mesurer(data, theta_x, theta_y, derniere_mesure)
+                derniere_mesure = (mx, my)
+                if r.image_exemple is None and t >= 2.0:
+                    img = camera.image(data)
+                    centre, masque = camera.detecter(img)
+                    r.image_exemple = (img, masque, centre)
+            else:
+                mx, my = bx, by
+            xm, ym = capteur.mesurer(mx, my)
+            if camera is None:            # capteur fictif : mesure bruitée de cet instant (avant retard)
+                mx, my = capteur.file[-1] if capteur.file else (xm, ym)
+            r.erreur_mesure.append(math.hypot(mx - bx, my - by))
             xr, yr, axr, ayr = consigne(t)
             theta_x, theta_y = ctrl.calculer((xr, yr), (xm, ym), (axr, ayr), cfg.periode_controle)
             # Défaut d'étalonnage : l'angle réellement visé = angle commandé + biais (inconnu du PID)
@@ -136,6 +165,9 @@ def simuler(cfg: ConfigMujoco, vue: bool = False) -> ResultatsMujoco:
 
     if viewer is not None:
         viewer.close()
+    if camera is not None:
+        r.non_detectee = camera.non_detectee
+        camera.fermer()
     r.part_limite_vitesse = n_limite / max(1, n) if cfg.mecanisme else 0.0
     r.part_sans_contact = n_sans_contact / max(1, n)
     return r
