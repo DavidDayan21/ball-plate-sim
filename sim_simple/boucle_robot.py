@@ -20,6 +20,7 @@ class ConfigRobot(Config):
     moteurs: bool = True                          # False : plateau commandé directement (phase 2)
     vitesse_max: float = 10.0                     # vitesse max des moteurs (rad/s)
     resolution: float = math.radians(1.8 / 16)    # moteur 200 pas/tour en 1/16 de pas
+    acceleration_max: float = math.inf            # rampes des moteurs (rad/s²), inf : pas de rampe
 
 
 @dataclass
@@ -37,7 +38,8 @@ def simuler(cfg: ConfigRobot) -> ResultatsRobot:
     ctrl = ControleurPlateau(cfg.kp, cfg.ki, kd_pour(cfg), cfg.theta_max, cfg.tau_d,
                              gain_modele=p.coefficient * G, anticipation=cfg.anticipation)
     alphas0 = cinematique_inverse(g, 0.0, 0.0)
-    moteurs = [Moteur(a, cfg.vitesse_max, cfg.resolution) for a in alphas0]
+    moteurs = [Moteur(a, cfg.vitesse_max, cfg.resolution, acceleration_max=cfg.acceleration_max)
+               for a in alphas0]
     pose = (0.0, 0.0, g.hauteur)
     alphas = alphas0
     pas_par_controle = round(cfg.periode_controle / cfg.dt_physique)
