@@ -8,7 +8,7 @@ Objectif : valider les algorithmes de contrôle en simulation avant une éventue
 - [x] Phase 0 — Environnement (Python, MuJoCo)
 - [x] Phase 1 — Balle sur poutre en 1D (P, PD, PID)
 - [x] Phase 2 — Balle sur plateau en 2D (bruit, retard, saturation, anticipation)
-- [ ] Phase 3 — Mécanisme à 3 bras et moteurs
+- [x] Phase 3 — Mécanisme à 3 bras et moteurs (cinématique inverse et directe, moteurs pas à pas)
 - [ ] Phase 4 — Simulation physique MuJoCo
 - [ ] Phase 5 — Capteur caméra (OpenCV)
 - [ ] Phase 6 — Tests et robustesse
@@ -29,7 +29,7 @@ python test_env.py
 python -m pytest
 ```
 
-Chaque résultat théorique (erreur d'Euler, période, dépassement, erreur statique, critère de Routh, suivi de trajectoire) est vérifié automatiquement.
+Chaque résultat théorique (erreur d'Euler, période, dépassement, erreur statique, critère de Routh, suivi de trajectoire, cinématique) est vérifié automatiquement.
 
 ## Technologies
 
