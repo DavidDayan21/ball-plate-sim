@@ -82,11 +82,13 @@ seed k (`Config.seed`) and a start position shifted by up to ±0.5 mm on each ax
 variation for the camera, which draws no random number. The report gives mean ± standard deviation;
 a difference between two cases, paired over the same draws, is significant by a paired t-test at the
 5 % level (|mean| > t × standard error, t = 2.26 for 10 draws). Maximum speeds are found by bisection,
-to 0.01 m/s.
+to 0.01 m/s. The report opens with the objectives of the brain (met or not); sections 0 and 7 validate
+the simulator with a frozen reference controller (the PID without latency compensation).
 
 Regression check: any refactoring must leave the results bit-identical. The reference
 (`results/reference/`, ignored by git) covers all the cases of the campaign, the physics validation
-and a sandbox sequence. It is only valid on the machine and with the versions that produced
+and a sandbox sequence; every setting of these cases is written explicitly, so that changing a default
+value does not change them. It is only valid on the machine and with the versions that produced
 it (Windows and Linux diverge as soon as the ball bounces): the comparison warns if they have changed.
 
 A simulation is described by a `Config`; everything that is not specified takes the reference value:
@@ -95,7 +97,8 @@ A simulation is described by a `Config`; everything that is not specified takes 
 from simulation.loop import simulate
 from simulation.config import Config, center
 
-r = simulate(Config(sensor="camera", latency=3, latency_compensation=True))
+r = simulate(Config(sensor="camera", latency=3))                  # the brain: PID + latency compensation
+r = simulate(Config(sensor="camera", latency=3, latency_compensation=False))   # PID alone
 r = simulate(Config(physics="simple", mechanism=False))           # theoretical model
 r = simulate(Config(trajectory=center, start_position=(-0.1, 0.0), start_velocity=(0.4, 0.0)))  # thrown ball
 ```
@@ -139,7 +142,7 @@ International CSV format: `,` separator, decimal point, UTF-8 encoding (no BOM).
 | Motors | 10 rad/s, 1/16 microsteps, ramps at 50 rad/s², max torque 0.4 N·m; in MuJoCo, position servos (kp = 50 N·m/rad, kv = 0.5 N·m·s/rad) that lag their target by τ = kv/kp = 10 ms |
 | Simple physics | Basic model ẍ = c·g·sin θ; optional additions (`Config`): rolling term r·θ̈, rotating-frame terms, exact gravity, servo lag. The full equation is derived in `simulation/simple_physics.py` and checked against MuJoCo |
 | Sensor | Camera 50 cm above the plate, 50 Hz, latency 20 ms |
-| Controller | 50 Hz, Kp = 1 rad/m, Ki = 1 rad/(m·s), ζ = 0.7, max tilt ±10° |
+| Controller (PID brain) | 50 Hz, Kp = 1 rad/m, Ki = 1 rad/(m·s), ζ = 0.7, max tilt ±10°, latency compensation by prediction (on by default) |
 
 ## Technologies
 

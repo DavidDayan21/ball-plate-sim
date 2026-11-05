@@ -51,33 +51,43 @@ SPEED_STEP = 0.01                   # (m/s) resolution of the maximum speeds
 SPEED_RANGE = (0.1, 1.5)            # (m/s) bisection bracket: caught at the low end, fallen at the high end
 CHECK_SPAN = 5                      # draw 0: every speed within ±5 steps of the threshold is simulated
 
+# Sections 0 and 7 validate the simulator, not the brain: they use a frozen reference controller (the PID
+# without latency compensation), so that their results do not change when the brain improves.
+REFERENCE_CONTROLLER = {"latency_compensation": False}
+
 # Closed-loop cases (nominal configurations), each simulated over every draw
 CASES = {
-    "simple_plate": Config(physics="simple", mechanism=False),
-    "simple_robot": Config(physics="simple"),
-    "simple_robot_rolling": Config(physics="simple", rolling_term=True),
-    "simple_robot_frame": Config(physics="simple", frame_terms=True),
-    "simple_robot_gravity": Config(physics="simple", exact_gravity=True),
-    "simple_robot_servo": Config(physics="simple", servo_lag=True),
+    # Simulator validation (sections 0 and 7), reference controller
+    "simple_plate": Config(physics="simple", mechanism=False, **REFERENCE_CONTROLLER),
+    "simple_robot": Config(physics="simple", **REFERENCE_CONTROLLER),
+    "simple_robot_rolling": Config(physics="simple", rolling_term=True, **REFERENCE_CONTROLLER),
+    "simple_robot_frame": Config(physics="simple", frame_terms=True, **REFERENCE_CONTROLLER),
+    "simple_robot_gravity": Config(physics="simple", exact_gravity=True, **REFERENCE_CONTROLLER),
+    "simple_robot_servo": Config(physics="simple", servo_lag=True, **REFERENCE_CONTROLLER),
     "simple_robot_full": Config(physics="simple", rolling_term=True, frame_terms=True, exact_gravity=True,
-                                servo_lag=True),
-    "mujoco_plate": Config(mechanism=False),
-    "mujoco_robot": Config(),
+                                servo_lag=True, **REFERENCE_CONTROLLER),
+    "mujoco_plate": Config(mechanism=False, **REFERENCE_CONTROLLER),
+    "mujoco_robot": Config(**REFERENCE_CONTROLLER),
+    "camera_reference": replace(BASE, **REFERENCE_CONTROLLER),
+    # The brain (default settings), full chain with the camera
     "camera": BASE,
     "solid_ball": replace(BASE, mujoco_params=replace(PM, k_actual=2 / 5)),
     "heavy_ball": replace(BASE, mujoco_params=replace(PM, ball_mass=0.027)),
     "friction_0.2": replace(BASE, mujoco_params=replace(PM, friction=0.2)),
     "friction_0.02": replace(BASE, mujoco_params=replace(PM, friction=0.02)),
     "heavy_plate": replace(BASE, mujoco_params=replace(PM, plate_mass=0.5)),
-    "latency_20ms_compensated": replace(BASE, latency_compensation=True),
     "latency_60ms": replace(BASE, latency=3),
-    "latency_60ms_compensated": replace(BASE, latency=3, latency_compensation=True),
     "latency_100ms": replace(BASE, latency=5),
-    "latency_100ms_compensated": replace(BASE, latency=5, latency_compensation=True),
     "square": replace(BASE, trajectory=square, duration=16.0, start_position=(0.05, 0.05)),
-    "square_compensated": replace(BASE, trajectory=square, duration=16.0, start_position=(0.05, 0.05),
-                                  latency_compensation=True),
+    # The brain without latency compensation (sections 5 and 6; at 20 ms: camera_reference)
+    "latency_60ms_uncompensated": replace(BASE, latency=3, latency_compensation=False),
+    "latency_100ms_uncompensated": replace(BASE, latency=5, latency_compensation=False),
+    "square_uncompensated": replace(BASE, trajectory=square, duration=16.0, start_position=(0.05, 0.05),
+                                    latency_compensation=False),
 }
+ROBUSTNESS = {"Nominal (ping-pong, μ = 1)": "camera", "Solid ball (k = 2/5)": "solid_ball",
+              "Ball 10× heavier (27 g)": "heavy_ball", "Friction μ = 0.2": "friction_0.2",
+              "Friction μ = 0.02": "friction_0.02", "Plate 2× heavier (0.5 kg)": "heavy_plate"}
 # Maximum speeds searched by bisection: name -> (kind, max tilt in degrees)
 LIMITS = {"throw_10deg": ("throw", 10), "throw_20deg": ("throw", 20), "push": ("push", 10)}
 
@@ -300,6 +310,26 @@ def run_campaign(draws: int, processes: int = None) -> dict:
     return {"draws": draws, "runs": runs, "limits": limits, "checks": checks}
 
 
+def objectives(data: dict) -> list:
+    """Quantified objectives of the brain, judged on the mean over the draws: rows [objective, measured,
+    target, met]. Thrown ball at ±10°, circle at 60 ms of latency, return to the center, robustness."""
+    runs = data["runs"]
+    shares = [math.nan if v is None else v / physical_limit("throw_10deg") for v, _, _ in data["limits"]["throw_10deg"]]
+    circle = [circle_error(r) for r in runs["latency_60ms"]]
+    back = [return_distance(r) for r in runs["camera"]]
+    falls = sum(r.fallen for case in ROBUSTNESS.values() for r in runs[case])
+    total = sum(len(runs[case]) for case in ROBUSTNESS.values())
+    met = lambda ok: "yes" if ok else "**no**"
+    return [
+        ["Thrown ball caught (±10°)", fmt(shares, " %", 0, 100), "≥ 90 % of the physical limit",
+         met(mean_std(shares)[0] >= 0.90)],
+        ["Circle with 60 ms of latency", fmt(circle, " mm", scale=1000), "< 2 mm", met(mean_std(circle)[0] < 0.002)],
+        ["Back to the center in less than 2 s", fmt(back, " mm", scale=1000), "≤ 5 mm between 2 s and 4 s",
+         met(mean_std(back)[0] <= 0.005)],
+        ["No fall in the robustness variants", f"{falls}/{total} falls", "0", met(falls == 0)],
+    ]
+
+
 def monotonic(name: str, data: dict) -> str:
     """Draw 0: are the speeds around the threshold caught below it and fallen above it?"""
     v_max = data["limits"][name][0][0]
@@ -321,14 +351,23 @@ def write_report(data: dict, path: str = os.path.join("results", "report.md")) -
              "other columns. Δ: mean of the paired differences over the same draws ± standard error, "
              "in **bold** when significant (paired t-test at the 5 % level: |Δ| > t × standard error, "
              "t = 97.5 % quantile of Student's distribution, 2.26 for 10 draws).")
+    rep.text("The brain is the PID with its latency compensation (default settings): it is judged by the "
+             "objectives and sections 2 to 6. Sections 0 and 7 validate the simulator: they use a frozen "
+             "reference controller (the PID without latency compensation).")
 
-    rep.section("0. From the simple model to the full chain (reference scenario, same settings)")
+    rep.section("Objectives of the brain (full chain with the camera)")
+    rep.table(["Objective", "Measured", "Target", "Met"], objectives(data))
+    rep.text("Judged on the mean over the draws. Thrown ball: maximum speed caught at ±10° divided by the "
+             "physical limit (section 2). Return: start 10 cm away, setpoint at the center (section 0). "
+             "Robustness: every variant and every draw of section 4.")
+
+    rep.section("0. From the simple model to the full chain (reference scenario, reference controller)")
     # Each level is compared with the level that differs from it by a single factor
     levels = (("Simple physics: angle-driven plate", "simple_plate", None, "-"),
               ("Simple physics: 3-arm robot", "simple_robot", "simple_plate", "mechanism"),
               ("MuJoCo: angle-driven plate", "mujoco_plate", "simple_plate", "physics"),
               ("MuJoCo: 3-arm robot", "mujoco_robot", "simple_robot", "physics"),
-              ("MuJoCo: 3-arm robot + camera", "camera", "mujoco_robot", "sensor"))
+              ("MuJoCo: 3-arm robot + camera", "camera_reference", "mujoco_robot", "sensor"))
     rows = []
     for label, case, _, _ in levels:
         rs = runs[case]
@@ -384,12 +423,9 @@ def write_report(data: dict, path: str = os.path.join("results", "report.md")) -
              f"{SPEED_RANGE[1]} m/s. Distance d: from the start to the edge (throw), from the center to the edge (push).")
 
     rep.section("4. Robustness to physical parameters (controller unchanged, tuned for the ping-pong ball)")
-    variants = {"Nominal (ping-pong, μ = 1)": "camera", "Solid ball (k = 2/5)": "solid_ball",
-                "Ball 10× heavier (27 g)": "heavy_ball", "Friction μ = 0.2": "friction_0.2",
-                "Friction μ = 0.02": "friction_0.02", "Plate 2× heavier (0.5 kg)": "heavy_plate"}
     nominal = [circle_error(r) for r in runs["camera"]]
     rows = []
-    for label, case in variants.items():
+    for label, case in ROBUSTNESS.items():
         rs = runs[case]
         errors = [circle_error(r) for r in rs]
         rows.append([label, fallen(rs), fmt([return_distance(r) for r in rs], " mm", scale=1000),
@@ -401,9 +437,9 @@ def write_report(data: dict, path: str = os.path.join("results", "report.md")) -
 
     rep.section("5. Camera latency: without and with compensation by prediction")
     rows = []
-    for ms, without, with_ in ((20, "camera", "latency_20ms_compensated"),
-                               (60, "latency_60ms", "latency_60ms_compensated"),
-                               (100, "latency_100ms", "latency_100ms_compensated")):
+    for ms, without, with_ in ((20, "camera_reference", "camera"),
+                               (60, "latency_60ms_uncompensated", "latency_60ms"),
+                               (100, "latency_100ms_uncompensated", "latency_100ms")):
         for compensated, case in ((False, without), (True, with_)):
             rs = runs[case]
             if compensated:
@@ -420,14 +456,15 @@ def write_report(data: dict, path: str = os.path.join("results", "report.md")) -
                "Δ (with - without)", "Circle error", "Δ circle error (with - without)"], rows)
 
     rep.section("6. Square trajectory (10 cm sides, 5 cm/s), latency 20 ms")
-    without = [square_error(r) for r in runs["square"]]
-    with_ = [square_error(r) for r in runs["square_compensated"]]
+    without = [square_error(r) for r in runs["square_uncompensated"]]
+    with_ = [square_error(r) for r in runs["square"]]
     rep.table(["Compensation", "Fallen", "Error (2nd lap)", "Δ (with - without)"], [
-        ["without", fallen(runs["square"]), fmt(without, " mm", scale=1000), "-"],
-        ["with", fallen(runs["square_compensated"]), fmt(with_, " mm", scale=1000),
+        ["without", fallen(runs["square_uncompensated"]), fmt(without, " mm", scale=1000), "-"],
+        ["with", fallen(runs["square"]), fmt(with_, " mm", scale=1000),
          fmt_delta(without, with_, " mm", scale=1000)]])
 
-    rep.section("7. Simple physics → MuJoCo on the 3-arm robot: the gap, term by term (synthetic sensor)")
+    rep.section("7. Simple physics → MuJoCo on the 3-arm robot: the gap, term by term "
+                "(synthetic sensor, reference controller)")
     base = [circle_error(r) for r in runs["simple_robot"]]
     gap = paired_delta(base, [circle_error(r) for r in runs["mujoco_robot"]])[0]
     tau_ms = 1000 * PM.kv_servo / PM.kp_servo
@@ -467,7 +504,7 @@ def show_figures(data: dict) -> None:
     a1.legend(fontsize=7)
     a1.grid(True)
 
-    for case, label in (("latency_100ms", "without compensation"), ("latency_100ms_compensated", "with compensation")):
+    for case, label in (("latency_100ms_uncompensated", "without compensation"), ("latency_100ms", "with compensation")):
         r = runs[case][0]
         a2.plot(r.t, [math.hypot(a - c, b - d) * 1000 for a, b, c, d in zip(r.x, r.y, r.x_ref, r.y_ref)], label=label)
     a2.set_ylim(0, 40)
@@ -477,7 +514,7 @@ def show_figures(data: dict) -> None:
     a2.legend(fontsize=8)
     a2.grid(True)
 
-    for case, label in (("square", "without compensation"), ("square_compensated", "with compensation")):
+    for case, label in (("square_uncompensated", "without compensation"), ("square", "with compensation")):
         r = runs[case][0]
         keep = [i for i, t in enumerate(r.t) if t >= 8]
         a3.plot([r.x[i] * 100 for i in keep], [r.y[i] * 100 for i in keep], label=label)
@@ -489,14 +526,11 @@ def show_figures(data: dict) -> None:
     a3.legend(fontsize=8)
     a3.grid(True)
 
-    variants = {"Nominal (ping-pong, μ = 1)": "camera", "Solid ball (k = 2/5)": "solid_ball",
-                "Ball 10× heavier (27 g)": "heavy_ball", "Friction μ = 0.2": "friction_0.2",
-                "Friction μ = 0.02": "friction_0.02", "Plate 2× heavier (0.5 kg)": "heavy_plate"}
-    stats = [mean_std([1000 * circle_error(r) for r in runs[case]]) for case in variants.values()]
-    a4.barh(range(len(variants)), [m for m, _ in stats],
+    stats = [mean_std([1000 * circle_error(r) for r in runs[case]]) for case in ROBUSTNESS.values()]
+    a4.barh(range(len(ROBUSTNESS)), [m for m, _ in stats],
             xerr=[0.0 if math.isnan(s) else s for _, s in stats], color="tab:blue", capsize=3)
-    a4.set_yticks(range(len(variants)))
-    a4.set_yticklabels(list(variants), fontsize=8)
+    a4.set_yticks(range(len(ROBUSTNESS)))
+    a4.set_yticklabels(list(ROBUSTNESS), fontsize=8)
     a4.invert_yaxis()
     a4.set_xlabel("Error on the circle (mm), mean ± std over the draws")
     a4.set_title("Robustness to physical parameters")

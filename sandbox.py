@@ -89,7 +89,7 @@ class Sandbox:
         self.r_latency.on_clicked(lambda name: self.actions.put(
             lambda: self.s.set_latency(LATENCIES[name])))
         self.c_compensation = CheckButtons(fig.add_axes((0.02, 0.29, 0.29, 0.05)),
-                                           ["Latency compensation"], [False])
+                                           ["Latency compensation"], [self.s.cfg.latency_compensation])
         self.c_compensation.on_clicked(lambda _: self.actions.put(
             lambda a=self.c_compensation.get_status()[0]: self.s.set_compensation(a)))
 

@@ -133,7 +133,7 @@ class Config:
     theta_max: float = math.radians(10)
     tau_d: float = 0.05                # derivative filter (s); 0: no filter
     feedforward: bool = True
-    latency_compensation: bool = False  # predict the current position despite the latency
+    latency_compensation: bool = True   # predict the current position despite the latency (part of the PID brain)
 
     def kd(self) -> float:
         """Kd giving the target damping ζ: 2·ζ·ω0 = c·g·Kd, with ω0 = √(c·g·Kp)."""

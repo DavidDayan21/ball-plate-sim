@@ -4,8 +4,22 @@ Simulated chain: MuJoCo (3-arm robot, motor ramps) + 160×120 camera + OpenCV + 
 
 Each case is simulated over 10 draw(s). Draw 0 is the nominal configuration; draw k ≥ 1 uses noise seed k and a start position shifted by up to ±0.5 mm on each axis (the only source of variation for the camera cases). Values: mean ± standard deviation over the draws; draws where the ball fell are counted in 'Fallen' and left out of the other columns. Δ: mean of the paired differences over the same draws ± standard error, in **bold** when significant (paired t-test at the 5 % level: |Δ| > t × standard error, t = 97.5 % quantile of Student's distribution, 2.26 for 10 draws).
 
+The brain is the PID with its latency compensation (default settings): it is judged by the objectives and sections 2 to 6. Sections 0 and 7 validate the simulator: they use a frozen reference controller (the PID without latency compensation).
 
-## 0. From the simple model to the full chain (reference scenario, same settings)
+
+## Objectives of the brain (full chain with the camera)
+
+| Objective | Measured | Target | Met |
+|---|---|---|---|
+| Thrown ball caught (±10°) | 70 ± 0 % | ≥ 90 % of the physical limit | **no** |
+| Circle with 60 ms of latency | 1.66 ± 0.01 mm | < 2 mm | yes |
+| Back to the center in less than 2 s | 32.13 ± 0.11 mm | ≤ 5 mm between 2 s and 4 s | **no** |
+| No fall in the robustness variants | 0/60 falls | 0 | yes |
+
+Judged on the mean over the draws. Thrown ball: maximum speed caught at ±10° divided by the physical limit (section 2). Return: start 10 cm away, setpoint at the center (section 0). Robustness: every variant and every draw of section 4.
+
+
+## 0. From the simple model to the full chain (reference scenario, reference controller)
 
 | Level | Fallen | Arrival (first time < 5 mm) | Overshoot after arrival | Max distance between 2 s and 4 s |
 |---|---|---|---|---|
@@ -42,7 +56,7 @@ Circle: 6 cm radius in 4 s, error = root-mean-square distance from 12 s to 20 s.
 
 | Max tilt | Max speed caught | Physical limit √(2·c·g·sin θmax·d) | Share of the limit | Monotonic around the threshold (draw 0) |
 |---|---|---|---|---|
-| ±10° | 0.51 ± 0.00 m/s | 0.71 m/s | 71 ± 0 % | yes |
+| ±10° | 0.50 ± 0.00 m/s | 0.71 m/s | 70 ± 0 % | yes |
 | ±20° | 0.62 ± 0.00 m/s | 1.00 m/s | 62 ± 0 % | yes |
 
 
@@ -59,12 +73,12 @@ Maximum speeds found by bisection, to 0.01 m/s, between 0.1 and 1.5 m/s. Distanc
 
 | Variant | Fallen | Max distance between 2 s and 4 s | Circle error | Δ circle error vs nominal | Airborne |
 |---|---|---|---|---|---|
-| Nominal (ping-pong, μ = 1) | 0/10 | 30.80 ± 0.12 mm | 4.61 ± 0.03 mm | - | 0.0 ± 0.0 % |
-| Solid ball (k = 2/5) | 0/10 | 26.62 ± 0.09 mm | 7.11 ± 0.02 mm | **+2.50 ± 0.01 mm** | 0.0 ± 0.0 % |
-| Ball 10× heavier (27 g) | 0/10 | 30.99 ± 0.08 mm | 4.59 ± 0.02 mm | -0.01 ± 0.01 mm | 0.0 ± 0.0 % |
-| Friction μ = 0.2 | 0/10 | 30.87 ± 0.13 mm | 4.48 ± 0.04 mm | **-0.12 ± 0.01 mm** | 0.0 ± 0.0 % |
-| Friction μ = 0.02 | 0/10 | 30.55 ± 0.06 mm | 4.47 ± 0.02 mm | **-0.14 ± 0.01 mm** | 0.0 ± 0.0 % |
-| Plate 2× heavier (0.5 kg) | 0/10 | 30.83 ± 0.07 mm | 4.58 ± 0.05 mm | -0.02 ± 0.02 mm | 0.0 ± 0.0 % |
+| Nominal (ping-pong, μ = 1) | 0/10 | 32.13 ± 0.11 mm | 1.46 ± 0.02 mm | - | 0.0 ± 0.0 % |
+| Solid ball (k = 2/5) | 0/10 | 27.65 ± 0.07 mm | 5.56 ± 0.01 mm | **+4.10 ± 0.01 mm** | 0.0 ± 0.0 % |
+| Ball 10× heavier (27 g) | 0/10 | 32.33 ± 0.05 mm | 1.45 ± 0.01 mm | -0.01 ± 0.01 mm | 0.0 ± 0.0 % |
+| Friction μ = 0.2 | 0/10 | 32.18 ± 0.10 mm | 1.40 ± 0.02 mm | **-0.06 ± 0.01 mm** | 0.0 ± 0.0 % |
+| Friction μ = 0.02 | 0/10 | 31.61 ± 0.08 mm | 1.40 ± 0.03 mm | **-0.07 ± 0.01 mm** | 0.0 ± 0.0 % |
+| Plate 2× heavier (0.5 kg) | 0/10 | 32.12 ± 0.08 mm | 1.48 ± 0.03 mm | +0.02 ± 0.01 mm | 0.0 ± 0.0 % |
 
 
 ## 5. Camera latency: without and with compensation by prediction
@@ -87,7 +101,7 @@ Maximum speeds found by bisection, to 0.01 m/s, between 0.1 and 1.5 m/s. Distanc
 | with | 0/10 | 9.34 ± 0.01 mm | **-0.49 ± 0.01 mm** |
 
 
-## 7. Simple physics → MuJoCo on the 3-arm robot: the gap, term by term (synthetic sensor)
+## 7. Simple physics → MuJoCo on the 3-arm robot: the gap, term by term (synthetic sensor, reference controller)
 
 | Model | Fallen | Circle error | Δ vs basic model | Share of the MuJoCo gap |
 |---|---|---|---|---|

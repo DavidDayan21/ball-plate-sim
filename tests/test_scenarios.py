@@ -64,11 +64,14 @@ def test_robot_driven_by_camera():
 
 
 def test_latency_degrades_tracking():
-    assert circle_error(Config(sensor="camera", latency=5)) > 2 * circle_error(Config(sensor="camera"))
+    uncompensated = Config(sensor="camera", latency_compensation=False)
+    assert circle_error(replace(uncompensated, latency=5)) > 2 * circle_error(uncompensated)
 
 
 def test_latency_compensation():
-    assert circle_error(Config(latency=5, latency_compensation=True)) < 0.5 * circle_error(Config(latency=5))
+    # Compensation is on by default (part of the PID brain)
+    assert Config().latency_compensation
+    assert circle_error(Config(latency=5)) < 0.5 * circle_error(Config(latency=5, latency_compensation=False))
 
 
 def test_thrown_ball_caught():
