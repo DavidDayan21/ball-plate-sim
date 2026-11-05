@@ -136,7 +136,8 @@ International CSV format: `,` separator, decimal point, UTF-8 encoding (no BOM).
 | Ball | Ping-pong: radius 2 cm, 2.7 g, hollow (J = 2/3·m·r²) |
 | Ball-plate contact | Target restitution 0.88 (ITTF rule: dropped from 30.5 cm, bounces back to 22-25 cm), stiffness 200 Hz, simulation step 0.5 ms |
 | Mechanism | 3 arms of 5 cm, rods of 12 cm, ball joints 10 cm from the center |
-| Motors | 10 rad/s, 1/16 microsteps, ramps at 50 rad/s², max torque 0.4 N·m |
+| Motors | 10 rad/s, 1/16 microsteps, ramps at 50 rad/s², max torque 0.4 N·m; in MuJoCo, position servos (kp = 50 N·m/rad, kv = 0.5 N·m·s/rad) that lag their target by τ = kv/kp = 10 ms |
+| Simple physics | Basic model ẍ = c·g·sin θ; optional additions (`Config`): rolling term r·θ̈, rotating-frame terms, exact gravity, servo lag. The full equation is derived in `simulation/simple_physics.py` and checked against MuJoCo |
 | Sensor | Camera 50 cm above the plate, 50 Hz, latency 20 ms |
 | Controller | 50 Hz, Kp = 1 rad/m, Ki = 1 rad/(m·s), ζ = 0.7, max tilt ±10° |
 

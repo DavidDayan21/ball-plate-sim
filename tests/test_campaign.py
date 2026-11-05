@@ -55,7 +55,8 @@ def test_max_caught_by_bisection():
 
 def test_campaign_end_to_end(tmp_path, monkeypatch):
     # Whole pipeline (simulations, bisections, report, figures) in simple physics, to stay fast
-    simple = {"physics": "simple", "mechanism": False, "sensor": "synthetic"}
+    simple = {"physics": "simple", "mechanism": False, "sensor": "synthetic", "rolling_term": False,
+              "frame_terms": False, "exact_gravity": False, "servo_lag": False}
     monkeypatch.setattr(cp, "BASE", replace(cp.BASE, **simple))
     monkeypatch.setattr(cp, "CASES", {name: replace(cfg, **simple) for name, cfg in cp.CASES.items()})
     monkeypatch.setattr(cp.plt, "show", lambda: None)
@@ -65,6 +66,6 @@ def test_campaign_end_to_end(tmp_path, monkeypatch):
     report = tmp_path / "report.md"
     cp.write_report(data, str(report))
     text = report.read_text(encoding="utf-8")
-    assert all(f"## {i}." in text for i in range(7)) and "| 0/2 |" in text and " ± " in text
+    assert all(f"## {i}." in text for i in range(8)) and "| 0/2 |" in text and " ± " in text
     cp.show_figures(data)
     cp.plt.close("all")

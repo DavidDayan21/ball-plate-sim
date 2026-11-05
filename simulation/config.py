@@ -98,6 +98,11 @@ class Config:
     # Physics
     physics: str = "mujoco"            # "simple" (our own equations) or "mujoco"
     mechanism: bool = True             # True: 3 motors + kinematics; False: angles applied directly
+    # Simple physics: additions to the basic model (simulation/simple_physics.py), all off by default
+    rolling_term: bool = False         # r·Ω̇: the plate turns under the ball
+    frame_terms: bool = False          # Euler, centrifugal and Coriolis accelerations of the rotating plate
+    exact_gravity: bool = False        # gravity projected exactly on the tilted plate (couples the axes)
+    servo_lag: bool = False            # motors lag their target like the MuJoCo servos (τ = kv/kp)
     plate: PlateParams = field(default_factory=lambda: PlateParams(
         bias_x=math.radians(0.5), bias_y=math.radians(-0.3)))
     geometry: Geometry = field(default_factory=Geometry)

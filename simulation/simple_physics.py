@@ -1,13 +1,31 @@
 """Simple physics: our own equations, without an external physics engine.
 
-Ball on a plate, decoupled model (small angles), integrated with semi-implicit Euler:
+Basic model (the default), decoupled, small angles, integrated with semi-implicit Euler:
     ẍ = c·g·sin(θx + bx)        ÿ = c·g·sin(θy + by)        c = 1 / (1 + k)
 
-Assumptions: rolling without slipping, permanent contact, coupling between axes and effects of the
-plate rotation neglected. With mechanism=True, the angles go through the 3 motors
-(simulation/motor.py) and the actual tilt is given by the forward kinematics.
+Full equation of a ball rolling without slipping on a plate that rotates about the center O of its
+surface (derived in the plate frame, and checked against MuJoCo: tests/test_physics.py):
+    (1 + k)·(ẍ + r·Ω̇2) = g1 + Ω̇3·y − [Ω×(Ω×p)]1 − 2·[Ω×ṗ]1
+    (1 + k)·(ÿ − r·Ω̇1) = g2 − Ω̇3·x − [Ω×(Ω×p)]2 − 2·[Ω×ṗ]2
+with p = (x, y, r) the center of the ball, ṗ = (ẋ, ẏ, 0), Ω = (−θ̇y, θ̇x·cos θy, θ̇x·sin θy) the angular
+velocity of the plate (rotation R = Ry(θx)·Rx(−θy)) and (g1, g2) = (g·sin θx, g·cos θx·sin θy) the
+gravity along the plate. If O itself accelerates (aO), aO is subtracted from (g1, g2): not modeled
+here, O is fixed. In 1D: ẍ = (g·sin θ + x·θ̇²)/(1 + k) − r·θ̈.
 
-Serves as the theoretical reference: its results can be derived by hand (see tests/test_controller.py).
+The additions to the basic model can be switched on one by one (Config, all off by default):
+    rolling_term     r·Ω̇: the plate turns under the ball (in 1D, the ball moves by −r·Δθ)
+    frame_terms      Euler (Ω̇3), centrifugal and Coriolis accelerations of the rotating plate
+    exact_gravity    gravity projected exactly on the tilted plate (cos θx couples the axes)
+    servo_lag        the motors follow their target with a first-order lag τ = kv/kp, like the
+                     position servos of the MuJoCo model
+They need the mechanism (continuous tilt): without it, the tilt jumps at every command.
+
+Assumptions: rolling without slipping, permanent contact, spin of the ball about the normal neglected
+(third-order terms). With mechanism=True, the angles go through the 3 motors (simulation/motor.py)
+and the actual tilt is given by the forward kinematics.
+
+The basic model serves as the theoretical reference: its results can be derived by hand
+(see tests/test_controller.py).
 """
 import math
 
@@ -30,6 +48,23 @@ def semi_implicit_step(x, y, vx, vy, theta_x, theta_y, dt, p: PlateParams):
     return x + vx * dt, y + vy * dt, vx, vy
 
 
+def rotating_plate_acceleration(p, v, omega, domega, gravity, k: float, frame: bool = True):
+    """(ẍ + r·Ω̇2, ÿ − r·Ω̇1) given by the full equation (see the module docstring), in the plate frame.
+
+    p = (x, y, r), v = (ẋ, ẏ), omega = Ω, domega = Ω̇, gravity = (g1, g2), minus aO if O accelerates.
+    frame=False: gravity only (no Euler, centrifugal or Coriolis term).
+    """
+    g1, g2 = gravity
+    if frame:
+        x, y, r = p
+        o1, o2, o3 = omega
+        dot = o1 * x + o2 * y + o3 * r                  # Ω·p
+        norm2 = o1 * o1 + o2 * o2 + o3 * o3             # |Ω|²; −Ω×(Ω×p) = |Ω|²·p − (Ω·p)·Ω
+        g1 += domega[2] * y + norm2 * x - dot * o1 + 2 * o3 * v[1]     # −2·Ω×ṗ = (2·Ω3·ẏ, −2·Ω3·ẋ)
+        g2 += -domega[2] * x + norm2 * y - dot * o2 - 2 * o3 * v[0]
+    return g1 / (1 + k), g2 / (1 + k)
+
+
 class SimplePhysics:
     def __init__(self, cfg: Config):
         self.p, self.g = cfg.plate, cfg.geometry
@@ -38,6 +73,16 @@ class SimplePhysics:
         self.vx, self.vy = cfg.start_velocity
         self.commanded_tilt = (0.0, 0.0)
         self.unreachable_poses = 0
+        # Additions to the basic model
+        self.rolling, self.frame, self.exact_gravity = cfg.rolling_term, cfg.frame_terms, cfg.exact_gravity
+        self.extended = self.rolling or self.frame or self.exact_gravity
+        pm = cfg.mujoco_params
+        self.servo_tau = pm.kv_servo / pm.kp_servo if cfg.servo_lag else 0.0
+        if (self.extended or self.servo_tau) and not self.mechanism:
+            raise ValueError("The additions to the simple physics need mechanism=True (continuous tilt)")
+        self.k, self.r = cfg.plate.k_inertia, cfg.plate.ball_radius
+        self.previous_tilt = (0.0, 0.0)
+        self.omega = (0.0, 0.0, 0.0)
         if self.mechanism:
             self.alphas = inverse_kinematics(self.g, 0.0, 0.0)
             self.motors = [Motor(a, cfg.max_speed, cfg.resolution, max_acceleration=cfg.max_acceleration)
@@ -83,9 +128,32 @@ class SimplePhysics:
     def step(self, dt: float) -> None:
         if self.mechanism:
             new_angles = tuple(m.advance(dt) for m in self.motors)
+            if self.servo_tau:                  # first-order lag, discretized exactly
+                gain = 1 - math.exp(-dt / self.servo_tau)
+                new_angles = tuple(a + (t - a) * gain for a, t in zip(self.alphas, new_angles))
             if new_angles != self.alphas:          # the pose only changes if a motor has moved
                 self.alphas = new_angles
                 self.pose = forward_kinematics(self.g, self.alphas, initial_pose=self.pose)
         tx, ty = self.actual_tilt()
-        self.x, self.y, self.vx, self.vy = semi_implicit_step(self.x, self.y, self.vx, self.vy,
-                                                              tx, ty, dt, self.p)
+        if not self.extended:
+            self.x, self.y, self.vx, self.vy = semi_implicit_step(self.x, self.y, self.vx, self.vy,
+                                                                  tx, ty, dt, self.p)
+            return
+        # Full equation: Ω from the tilts by finite differences, angles of the plate including the bias
+        bx, by = tx + self.p.bias_x, ty + self.p.bias_y
+        dtx, dty = (tx - self.previous_tilt[0]) / dt, (ty - self.previous_tilt[1]) / dt
+        self.previous_tilt = (tx, ty)
+        omega = (-dty, dtx * math.cos(by), dtx * math.sin(by))
+        domega = tuple((a - b) / dt for a, b in zip(omega, self.omega))
+        previous, self.omega = self.omega, omega
+        g1 = G * math.sin(bx)
+        g2 = G * math.cos(bx) * math.sin(by) if self.exact_gravity else G * math.sin(by)
+        a1, a2 = rotating_plate_acceleration((self.x, self.y, self.r), (self.vx, self.vy), omega, domega,
+                                             (g1, g2), self.k, self.frame)
+        self.vx += a1 * dt
+        self.vy += a2 * dt
+        if self.rolling:                        # d/dt(ẋ + r·Ω2) = a1 and d/dt(ẏ − r·Ω1) = a2
+            self.vx -= self.r * (omega[1] - previous[1])
+            self.vy += self.r * (omega[0] - previous[0])
+        self.x += self.vx * dt
+        self.y += self.vy * dt

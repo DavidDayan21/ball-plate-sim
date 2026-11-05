@@ -11,7 +11,8 @@ Cases covered (seed 0, default settings), list frozen here because campaign.py w
     - all the simulations of the measurement campaign of 2026-11-03 (commit 7f2fd90);
     - its sweeps, reduced to two points around the limit (throws at ±10° and ±20°, pushes);
     - the physics validation (rolling, sliding, bounce);
-    - a sandbox sequence: drop, throw caught, throw too fast.
+    - a sandbox sequence: drop, throw caught, throw too fast;
+    - added later: the simple physics with all its additions (full equation, servo lag).
 
 Bit-exact identity is only meaningful on the same machine, with the same versions: as soon as the
 ball bounces, Windows and Linux diverge. The reference therefore records the platform and the
@@ -84,6 +85,9 @@ SIMULATIONS = {
     "square": replace(CAMERA, trajectory=square, duration=16.0, start_position=(0.05, 0.05)),
     "square_compensated": replace(CAMERA, trajectory=square, duration=16.0, start_position=(0.05, 0.05),
                               latency_compensation=True),
+    # Added after the first reference
+    "simple_robot_full_equation": Config(physics="simple", rolling_term=True, frame_terms=True,
+                                         exact_gravity=True, servo_lag=True),
 }
 
 

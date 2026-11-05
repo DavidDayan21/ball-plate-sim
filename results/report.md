@@ -86,3 +86,18 @@ Maximum speeds found by bisection, to 0.01 m/s, between 0.1 and 1.5 m/s. Distanc
 | without | 0/10 | 9.83 ± 0.01 mm | - |
 | with | 0/10 | 9.34 ± 0.01 mm | **-0.49 ± 0.01 mm** |
 
+
+## 7. Simple physics → MuJoCo on the 3-arm robot: the gap, term by term (synthetic sensor)
+
+| Model | Fallen | Circle error | Δ vs basic model | Share of the MuJoCo gap |
+|---|---|---|---|---|
+| Simple physics, basic model | 0/10 | 4.75 ± 0.45 mm | - | - |
+| + r·θ̈ (the plate turns under the ball) | 0/10 | 4.90 ± 0.42 mm | +0.15 ± 0.12 mm | 23 % |
+| + rotating-frame terms (Euler, centrifugal, Coriolis) | 0/10 | 4.79 ± 0.39 mm | +0.04 ± 0.05 mm | 6 % |
+| + exact projection of gravity | 0/10 | 4.73 ± 0.32 mm | -0.02 ± 0.08 mm | -3 % |
+| + servo lag (τ = kv/kp = 10 ms) | 0/10 | 5.33 ± 0.29 mm | **+0.58 ± 0.08 mm** | 90 % |
+| + all of the above | 0/10 | 5.34 ± 0.37 mm | **+0.59 ± 0.13 mm** | 92 % |
+| MuJoCo | 0/10 | 5.39 ± 0.45 mm | **+0.64 ± 0.09 mm** | 100 % |
+
+Each addition is switched on alone in the simple physics (simulation/simple_physics.py). A gap is explained when the share predicted by a model is within 80 to 120 %.
+
