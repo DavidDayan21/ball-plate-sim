@@ -2,7 +2,9 @@
 
 Simulation d'un robot équilibriste (« ball and plate ») : un plateau incliné par 3 moteurs maintient
 une balle en équilibre, la rattrape quand on la lance, et lui fait suivre une trajectoire.
-Objectif : maîtriser entièrement la simulation (chaque écart expliqué et chiffré) avant toute construction.
+Objectif : un logiciel ludique, utilisable sans aucune notion de code, pour jouer avec le robot et
+comparer deux « cerveaux » qui le pilotent : un PID et une IA locale. La physique est calculée par MuJoCo.
+Construire le vrai robot reste un objectif lointain : le code sera alors prêt.
 
 ## État d'avancement
 
@@ -15,12 +17,15 @@ Objectif : maîtriser entièrement la simulation (chaque écart expliqué et chi
 | Robustesse | Balle lancée, poussées, paramètres physiques, latence (`campagne.py`) | Fait |
 | Contact réaliste | Rebond de balle de ping-pong conforme à la règle ITTF (e = 0,874) | Fait |
 | Bac à sable 3D | Lancers, lâchers, rebonds, poussées, consignes, données de chaque tentative | Fait |
-| Écarts | Expliquer et chiffrer chaque écart entre modèles et objectifs | **Prochaine étape** |
-| Contrôleur optimisé | Réglage systématique, LQR, approche de la limite physique | À faire |
-| Conception | Taille et forme du plateau, longueur et nombre de bras | À faire |
-| Défauts réels | Caméra (bruit, flou), jeu mécanique, courbe couple-vitesse | À faire |
+| A. Mesures fiables | Non-régression au bit près, dispersion sur N tirages, indicateurs robustes, écart maison → MuJoCo | **En cours** |
+| B. Cerveau PID | Gains réglés par LQR, plateau à plat pendant les rebonds, commande adaptative | À faire |
+| C. Cerveau IA locale | Entraînement dans MuJoCo, mêmes règles que le PID (capteur, moteurs, ±10°) | À faire |
+| D. Logiciel grand public | Physique MuJoCo dans notre interface, choix du cerveau, comparatif | À faire |
+| E. Construction (lointaine) | Conception, défauts réels, budget d'erreur complet | Plus tard |
 
-La construction n'est envisagée qu'une fois toutes ces étapes validées.
+Objectifs chiffrés des deux cerveaux : balle lancée rattrapée jusqu'à 90 % de la limite physique au moins,
+erreur sur le cercle < 2 mm avec 60 ms de latence, retour au centre < 2 s, aucune chute dans les variantes
+de robustesse.
 
 ## Structure
 
@@ -39,10 +44,12 @@ simulation/
   camera.py              Caméra virtuelle : rendu, détection OpenCV, projection
   indicateurs.py         Indicateurs : erreur de suivi, temps de réponse, agitation de la commande
   session.py             Bac à sable : suite de tentatives, fin automatique, enregistrement CSV
+  parallele.py           Simulations indépendantes réparties sur plusieurs processus
 tests/                   Tests automatiques, par thème (contrôleur, mécanique, capteurs, physique,
-                         scénarios, session)
+                         scénarios, session, non-régression)
 campagne.py              Campagne de mesures complète -> results/bilan.md
 bac_a_sable.py           Le robot en 3D et en temps réel, piloté depuis un panneau de commandes
+non_regression.py        Vérifie qu'une modification laisse tous les résultats identiques au bit près
 ```
 
 ## Installation (Windows)
@@ -63,7 +70,14 @@ python bac_a_sable.py         # bac à sable 3D (voir ci-dessous)
 python bac_a_sable.py --camera                         # idem, balle mesurée par la caméra virtuelle
 python -m simulation.physique_mujoco                   # exporte les modèles dans results/
 python -m mujoco.viewer --mjcf=results/robot.xml       # ouvre le modèle seul dans MuJoCo
+python non_regression.py --enregistrer    # avant une modification : référence de tous les résultats
+python non_regression.py --comparer       # après : vérifie qu'ils sont identiques au bit près
 ```
+
+Non-régression : toute refactorisation doit laisser les résultats identiques au bit près. La référence
+(`results/reference/`, ignorée par git) couvre tous les cas de la campagne, la validation de la physique
+et un enchaînement du bac à sable. Elle n'est valable que sur la machine et avec les versions qui l'ont
+produite (Windows et Linux divergent dès que la balle rebondit) : la comparaison prévient si elles ont changé.
 
 Une simulation se décrit par une `Config` ; tout ce qui n'est pas précisé prend la valeur de référence :
 

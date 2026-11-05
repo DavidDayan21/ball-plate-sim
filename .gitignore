@@ -22,3 +22,6 @@ results/*.xml
 
 # Données des tentatives du bac à sable (propres à chaque essai)
 results/tentatives/
+
+# Référence de non-régression (propre à chaque machine, se régénère avec non_regression.py)
+results/reference/
