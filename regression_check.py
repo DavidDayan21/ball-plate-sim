@@ -1,13 +1,13 @@
 """Non-régression au bit près : enregistre les résultats de toutes les simulations, puis vérifie
 qu'une modification du code ne les change pas (règle 5 du projet).
 
-    python non_regression.py --enregistrer     AVANT la modification : écrit la référence
-    python non_regression.py --comparer        APRÈS : liste les écarts (code de sortie 1 s'il y en a)
-    python non_regression.py --comparer --par-position
+    python regression_check.py --enregistrer     AVANT la modification : écrit la référence
+    python regression_check.py --comparer        APRÈS : liste les écarts (code de sortie 1 s'il y en a)
+    python regression_check.py --comparer --par-position
                                                idem quand des noms ont changé (traduction, renommage) :
                                                les résultats sont appariés dans leur ordre d'enregistrement
 
-Cas couverts (graine 0, réglages par défaut), liste figée ici car campagne.py va évoluer :
+Cas couverts (graine 0, réglages par défaut), liste figée ici car campaign.py va évoluer :
     - toutes les simulations de la campagne de mesures du 03/11/2026 (commit 7f2fd90) ;
     - ses balayages, réduits à deux points autour de la limite (lancers à ±10° et ±20°, poussées) ;
     - la validation de la physique (roulement, glissement, rebond) ;
@@ -32,10 +32,10 @@ import time
 
 import numpy as np
 
-from simulation.boucle import Resultats, simuler
+from simulation.loop import Resultats, simuler
 from simulation.config import Config, ParametresCamera, carre, centre
-from simulation.parallele import executer
-from simulation.physique_mujoco import acceleration_roulement, restitution_mesuree
+from simulation.parallel import executer
+from simulation.mujoco_physics import acceleration_roulement, restitution_mesuree
 from simulation.session import Session
 
 FICHIER = Path(__file__).parent / "results" / "reference" / "reference.npz"

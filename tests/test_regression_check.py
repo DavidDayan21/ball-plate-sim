@@ -1,13 +1,13 @@
-"""Outil de non-régression au bit près (non_regression.py) et exécution en parallèle."""
+"""Outil de non-régression au bit près (regression_check.py) et exécution en parallèle."""
 from dataclasses import fields, replace
 import math
 
 import numpy as np
 
-import non_regression as nr
-from simulation.boucle import Resultats, simuler
+import regression_check as nr
+from simulation.loop import Resultats, simuler
 from simulation.config import Config
-from simulation.parallele import executer
+from simulation.parallel import executer
 
 COURT = Config(physique="simple", mecanisme=False, duree=1.0)
 

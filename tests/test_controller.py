@@ -7,9 +7,9 @@ import math
 from dataclasses import replace
 
 from controller.pid import PID
-from controller.plateau import PredicteurRetard
+from controller.plate import PredicteurRetard
 from simulation.config import G, ParametresPlateau
-from simulation.physique_simple import acceleration
+from simulation.simple_physics import acceleration
 
 P = ParametresPlateau()
 CG = P.coefficient * G

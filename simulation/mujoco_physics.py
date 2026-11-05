@@ -7,7 +7,7 @@ Deux modèles, avec une caméra fixe « camera_haut » au-dessus du plateau :
       la chaîne : 6 + 3 + 3 - 3×3 = 3 degrés de liberté, pilotés par les 3 moteurs.
 
 Exporter les modèles pour les ouvrir dans le visualiseur MuJoCo :
-    python -m simulation.physique_mujoco
+    python -m simulation.mujoco_physics
     python -m mujoco.viewer --mjcf=results/robot.xml
 """
 import math
@@ -16,9 +16,9 @@ import os
 import mujoco
 import numpy as np
 
-from controller.cinematique import cinematique_inverse
+from controller.kinematics import cinematique_inverse
 from simulation.config import Config, ParametresMujoco
-from simulation.moteur import Moteur
+from simulation.motor import Moteur
 
 # --- Contact balle-plateau ------------------------------------------------------------------------
 DECOLLEMENT = 1e-4      # (m) balle « décollée » : plus de 0,1 mm au-dessus du plateau. En dessous, les
@@ -299,7 +299,7 @@ def restitution_mesuree(pm: ParametresMujoco = None, hauteur: float = 0.305, dt:
 
 if __name__ == "__main__":
     os.makedirs("results", exist_ok=True)
-    for nom, mecanisme in (("plateau.xml", False), ("robot.xml", True)):
+    for nom, mecanisme in (("plate.xml", False), ("robot.xml", True)):
         chemin = os.path.join("results", nom)
         with open(chemin, "w", encoding="utf-8") as f:
             f.write(xml_modele(Config(mecanisme=mecanisme, depart=(0.0, 0.0))))

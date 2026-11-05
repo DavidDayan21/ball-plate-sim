@@ -1,4 +1,4 @@
-"""Indicateurs de performance calculés sur un historique (simulation/boucle.py : Resultats)."""
+"""Indicateurs de performance calculés sur un historique (simulation/loop.py : Resultats)."""
 import math
 
 

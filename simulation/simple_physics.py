@@ -5,15 +5,15 @@ Balle sur plateau, modèle découplé (petits angles), intégré par Euler semi-
 
 Hypothèses : roulement sans glissement, contact permanent, couplage entre axes et effets de la
 rotation du plateau négligés. Avec mecanisme=True, les angles passent par les 3 moteurs
-(simulation/moteur.py) et l'inclinaison réelle est donnée par la cinématique directe.
+(simulation/motor.py) et l'inclinaison réelle est donnée par la cinématique directe.
 
-Sert de référence théorique : ses résultats se démontrent à la main (voir tests/test_controleur.py).
+Sert de référence théorique : ses résultats se démontrent à la main (voir tests/test_controller.py).
 """
 import math
 
-from controller.cinematique import cinematique_directe, cinematique_inverse
+from controller.kinematics import cinematique_directe, cinematique_inverse
 from simulation.config import G, Config, ParametresPlateau
-from simulation.moteur import Moteur
+from simulation.motor import Moteur
 
 
 def acceleration(theta_x: float, theta_y: float, p: ParametresPlateau):

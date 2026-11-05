@@ -2,7 +2,7 @@
 
 Chaque simulation est déterministe et ne partage rien avec les autres : les lancer dans des
 processus séparés donne exactement les mêmes résultats qu'à la suite (vérifié dans
-tests/test_non_regression.py).
+tests/test_regression_check.py).
 
 Chaque processus redémarre Python (méthode « spawn », celle de Windows, imposée aussi sous Linux
 pour un comportement identique) : le script appelant doit protéger son code principal par

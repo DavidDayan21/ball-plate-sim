@@ -14,7 +14,7 @@ Construire le vrai robot reste un objectif lointain : le code sera alors prêt.
 | Contrôle | PID filtré, anti-windup, anticipation, compensation de latence par prédiction | Fait |
 | Mécanisme | 3 bras, cinématique inverse exacte et directe, moteurs pas à pas avec rampes | Fait |
 | Capteur | Caméra virtuelle, détection OpenCV, projection sténopé | Fait |
-| Robustesse | Balle lancée, poussées, paramètres physiques, latence (`campagne.py`) | Fait |
+| Robustesse | Balle lancée, poussées, paramètres physiques, latence (`campaign.py`) | Fait |
 | Contact réaliste | Rebond de balle de ping-pong conforme à la règle ITTF (e = 0,874) | Fait |
 | Bac à sable 3D | Lancers, lâchers, rebonds, poussées, consignes, données de chaque tentative | Fait |
 | A. Mesures fiables | Non-régression au bit près, dispersion sur N tirages, indicateurs robustes, écart maison → MuJoCo | **En cours** |
@@ -32,24 +32,24 @@ de robustesse.
 ```text
 controller/              Ce qui tournerait sur le vrai robot (indépendant du simulateur)
   pid.py                 PID : filtre de dérivée, saturation, anti-windup, anticipation
-  plateau.py             2 PID (axes x, y) + anticipation + prédicteur de latence
-  cinematique.py         Géométrie, cinématique inverse (exacte) et directe (Newton)
+  plate.py               2 PID (axes x, y) + anticipation + prédicteur de latence
+  kinematics.py          Géométrie, cinématique inverse (exacte) et directe (Newton)
 simulation/
   config.py              Configuration unique, paramètres physiques, trajectoires de consigne
-  boucle.py              Boucle fermée unique : capteur -> contrôleur -> moteurs -> physique
-  physique_simple.py     Physique maison (référence théorique)
-  physique_mujoco.py     Physique MuJoCo : génération des modèles 3D, contact, interface, validation
-  moteur.py              Moteur pas à pas : vitesse max, micro-pas, butées, rampes
-  capteur.py             Capteur fictif : bruit + latence
+  loop.py                Boucle fermée unique : capteur -> contrôleur -> moteurs -> physique
+  simple_physics.py      Physique maison (référence théorique)
+  mujoco_physics.py      Physique MuJoCo : génération des modèles 3D, contact, interface, validation
+  motor.py               Moteur pas à pas : vitesse max, micro-pas, butées, rampes
+  sensor.py              Capteur fictif : bruit + latence
   camera.py              Caméra virtuelle : rendu, détection OpenCV, projection
-  indicateurs.py         Indicateurs : erreur de suivi, temps de réponse, agitation de la commande
+  metrics.py             Indicateurs : erreur de suivi, temps de réponse, agitation de la commande
   session.py             Bac à sable : suite de tentatives, fin automatique, enregistrement CSV
-  parallele.py           Simulations indépendantes réparties sur plusieurs processus
+  parallel.py            Simulations indépendantes réparties sur plusieurs processus
 tests/                   Tests automatiques, par thème (contrôleur, mécanique, capteurs, physique,
                          scénarios, session, non-régression)
-campagne.py              Campagne de mesures complète -> results/bilan.md
-bac_a_sable.py           Le robot en 3D et en temps réel, piloté depuis un panneau de commandes
-non_regression.py        Vérifie qu'une modification laisse tous les résultats identiques au bit près
+campaign.py              Campagne de mesures complète -> results/report.md
+sandbox.py               Le robot en 3D et en temps réel, piloté depuis un panneau de commandes
+regression_check.py      Vérifie qu'une modification laisse tous les résultats identiques au bit près
 ```
 
 ## Installation (Windows)
@@ -65,14 +65,14 @@ python -m pytest
 
 ```powershell
 python -m pytest              # tous les tests
-python campagne.py            # campagne de mesures complète, écrit results/bilan.md (quelques minutes)
-python bac_a_sable.py         # bac à sable 3D (voir ci-dessous)
-python bac_a_sable.py --camera                         # idem, balle mesurée par la caméra virtuelle
-python -m simulation.physique_mujoco                   # exporte les modèles dans results/
+python campaign.py            # campagne de mesures complète, écrit results/report.md (quelques minutes)
+python sandbox.py             # bac à sable 3D (voir ci-dessous)
+python sandbox.py --camera                             # idem, balle mesurée par la caméra virtuelle
+python -m simulation.mujoco_physics                    # exporte les modèles dans results/
 python -m mujoco.viewer --mjcf=results/robot.xml       # ouvre le modèle seul dans MuJoCo
-python non_regression.py --enregistrer    # avant une modification : référence de tous les résultats
-python non_regression.py --comparer       # après : vérifie qu'ils sont identiques au bit près
-python non_regression.py --comparer --par-position     # idem après un renommage (noms changés, même ordre)
+python regression_check.py --enregistrer  # avant une modification : référence de tous les résultats
+python regression_check.py --comparer     # après : vérifie qu'ils sont identiques au bit près
+python regression_check.py --comparer --par-position   # idem après un renommage (noms changés, même ordre)
 ```
 
 Non-régression : toute refactorisation doit laisser les résultats identiques au bit près. La référence
@@ -83,7 +83,7 @@ produite (Windows et Linux divergent dès que la balle rebondit) : la comparaiso
 Une simulation se décrit par une `Config` ; tout ce qui n'est pas précisé prend la valeur de référence :
 
 ```python
-from simulation.boucle import simuler
+from simulation.loop import simuler
 from simulation.config import Config, centre
 
 r = simuler(Config(capteur="camera", retard=3, compensation_retard=True))
@@ -108,7 +108,7 @@ Deux fenêtres : la vue 3D MuJoCo et un panneau de commandes avec une vue de des
 
 Une tentative se termine quand la balle tombe, reste 2 s à moins de 1 cm de la consigne (stabilisée),
 dure plus de 30 s, ou quand une autre commence. Chaque tentative est enregistrée dans
-`results/tentatives/<date_heure>/` : `tentative_001.csv`… (toutes les mesures à 50 Hz) et `resume.csv`
+`results/attempts/<date_heure>/` : `attempt_001.csv`… (toutes les mesures à 50 Hz) et `summary.csv`
 (une ligne par tentative : paramètres, résultat, temps de stabilisation, rebonds, marge au bord…).
 Format Excel français : séparateur `;`, virgule décimale.
 

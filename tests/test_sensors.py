@@ -5,11 +5,11 @@ import mujoco
 import numpy as np
 import pytest
 
-from controller.cinematique import rotation
+from controller.kinematics import rotation
 from simulation.camera import CameraBalle, rotation_inverse
-from simulation.capteur import Capteur
+from simulation.sensor import Capteur
 from simulation.config import Config, ParametresCamera
-from simulation.physique_mujoco import xml_modele
+from simulation.mujoco_physics import xml_modele
 
 H, R = 0.12, 0.02
 

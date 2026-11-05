@@ -17,11 +17,11 @@ MUJOCO_LOG.TXT
 Thumbs.db
 desktop.ini
 
-# Modèles MuJoCo exportés (se régénèrent avec python -m simulation.physique_mujoco)
+# Modèles MuJoCo exportés (se régénèrent avec python -m simulation.mujoco_physics)
 results/*.xml
 
 # Données des tentatives du bac à sable (propres à chaque essai)
-results/tentatives/
+results/attempts/
 
-# Référence de non-régression (propre à chaque machine, se régénère avec non_regression.py)
+# Référence de non-régression (propre à chaque machine, se régénère avec regression_check.py)
 results/reference/

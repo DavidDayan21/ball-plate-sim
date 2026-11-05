@@ -3,8 +3,8 @@ import math
 
 import pytest
 
-from controller.cinematique import Geometrie, cinematique_directe, cinematique_inverse
-from simulation.moteur import Moteur
+from controller.kinematics import Geometrie, cinematique_directe, cinematique_inverse
+from simulation.motor import Moteur
 
 G3 = Geometrie()
 

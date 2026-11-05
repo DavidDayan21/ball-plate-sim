@@ -4,10 +4,10 @@ import math
 import mujoco
 import pytest
 
-from controller.cinematique import Geometrie, cinematique_inverse
+from controller.kinematics import Geometrie, cinematique_inverse
 from simulation.config import G, Config, ParametresPlateau
-from simulation.physique_mujoco import acceleration_roulement, construire, inclinaison_plateau, restitution_mesuree
-from simulation.physique_simple import acceleration
+from simulation.mujoco_physics import acceleration_roulement, construire, inclinaison_plateau, restitution_mesuree
+from simulation.simple_physics import acceleration
 
 K = 2 / 3
 

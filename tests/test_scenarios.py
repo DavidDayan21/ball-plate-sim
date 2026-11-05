@@ -2,9 +2,9 @@
 import math
 from dataclasses import replace
 
-from simulation.boucle import simuler
+from simulation.loop import simuler
 from simulation.config import Config, centre
-from simulation.indicateurs import ecart_type_theta, erreur_suivi_rms
+from simulation.metrics import ecart_type_theta, erreur_suivi_rms
 
 PLATEAU_SIMPLE = Config(physique="simple", mecanisme=False)
 ROBOT_SIMPLE = Config(physique="simple", acceleration_max=math.inf)

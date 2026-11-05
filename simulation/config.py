@@ -6,7 +6,7 @@ ils peuvent être modifiés pour explorer d'autres conceptions.
 from dataclasses import dataclass, field
 import math
 
-from controller.cinematique import Geometrie
+from controller.kinematics import Geometrie
 
 G = 9.81  # m/s²
 

@@ -13,7 +13,7 @@ import cv2
 import mujoco
 import numpy as np
 
-from controller.cinematique import rotation
+from controller.kinematics import rotation
 from simulation.config import ParametresCamera
 
 

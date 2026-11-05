@@ -10,9 +10,9 @@ Elle se termine quand :
     - elle dure plus de duree_max (non stabilisée) ;
     - une autre tentative commence (interrompue).
 
-Données écrites dans results/tentatives/<date_heure>/ :
-    tentative_001.csv ...  toutes les mesures de la tentative, à 50 Hz
-    resume.csv             une ligne par tentative (paramètres et résultat)
+Données écrites dans results/attempts/<date_heure>/ :
+    attempt_001.csv ...  toutes les mesures de la tentative, à 50 Hz
+    summary.csv             une ligne par tentative (paramètres et résultat)
 Format adapté à Excel en français : séparateur « ; », virgule décimale.
 """
 from collections import deque
@@ -24,7 +24,7 @@ from pathlib import Path
 
 import numpy as np
 
-from simulation.boucle import Resultats, Simulation
+from simulation.loop import Resultats, Simulation
 from simulation.config import Config, carre, centre, cercle
 
 CONSIGNES = {"centre": centre, "cercle": cercle, "carré": carre}
@@ -64,7 +64,7 @@ def _nombre(v: float, decimales: int = 3) -> str:
 
 
 class Session:
-    def __init__(self, cfg: Config = None, dossier="results/tentatives", duree_max: float = 30.0,
+    def __init__(self, cfg: Config = None, dossier="results/attempts", duree_max: float = 30.0,
                  sol: bool = True, enregistrer: bool = True):
         self.cfg = cfg or config_bac_a_sable()
         if self.cfg.physique != "mujoco":
@@ -211,7 +211,7 @@ class Session:
             inclinaison_max_deg=math.degrees(max(incl)) if incl else None,
             couple_max_Nm=float(max(couples)) if couples else None,
             decollee_pct=100 * float(np.mean(decollee)) if decollee else None,
-            fichier=f"tentative_{tv['numero']:03d}.csv")
+            fichier=f"attempt_{tv['numero']:03d}.csv")
         self.resume.append(ligne)
         if self.enregistrer:
             self._ecrire(r, ligne)
@@ -261,7 +261,7 @@ class Session:
         cles = list(ligne.keys())
         for l in self.resume:                  # colonnes de toutes les tentatives (lancer ⊃ libre)
             cles += [k for k in l if k not in cles]
-        with open(self.dossier / "resume.csv", "w", newline="", encoding="utf-8-sig") as f:
+        with open(self.dossier / "summary.csv", "w", newline="", encoding="utf-8-sig") as f:
             w = csv.writer(f, delimiter=";")
             w.writerow(cles)
             for l in self.resume:

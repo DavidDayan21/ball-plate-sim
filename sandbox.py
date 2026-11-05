@@ -15,11 +15,11 @@ Actions :
     Clic dans la vue de dessus : choisit le point de départ.
     Barre d'espace (dans la vue 3D) ou bouton Pause : met en pause / reprend.
 
-Chaque tentative est enregistrée dans results/tentatives/<date_heure>/ (voir simulation/session.py).
+Chaque tentative est enregistrée dans results/attempts/<date_heure>/ (voir simulation/session.py).
 
 Lancement (depuis ball-plate-sim, environnement activé) :
-    python bac_a_sable.py
-    python bac_a_sable.py --camera      # mesure par la caméra virtuelle au lieu du capteur fictif
+    python sandbox.py
+    python sandbox.py --camera      # mesure par la caméra virtuelle au lieu du capteur fictif
 """
 import argparse
 import math

@@ -3,15 +3,15 @@
 À chaque pas (0,5 ms) : la physique avance. Toutes les 20 ms (50 Hz) :
     mesure (capteur fictif ou caméra) -> contrôleur -> commande (θx, θy) -> moteurs / servos
 
-    physique = "simple" : nos équations (simulation/physique_simple.py)
-    physique = "mujoco" : moteur physique 3D (simulation/physique_mujoco.py)
+    physique = "simple" : nos équations (simulation/simple_physics.py)
+    physique = "mujoco" : moteur physique 3D (simulation/mujoco_physics.py)
 """
 from dataclasses import dataclass, field
 import math
 import time
 
-from controller.plateau import ControleurPlateau
-from simulation.capteur import Capteur
+from controller.plate import ControleurPlateau
+from simulation.sensor import Capteur
 from simulation.config import G, Config
 
 
@@ -40,10 +40,10 @@ class Resultats:
 
 def creer_physique(cfg: Config):
     if cfg.physique == "simple":
-        from simulation.physique_simple import PhysiqueSimple
+        from simulation.simple_physics import PhysiqueSimple
         return PhysiqueSimple(cfg)
     if cfg.physique == "mujoco":
-        from simulation.physique_mujoco import PhysiqueMujoco
+        from simulation.mujoco_physics import PhysiqueMujoco
         return PhysiqueMujoco(cfg)
     raise ValueError(f"Physique inconnue : {cfg.physique}")
 

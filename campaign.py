@@ -1,4 +1,4 @@
-"""Campagne de mesures : cohérence des modèles, robustesse, latence. Écrit results/bilan.md.
+"""Campagne de mesures : cohérence des modèles, robustesse, latence. Écrit results/report.md.
 
 Chaîne de référence : MuJoCo (robot à 3 bras, rampes moteurs) + caméra 160×120 + OpenCV + PID.
 La caméra 160×120 est aussi précise que 320×240, et plus rapide à simuler.
@@ -12,7 +12,7 @@ La caméra 160×120 est aussi précise que 320×240, et plus rapide à simuler.
     6. Trajectoire carrée
 
 Lancement (depuis ball-plate-sim, environnement activé) :
-    python campagne.py        (quelques minutes : une trentaine de simulations)
+    python campaign.py        (quelques minutes : une trentaine de simulations)
 """
 import math
 import os
@@ -20,10 +20,10 @@ from dataclasses import replace
 
 import matplotlib.pyplot as plt
 
-from simulation.boucle import simuler
+from simulation.loop import simuler
 from simulation.config import G, Config, ParametresCamera, carre, centre
-from simulation.indicateurs import ecart_type_theta, erreur_suivi_rms, temps_reponse_5
-from simulation.physique_mujoco import acceleration_roulement, restitution_mesuree
+from simulation.metrics import ecart_type_theta, erreur_suivi_rms, temps_reponse_5
+from simulation.mujoco_physics import acceleration_roulement, restitution_mesuree
 
 BASE = Config(capteur="camera", camera=ParametresCamera(largeur=160, hauteur_image=120))
 PM = BASE.mujoco_params
@@ -158,9 +158,9 @@ for comp in (False, True):
 tableau(["Compensation", "Tombée", "Erreur (2e tour)"], lignes)
 
 os.makedirs("results", exist_ok=True)
-with open(os.path.join("results", "bilan.md"), "w", encoding="utf-8") as f:
+with open(os.path.join("results", "report.md"), "w", encoding="utf-8") as f:
     f.write("\n".join(md) + "\n")
-print("\nBilan écrit dans results/bilan.md")
+print("\nBilan écrit dans results/report.md")
 
 # --- Figures -------------------------------------------------------------------------------------
 fig, ((a1, a2), (a3, a4)) = plt.subplots(2, 2, figsize=(11, 7.5))

@@ -63,12 +63,12 @@ def test_fichiers_ecrits(session):
     resume = session.fermer()
     assert [l["resultat"] for l in resume] == ["interrompue", "interrompue"]
 
-    with open(session.dossier / "resume.csv", encoding="utf-8-sig") as f:
+    with open(session.dossier / "summary.csv", encoding="utf-8-sig") as f:
         lignes = list(csv.DictReader(f, delimiter=";"))
     assert len(lignes) == 2 and lignes[0]["action"] == "lancer" and lignes[1]["consigne"] == "cercle"
     assert lignes[0]["vitesse_m_s"] == "0,400"                # virgule décimale (Excel en français)
 
-    with open(session.dossier / "tentative_002.csv", encoding="utf-8-sig") as f:
+    with open(session.dossier / "attempt_002.csv", encoding="utf-8-sig") as f:
         mesures = list(csv.DictReader(f, delimiter=";"))
     nombre = lambda texte: float(texte.replace(",", "."))
     assert len(mesures) == 100                                # 2 s à 50 Hz
