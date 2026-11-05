@@ -72,6 +72,7 @@ python -m simulation.physique_mujoco                   # exporte les modèles da
 python -m mujoco.viewer --mjcf=results/robot.xml       # ouvre le modèle seul dans MuJoCo
 python non_regression.py --enregistrer    # avant une modification : référence de tous les résultats
 python non_regression.py --comparer       # après : vérifie qu'ils sont identiques au bit près
+python non_regression.py --comparer --par-position     # idem après un renommage (noms changés, même ordre)
 ```
 
 Non-régression : toute refactorisation doit laisser les résultats identiques au bit près. La référence

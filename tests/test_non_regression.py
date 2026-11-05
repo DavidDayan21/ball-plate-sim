@@ -34,13 +34,28 @@ def test_comparer_cles_formes_et_zero_signe():
     assert [e.split(" :")[0] for e in nr.comparer(a, b)] == ["c/ajoute", "c/forme", "c/retire", "c/zero"]
 
 
+def test_comparer_par_position_ignore_les_noms():
+    a = {"cas/x": np.arange(3.0), "cas/y": np.ones(2)}
+    renomme = {"case/x": np.arange(3.0), "case/y": np.ones(2)}
+    assert nr.comparer_par_position(a, renomme) == []
+    permute = {"case/y": np.ones(2), "case/x": np.arange(3.0)}
+    assert len(nr.comparer_par_position(a, permute)) == 2          # un ordre changé est signalé
+    assert nr.comparer_par_position(a, {"case/x": np.arange(3.0)})[0].startswith("nombre de tableaux")
+
+
+def test_resume_de_session_sans_texte():
+    ligne = {"numero": 2, "action": "lâcher", "hauteur_cm": 30.5, "stabilisee_en_s": None, "compensation": True}
+    valeurs = nr._valeurs_numeriques(ligne)
+    assert valeurs[:2] == [2.0, 30.5] and math.isnan(valeurs[2]) and valeurs[3] == 1.0 and len(valeurs) == 4
+
+
 def test_enregistrer_puis_charger(tmp_path):
     tableaux = {f"cas/{k}": v for k, v in nr.extraire(simuler(COURT)).items()}
     tableaux["session/resume"] = np.asarray(["{'resultat': 'tombée'}"])
     nr.enregistrer(tableaux, tmp_path / "reference.npz")
     relus, infos = nr.charger(tmp_path / "reference.npz")
     assert nr.comparer(tableaux, relus) == []
-    assert infos["environnement"] == nr.environnement()
+    assert infos["environment"] == nr.environnement()
 
 
 def test_parallele_identique_au_bit_pres():

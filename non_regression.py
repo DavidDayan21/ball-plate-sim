@@ -3,6 +3,9 @@ qu'une modification du code ne les change pas (règle 5 du projet).
 
     python non_regression.py --enregistrer     AVANT la modification : écrit la référence
     python non_regression.py --comparer        APRÈS : liste les écarts (code de sortie 1 s'il y en a)
+    python non_regression.py --comparer --par-position
+                                               idem quand des noms ont changé (traduction, renommage) :
+                                               les résultats sont appariés dans leur ordre d'enregistrement
 
 Cas couverts (graine 0, réglages par défaut), liste figée ici car campagne.py va évoluer :
     - toutes les simulations de la campagne de mesures du 03/11/2026 (commit 7f2fd90) ;
@@ -36,7 +39,8 @@ from simulation.physique_mujoco import acceleration_roulement, restitution_mesur
 from simulation.session import Session
 
 FICHIER = Path(__file__).parent / "results" / "reference" / "reference.npz"
-INFOS = "__infos__"          # clé réservée : date et environnement de la référence
+INFOS = "__info__"           # clé réservée : date et environnement de la référence. Le format du fichier
+                             # (cette clé et les clés JSON) est en anglais et ne doit plus changer.
 
 # --- Cas de référence --------------------------------------------------------------------------
 CAMERA = Config(capteur="camera", camera=ParametresCamera(largeur=160, hauteur_image=120))
@@ -123,10 +127,17 @@ def _session() -> dict:
     avancer(4.0)
     s.lancer(0.10, 180, vitesse=1.0)
     avancer(3.0)
-    resume = s.fermer()
-    # repr d'un nombre à virgule flottante est exact ; l'heure de la tentative est exclue
+    lignes = [_valeurs_numeriques(ligne) for ligne in s.fermer()]
     return {"courbes": np.concatenate(instantanes),
-            "resume": np.asarray([repr({k: v for k, v in ligne.items() if k != "heure"}) for ligne in resume])}
+            "resume": np.asarray([v for ligne in lignes for v in ligne], dtype=float),
+            "resume_tailles": np.asarray([len(ligne) for ligne in lignes])}
+
+
+def _valeurs_numeriques(ligne: dict) -> list:
+    """Valeurs numériques d'une ligne du résumé, dans l'ordre (None -> NaN, booléen -> 0 ou 1).
+    Les textes (action, résultat, heure...) sont ignorés : ils ne dépendent pas du calcul, et ils
+    changeront si on les traduit."""
+    return [math.nan if v is None else float(v) for v in ligne.values() if not isinstance(v, str)]
 
 
 CAS = {**{nom: partial(resultats_simulation, cfg) for nom, cfg in SIMULATIONS.items()},
@@ -152,14 +163,14 @@ def environnement() -> dict:
     """Ce dont dépend l'identité au bit près : plateforme et versions."""
     import cv2
     import mujoco
-    return {"plateforme": platform.platform(), "machine": platform.machine(),
+    return {"platform": platform.platform(), "machine": platform.machine(),
             "python": platform.python_version(), "numpy": np.__version__,
             "mujoco": mujoco.__version__, "opencv": cv2.__version__}
 
 
 def enregistrer(tableaux: dict, fichier: Path = FICHIER) -> None:
     fichier.parent.mkdir(parents=True, exist_ok=True)
-    infos = {"date": datetime.datetime.now().isoformat(timespec="seconds"), "environnement": environnement()}
+    infos = {"date": datetime.datetime.now().isoformat(timespec="seconds"), "environment": environnement()}
     np.savez_compressed(fichier, **tableaux, **{INFOS: np.asarray(json.dumps(infos, ensure_ascii=False))})
 
 
@@ -203,12 +214,27 @@ def comparer(reference: dict, actuel: dict) -> list:
     return ecarts
 
 
+def comparer_par_position(reference: dict, actuel: dict) -> list:
+    """Comme comparer, mais apparie les tableaux dans leur ordre d'enregistrement, quels que soient
+    leurs noms. Sert après un renommage : l'ordre des cas et des champs ne doit pas changer
+    (une permutation serait signalée comme un écart, sauf entre deux tableaux identiques)."""
+    ecarts = []
+    if len(reference) != len(actuel):
+        ecarts.append(f"nombre de tableaux différent : {len(reference)} -> {len(actuel)}")
+    for (cle_ref, a), (cle, b) in zip(reference.items(), actuel.items()):
+        if texte := _ecart(a, b):
+            ecarts.append(f"{cle_ref} -> {cle} : {texte}")
+    return ecarts
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Non-régression au bit près de toutes les simulations")
     action = parser.add_mutually_exclusive_group(required=True)
     action.add_argument("--enregistrer", action="store_true", help="écrit la référence (avant une modification)")
     action.add_argument("--comparer", action="store_true", help="compare à la référence (après la modification)")
     parser.add_argument("--remplacer", action="store_true", help="avec --enregistrer : écrase la référence existante")
+    parser.add_argument("--par-position", action="store_true",
+                        help="avec --comparer : apparie les résultats par leur ordre, pas par leur nom")
     parser.add_argument("--processus", type=int, default=None, help="nombre de processus (défaut : un par cœur)")
     args = parser.parse_args()
 
@@ -229,12 +255,16 @@ def main() -> None:
 
     reference, infos = charger()
     print(f"Référence du {infos['date']}.")
-    env = environnement()
-    for cle, valeur in env.items():
-        if infos["environnement"].get(cle) != valeur:
-            print(f"Attention, {cle} différent : {infos['environnement'].get(cle)} -> {valeur} "
+    for cle, valeur in environnement().items():
+        if infos["environment"].get(cle) != valeur:
+            print(f"Attention, {cle} différent : {infos['environment'].get(cle)} -> {valeur} "
                   "(l'identité au bit près n'est plus garantie).")
-    ecarts = comparer(reference, actuel)
+    if args.par_position:
+        renommes = sum(a != b for a, b in zip(reference, actuel))
+        print(f"Appariement par position : {renommes} nom(s) sur {len(reference)} ont changé.")
+        ecarts = comparer_par_position(reference, actuel)
+    else:
+        ecarts = comparer(reference, actuel)
     if not ecarts:
         print(f"Identique au bit près : {len(CAS)} cas sur {len(CAS)}.")
         return
