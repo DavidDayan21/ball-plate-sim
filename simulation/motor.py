@@ -13,35 +13,35 @@ Le couple et l'inertie ne sont pas modélisés ici : dans MuJoCo, ce profil sert
 import math
 
 
-class Moteur:
-    def __init__(self, angle_initial: float, vitesse_max: float, resolution: float,
+class Motor:
+    def __init__(self, initial_angle: float, max_speed: float, resolution: float,
                  angle_min: float = math.radians(-60), angle_max: float = math.radians(60),
-                 acceleration_max: float = math.inf):
-        self.position = angle_initial     # angle (rad)
-        self.vitesse = 0.0                # vitesse (rad/s), utilisée avec les rampes
-        self.cible = angle_initial        # angle demandé, arrondi au pas (rad)
-        self.vitesse_max = vitesse_max    # rad/s
-        self.acceleration_max = acceleration_max  # rad/s²
+                 max_acceleration: float = math.inf):
+        self.position = initial_angle     # angle (rad)
+        self.velocity = 0.0                # vitesse (rad/s), utilisée avec les rampes
+        self.target = initial_angle        # angle demandé, arrondi au pas (rad)
+        self.max_speed = max_speed    # rad/s
+        self.max_acceleration = max_acceleration  # rad/s²
         self.resolution = resolution      # rad par pas
         self.angle_min, self.angle_max = angle_min, angle_max
 
-    def demander(self, angle: float) -> None:
+    def request(self, angle: float) -> None:
         """Nouvelle consigne d'angle : arrondie au pas le plus proche, puis bornée par les butées."""
-        pas = round(angle / self.resolution) * self.resolution
-        self.cible = min(max(pas, self.angle_min), self.angle_max)
+        quantized = round(angle / self.resolution) * self.resolution
+        self.target = min(max(quantized, self.angle_min), self.angle_max)
 
-    def avancer(self, dt: float) -> float:
+    def advance(self, dt: float) -> float:
         """Fait avancer le moteur pendant dt vers sa cible. Renvoie l'angle."""
-        ecart = self.cible - self.position
-        if math.isinf(self.acceleration_max):
-            max_pas = self.vitesse_max * dt
-            self.position += max(-max_pas, min(max_pas, ecart))
+        gap = self.target - self.position
+        if math.isinf(self.max_acceleration):
+            max_step = self.max_speed * dt
+            self.position += max(-max_step, min(max_step, gap))
             return self.position
         # Rampe : on vise la plus grande vitesse qui permet encore de s'arrêter sur la cible
         # en freinant à a_max, soit v = √(2·a_max·|écart|), sans dépasser vitesse_max ;
         # et la vitesse ne change que de a_max·dt au plus par pas.
-        v_voulue = math.copysign(min(self.vitesse_max, math.sqrt(2 * self.acceleration_max * abs(ecart))), ecart)
-        dv = self.acceleration_max * dt
-        self.vitesse += max(-dv, min(dv, v_voulue - self.vitesse))
-        self.position += self.vitesse * dt
+        v_target = math.copysign(min(self.max_speed, math.sqrt(2 * self.max_acceleration * abs(gap))), gap)
+        dv = self.max_acceleration * dt
+        self.velocity += max(-dv, min(dv, v_target - self.velocity))
+        self.position += self.velocity * dt
         return self.position

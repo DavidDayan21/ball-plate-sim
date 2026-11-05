@@ -7,98 +7,98 @@ import math
 from dataclasses import replace
 
 from controller.pid import PID
-from controller.plate import PredicteurRetard
-from simulation.config import G, ParametresPlateau
+from controller.plate import LatencyPredictor
+from simulation.config import G, PlateParams
 from simulation.simple_physics import acceleration
 
-P = ParametresPlateau()
+P = PlateParams()
 CG = P.coefficient * G
 
 
-def boucle_1d(pid, p=P, x0=0.10, dt=0.01, duree=10.0):
+def loop_1d(pid, p=P, x0=0.10, dt=0.01, duration=10.0):
     """Balle sur une seule direction du plateau, Euler semi-implicite. Renvoie (temps, positions, tombée)."""
     x, v = x0, 0.0
     T, X = [], []
-    for n in range(round(duree / dt) + 1):
-        theta = pid.calculer(0.0, x, dt)
+    for n in range(round(duration / dt) + 1):
+        theta = pid.compute(0.0, x, dt)
         T.append(n * dt)
         X.append(x)
-        if abs(x) > p.rayon_plateau:
+        if abs(x) > p.plate_radius:
             return T, X, True
         v += acceleration(theta, 0.0, p)[0] * dt
         x += v * dt
     return T, X, False
 
 
-def kd_pour(zeta, kp=1.0):
+def kd_for(zeta, kp=1.0):
     return 2 * zeta * math.sqrt(CG * kp) / CG
 
 
-def test_pid_calcul_elementaire():
+def test_pid_basic_computation():
     pid = PID(kp=2.0, ki=0.5, kd=0.3)
-    u1 = pid.calculer(1.0, 0.0, 0.1)          # e = 1, dérivée = 0, intégrale = 0,1
-    u2 = pid.calculer(1.0, 0.5, 0.1)          # e = 0,5, dérivée = -5, intégrale = 0,15
+    u1 = pid.compute(1.0, 0.0, 0.1)          # e = 1, dérivée = 0, intégrale = 0,1
+    u2 = pid.compute(1.0, 0.5, 0.1)          # e = 0,5, dérivée = -5, intégrale = 0,15
     assert math.isclose(u1, 2.0 + 0.05, rel_tol=1e-12)
     assert math.isclose(u2, 1.0 + 0.075 - 1.5, rel_tol=1e-12)
 
 
-def test_anti_windup_gele_l_integrale():
-    pid = PID(kp=1.0, ki=1.0, sortie_min=-0.1, sortie_max=0.1)
+def test_anti_windup_freezes_integral():
+    pid = PID(kp=1.0, ki=1.0, output_min=-0.1, output_max=0.1)
     for _ in range(100):
-        assert pid.calculer(1.0, 0.0, 0.01) == 0.1
-    assert pid.integrale == 0.0
+        assert pid.compute(1.0, 0.0, 0.01) == 0.1
+    assert pid.integral == 0.0
 
 
-def test_correcteur_p_periode():
+def test_p_controller_period():
     # Oscillateur harmonique : T0 = 2π / √(c·g·Kp) (petite amplitude : domaine linéaire)
     kp = 0.5
-    T, X, tombee = boucle_1d(PID(kp=kp), x0=0.01)
-    passages = [T[i] for i in range(1, len(X)) if X[i - 1] * X[i] < 0]
-    periode = 2 * (passages[-1] - passages[0]) / (len(passages) - 1)
-    assert not tombee
-    assert math.isclose(periode, 2 * math.pi / math.sqrt(CG * kp), rel_tol=0.01)
+    T, X, fallen = loop_1d(PID(kp=kp), x0=0.01)
+    crossings = [T[i] for i in range(1, len(X)) if X[i - 1] * X[i] < 0]
+    period = 2 * (crossings[-1] - crossings[0]) / (len(crossings) - 1)
+    assert not fallen
+    assert math.isclose(period, 2 * math.pi / math.sqrt(CG * kp), rel_tol=0.01)
 
 
-def test_euler_semi_implicite_conserve_l_amplitude():
-    _, X, _ = boucle_1d(PID(kp=1.0))
+def test_semi_implicit_euler_preserves_amplitude():
+    _, X, _ = loop_1d(PID(kp=1.0))
     assert max(abs(x) for x in X[-300:]) < 0.1005
 
 
-def test_pd_depassement():
+def test_pd_overshoot():
     # D = exp(-π·ζ / √(1 - ζ²))
     zeta = 0.7
-    _, X, _ = boucle_1d(PID(kp=1.0, kd=kd_pour(zeta)))
+    _, X, _ = loop_1d(PID(kp=1.0, kd=kd_for(zeta)))
     assert abs(max(0.0, -min(X)) / 0.10 - math.exp(-math.pi * zeta / math.sqrt(1 - zeta ** 2))) < 0.005
 
 
-def test_pd_erreur_statique_et_pid_qui_l_annule():
-    biais = math.radians(0.5)
-    p = replace(P, biais_x=biais)
-    _, X_pd, _ = boucle_1d(PID(kp=1.0, kd=kd_pour(0.7)), p=p, duree=20)
-    _, X_pid, _ = boucle_1d(PID(kp=1.0, ki=1.0, kd=kd_pour(0.7)), p=p, duree=20)
-    assert math.isclose(X_pd[-1], biais / 1.0, rel_tol=1e-3)      # e = θb / Kp
+def test_pd_steady_state_error_and_pid_removes_it():
+    bias = math.radians(0.5)
+    p = replace(P, bias_x=bias)
+    _, X_pd, _ = loop_1d(PID(kp=1.0, kd=kd_for(0.7)), p=p, duration=20)
+    _, X_pid, _ = loop_1d(PID(kp=1.0, ki=1.0, kd=kd_for(0.7)), p=p, duration=20)
+    assert math.isclose(X_pd[-1], bias / 1.0, rel_tol=1e-3)      # e = θb / Kp
     assert abs(X_pid[-1]) < 1e-4
 
 
-def test_pid_instable_au_dela_de_routh():
+def test_pid_unstable_beyond_routh():
     # Stable si et seulement si Ki < c·g·Kp·Kd
-    kd = kd_pour(0.7)
-    limite = CG * 1.0 * kd
-    _, _, tombee_stable = boucle_1d(PID(kp=1.0, ki=0.8 * limite, kd=kd), x0=0.05, duree=30)
-    _, _, tombee_instable = boucle_1d(PID(kp=1.0, ki=1.2 * limite, kd=kd), x0=0.05, duree=30)
-    assert not tombee_stable
-    assert tombee_instable
+    kd = kd_for(0.7)
+    limit = CG * 1.0 * kd
+    _, _, fell_stable = loop_1d(PID(kp=1.0, ki=0.8 * limit, kd=kd), x0=0.05, duration=30)
+    _, _, fell_unstable = loop_1d(PID(kp=1.0, ki=1.2 * limit, kd=kd), x0=0.05, duration=30)
+    assert not fell_stable
+    assert fell_unstable
 
 
-def test_predicteur_exact_si_le_modele_est_exact():
+def test_predictor_exact_if_model_exact():
     T, g, N = 0.02, 5.886, 3
-    p = PredicteurRetard(N, T, g)
-    x, v, historique = 0.05, 0.1, []
+    p = LatencyPredictor(N, T, g)
+    x, v, history = 0.05, 0.1, []
     for k in range(300):
-        historique.append(x)
-        estimation = p.predire(historique[max(0, k - N)])
+        history.append(x)
+        estimate = p.predict(history[max(0, k - N)])
         u = 0.05 * math.sin(0.3 * k)
-        p.memoriser(u)
+        p.store(u)
         v += g * u * T
         x += v * T
-    assert abs(estimation - historique[-1]) < 1e-9
+    assert abs(estimate - history[-1]) < 1e-9

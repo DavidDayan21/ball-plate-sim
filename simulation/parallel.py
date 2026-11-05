@@ -14,14 +14,14 @@ import multiprocessing
 import os
 
 
-def executer(fonction, arguments, processus: int = None) -> list:
+def execute(function, arguments, processes: int = None) -> list:
     """[fonction(a) for a in arguments], dans le même ordre, réparti sur `processus` processus.
 
     processus = None : un par cœur ; processus = 1 : tout dans le processus courant.
     """
     arguments = list(arguments)
-    processus = min(processus or os.cpu_count() or 1, len(arguments))
-    if processus <= 1:
-        return [fonction(a) for a in arguments]
-    with ProcessPoolExecutor(max_workers=processus, mp_context=multiprocessing.get_context("spawn")) as executeur:
-        return list(executeur.map(fonction, arguments))
+    processes = min(processes or os.cpu_count() or 1, len(arguments))
+    if processes <= 1:
+        return [function(a) for a in arguments]
+    with ProcessPoolExecutor(max_workers=processes, mp_context=multiprocessing.get_context("spawn")) as executor:
+        return list(executor.map(function, arguments))

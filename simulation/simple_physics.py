@@ -11,18 +11,18 @@ Sert de référence théorique : ses résultats se démontrent à la main (voir 
 """
 import math
 
-from controller.kinematics import cinematique_directe, cinematique_inverse
-from simulation.config import G, Config, ParametresPlateau
-from simulation.motor import Moteur
+from controller.kinematics import forward_kinematics, inverse_kinematics
+from simulation.config import G, Config, PlateParams
+from simulation.motor import Motor
 
 
-def acceleration(theta_x: float, theta_y: float, p: ParametresPlateau):
+def acceleration(theta_x: float, theta_y: float, p: PlateParams):
     """Accélération (ax, ay) de la balle (m/s²) pour les angles commandés (θx, θy)."""
     cg = p.coefficient * G
-    return cg * math.sin(theta_x + p.biais_x), cg * math.sin(theta_y + p.biais_y)
+    return cg * math.sin(theta_x + p.bias_x), cg * math.sin(theta_y + p.bias_y)
 
 
-def pas_semi_implicite(x, y, vx, vy, theta_x, theta_y, dt, p: ParametresPlateau):
+def semi_implicit_step(x, y, vx, vy, theta_x, theta_y, dt, p: PlateParams):
     """Un pas d'Euler semi-implicite : la nouvelle vitesse sert à calculer la nouvelle position."""
     ax, ay = acceleration(theta_x, theta_y, p)
     vx += ax * dt
@@ -30,62 +30,62 @@ def pas_semi_implicite(x, y, vx, vy, theta_x, theta_y, dt, p: ParametresPlateau)
     return x + vx * dt, y + vy * dt, vx, vy
 
 
-class PhysiqueSimple:
+class SimplePhysics:
     def __init__(self, cfg: Config):
-        self.p, self.g = cfg.plateau, cfg.geometrie
-        self.mecanisme = cfg.mecanisme
-        self.x, self.y = cfg.depart
-        self.vx, self.vy = cfg.vitesse_depart
-        self.commande = (0.0, 0.0)
-        self.poses_hors_portee = 0
-        if self.mecanisme:
-            self.alphas = cinematique_inverse(self.g, 0.0, 0.0)
-            self.moteurs = [Moteur(a, cfg.vitesse_max, cfg.resolution, acceleration_max=cfg.acceleration_max)
+        self.p, self.g = cfg.plate, cfg.geometry
+        self.mechanism = cfg.mechanism
+        self.x, self.y = cfg.start_position
+        self.vx, self.vy = cfg.start_velocity
+        self.commanded_tilt = (0.0, 0.0)
+        self.unreachable_poses = 0
+        if self.mechanism:
+            self.alphas = inverse_kinematics(self.g, 0.0, 0.0)
+            self.motors = [Motor(a, cfg.max_speed, cfg.resolution, max_acceleration=cfg.max_acceleration)
                             for a in self.alphas]
-            self.pose = (0.0, 0.0, self.g.hauteur)
+            self.pose = (0.0, 0.0, self.g.height)
 
-    def balle(self):
+    def ball(self):
         """Position (x, y) de la balle dans le repère du plateau (m)."""
         return self.x, self.y
 
-    def tombee(self) -> bool:
-        return math.hypot(self.x, self.y) > self.p.rayon_plateau
+    def fallen(self) -> bool:
+        return math.hypot(self.x, self.y) > self.p.plate_radius
 
-    def commander(self, theta_x: float, theta_y: float) -> None:
-        self.commande = (theta_x, theta_y)
-        if self.mecanisme:
+    def command(self, theta_x: float, theta_y: float) -> None:
+        self.commanded_tilt = (theta_x, theta_y)
+        if self.mechanism:
             try:
-                for m, a in zip(self.moteurs, cinematique_inverse(self.g, theta_x, theta_y)):
-                    m.demander(a)
+                for m, a in zip(self.motors, inverse_kinematics(self.g, theta_x, theta_y)):
+                    m.request(a)
             except ValueError:
-                self.poses_hors_portee += 1     # pose impossible : les moteurs gardent leur cible
+                self.unreachable_poses += 1     # pose impossible : les moteurs gardent leur cible
 
-    def inclinaison_reelle(self):
-        return (self.pose[0], self.pose[1]) if self.mecanisme else self.commande
+    def actual_tilt(self):
+        return (self.pose[0], self.pose[1]) if self.mechanism else self.commanded_tilt
 
-    def angles_moteurs(self):
-        return self.alphas if self.mecanisme else ()
+    def motor_angles(self):
+        return self.alphas if self.mechanism else ()
 
-    def vitesse_balle(self):
+    def ball_velocity(self):
         return self.vx, self.vy
 
-    def hauteur_balle(self) -> float:
+    def ball_height(self) -> float:
         return 0.0                              # modèle plan : la balle reste au contact
 
-    def pousser(self, dvx: float, dvy: float) -> None:
+    def push(self, dvx: float, dvy: float) -> None:
         self.vx += dvx
         self.vy += dvy
 
-    def placer_balle(self, x, y, z=0.0, vx=0.0, vy=0.0, vz=0.0) -> None:
+    def place_ball(self, x, y, z=0.0, vx=0.0, vy=0.0, vz=0.0) -> None:
         """Téléporte la balle (repère du plateau). Le modèle plan ignore la hauteur z et vz."""
         self.x, self.y, self.vx, self.vy = x, y, vx, vy
 
-    def pas(self, dt: float) -> None:
-        if self.mecanisme:
-            nouveaux = tuple(m.avancer(dt) for m in self.moteurs)
-            if nouveaux != self.alphas:          # la pose ne change que si un moteur a bougé
-                self.alphas = nouveaux
-                self.pose = cinematique_directe(self.g, self.alphas, depart=self.pose)
-        tx, ty = self.inclinaison_reelle()
-        self.x, self.y, self.vx, self.vy = pas_semi_implicite(self.x, self.y, self.vx, self.vy,
+    def step(self, dt: float) -> None:
+        if self.mechanism:
+            new_angles = tuple(m.advance(dt) for m in self.motors)
+            if new_angles != self.alphas:          # la pose ne change que si un moteur a bougé
+                self.alphas = new_angles
+                self.pose = forward_kinematics(self.g, self.alphas, initial_pose=self.pose)
+        tx, ty = self.actual_tilt()
+        self.x, self.y, self.vx, self.vy = semi_implicit_step(self.x, self.y, self.vx, self.vy,
                                                               tx, ty, dt, self.p)

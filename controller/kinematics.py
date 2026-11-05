@@ -18,22 +18,22 @@ import math
 
 
 @dataclass(frozen=True)
-class Geometrie:
+class Geometry:
     """Géométrie de départ (hypothèse, à recaler sur un modèle réel si on construit).
 
     Choisie pour qu'au repos le bras soit horizontal et la biellette verticale :
     rayon_attache = rayon_base + longueur_bras et hauteur = longueur_biellette.
     """
-    rayon_base: float = 0.05           # centre -> axe de chaque moteur (m)
-    longueur_bras: float = 0.05        # l1 (m)
-    longueur_biellette: float = 0.12   # l2 (m)
-    rayon_attache: float = 0.10        # centre du plateau -> rotule de la biellette (m)
-    hauteur: float = 0.12              # hauteur nominale du centre du plateau (m)
-    angles_bras: tuple = (0.0, 120.0, 240.0)   # position angulaire des 3 bras (°)
+    base_radius: float = 0.05           # centre -> axe de chaque moteur (m)
+    arm_length: float = 0.05        # l1 (m)
+    rod_length: float = 0.12   # l2 (m)
+    attachment_radius: float = 0.10        # centre du plateau -> rotule de la biellette (m)
+    height: float = 0.12              # hauteur nominale du centre du plateau (m)
+    arm_angles: tuple = (0.0, 120.0, 240.0)   # position angulaire des 3 bras (°)
 
     def direction(self, i: int):
         """Vecteur unitaire radial (ux, uy) du bras i."""
-        phi = math.radians(self.angles_bras[i])
+        phi = math.radians(self.arm_angles[i])
         return math.cos(phi), math.sin(phi)
 
 
@@ -46,24 +46,24 @@ def rotation(theta_x: float, theta_y: float, v):
     return cx * x + sx * z1, y1, -sx * x + cx * z1      # Ry(θx)
 
 
-def points_plateau(g: Geometrie, theta_x: float, theta_y: float, h: float):
+def plate_points(g: Geometry, theta_x: float, theta_y: float, h: float):
     """Positions des 3 rotules côté plateau."""
     points = []
     for i in range(3):
         ux, uy = g.direction(i)
-        px, py, pz = rotation(theta_x, theta_y, (g.rayon_attache * ux, g.rayon_attache * uy, 0.0))
+        px, py, pz = rotation(theta_x, theta_y, (g.attachment_radius * ux, g.attachment_radius * uy, 0.0))
         points.append((px, py, pz + h))
     return points
 
 
-def bout_bras(g: Geometrie, i: int, alpha: float):
+def arm_tip(g: Geometry, i: int, alpha: float):
     """Position de la rotule côté bras, pour le bras i à l'angle α."""
     ux, uy = g.direction(i)
-    r = g.rayon_base + g.longueur_bras * math.cos(alpha)
-    return r * ux, r * uy, g.longueur_bras * math.sin(alpha)
+    r = g.base_radius + g.arm_length * math.cos(alpha)
+    return r * ux, r * uy, g.arm_length * math.sin(alpha)
 
 
-def cinematique_inverse(g: Geometrie, theta_x: float, theta_y: float, h: float = None):
+def inverse_kinematics(g: Geometry, theta_x: float, theta_y: float, h: float = None):
     """Angles (α1, α2, α3) des moteurs pour obtenir la pose voulue.
 
     Pour chaque bras : on note D = P - B (rotule plateau moins axe moteur), du et dz ses
@@ -73,12 +73,12 @@ def cinematique_inverse(g: Geometrie, theta_x: float, theta_y: float, h: float =
         α = γ - arccos(K / ρ)       (branche « bras vers l'extérieur »)
     Lève ValueError si la pose est hors de portée (|K| > ρ).
     """
-    h = g.hauteur if h is None else h
-    l1, l2 = g.longueur_bras, g.longueur_biellette
+    h = g.height if h is None else h
+    l1, l2 = g.arm_length, g.rod_length
     alphas = []
-    for i, (px, py, pz) in enumerate(points_plateau(g, theta_x, theta_y, h)):
+    for i, (px, py, pz) in enumerate(plate_points(g, theta_x, theta_y, h)):
         ux, uy = g.direction(i)
-        dx, dy, dz = px - g.rayon_base * ux, py - g.rayon_base * uy, pz
+        dx, dy, dz = px - g.base_radius * ux, py - g.base_radius * uy, pz
         du = dx * ux + dy * uy
         K = (dx * dx + dy * dy + dz * dz + l1 * l1 - l2 * l2) / (2 * l1)
         rho = math.hypot(du, dz)
@@ -88,49 +88,49 @@ def cinematique_inverse(g: Geometrie, theta_x: float, theta_y: float, h: float =
     return tuple(alphas)
 
 
-def _residus(g: Geometrie, alphas, q):
+def _residuals(g: Geometry, alphas, q):
     """|P_i - A_i|² - l2² pour les 3 bras (nuls quand la pose q est compatible avec les angles)."""
     theta_x, theta_y, h = q
     res = []
-    for i, P in enumerate(points_plateau(g, theta_x, theta_y, h)):
-        A = bout_bras(g, i, alphas[i])
-        res.append(sum((p - a) ** 2 for p, a in zip(P, A)) - g.longueur_biellette ** 2)
+    for i, P in enumerate(plate_points(g, theta_x, theta_y, h)):
+        A = arm_tip(g, i, alphas[i])
+        res.append(sum((p - a) ** 2 for p, a in zip(P, A)) - g.rod_length ** 2)
     return res
 
 
-def _resoudre_3x3(J, b):
+def _solve_3x3(J, b):
     """Résout J·x = b par la règle de Cramer."""
     def det(m):
         return (m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
                 - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
                 + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]))
     d = det(J)
-    sol = []
+    solution = []
     for k in range(3):
         m = [row[:] for row in J]
         for r in range(3):
             m[r][k] = b[r]
-        sol.append(det(m) / d)
-    return sol
+        solution.append(det(m) / d)
+    return solution
 
 
-def cinematique_directe(g: Geometrie, alphas, depart=None, tol: float = 1e-12, iterations: int = 30):
+def forward_kinematics(g: Geometry, alphas, initial_pose=None, tol: float = 1e-12, iterations: int = 30):
     """Pose (θx, θy, h) du plateau pour des angles moteurs donnés (méthode de Newton).
 
     depart : pose de départ (la précédente, en simulation : convergence en 1 ou 2 itérations).
     """
-    q = list(depart) if depart is not None else [0.0, 0.0, g.hauteur]
+    q = list(initial_pose) if initial_pose is not None else [0.0, 0.0, g.height]
     eps = 1e-7
     for _ in range(iterations):
-        r = _residus(g, alphas, q)
+        r = _residuals(g, alphas, q)
         J = [[0.0] * 3 for _ in range(3)]
         for k in range(3):
             q2 = q[:]
             q2[k] += eps
-            r2 = _residus(g, alphas, q2)
+            r2 = _residuals(g, alphas, q2)
             for i in range(3):
                 J[i][k] = (r2[i] - r[i]) / eps
-        dq = _resoudre_3x3(J, [-v for v in r])
+        dq = _solve_3x3(J, [-v for v in r])
         q = [a + b for a, b in zip(q, dq)]
         if max(abs(v) for v in dq) < tol:
             return tuple(q)

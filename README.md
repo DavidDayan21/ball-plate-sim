@@ -70,9 +70,9 @@ python sandbox.py             # bac à sable 3D (voir ci-dessous)
 python sandbox.py --camera                             # idem, balle mesurée par la caméra virtuelle
 python -m simulation.mujoco_physics                    # exporte les modèles dans results/
 python -m mujoco.viewer --mjcf=results/robot.xml       # ouvre le modèle seul dans MuJoCo
-python regression_check.py --enregistrer  # avant une modification : référence de tous les résultats
-python regression_check.py --comparer     # après : vérifie qu'ils sont identiques au bit près
-python regression_check.py --comparer --par-position   # idem après un renommage (noms changés, même ordre)
+python regression_check.py --record       # avant une modification : référence de tous les résultats
+python regression_check.py --compare      # après : vérifie qu'ils sont identiques au bit près
+python regression_check.py --compare --by-position    # idem après un renommage (noms changés, même ordre)
 ```
 
 Non-régression : toute refactorisation doit laisser les résultats identiques au bit près. La référence
@@ -83,12 +83,12 @@ produite (Windows et Linux divergent dès que la balle rebondit) : la comparaiso
 Une simulation se décrit par une `Config` ; tout ce qui n'est pas précisé prend la valeur de référence :
 
 ```python
-from simulation.loop import simuler
-from simulation.config import Config, centre
+from simulation.loop import simulate
+from simulation.config import Config, center
 
-r = simuler(Config(capteur="camera", retard=3, compensation_retard=True))
-r = simuler(Config(physique="simple", mecanisme=False))           # modèle théorique
-r = simuler(Config(trajectoire=centre, depart=(-0.1, 0.0), vitesse_depart=(0.4, 0.0)))  # balle lancée
+r = simulate(Config(sensor="camera", latency=3, latency_compensation=True))
+r = simulate(Config(physics="simple", mechanism=False))           # modèle théorique
+r = simulate(Config(trajectory=center, start_position=(-0.1, 0.0), start_velocity=(0.4, 0.0)))  # balle lancée
 ```
 
 ## Bac à sable 3D

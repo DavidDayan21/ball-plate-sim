@@ -1,9 +1,9 @@
 """Non-régression au bit près : enregistre les résultats de toutes les simulations, puis vérifie
 qu'une modification du code ne les change pas (règle 5 du projet).
 
-    python regression_check.py --enregistrer     AVANT la modification : écrit la référence
-    python regression_check.py --comparer        APRÈS : liste les écarts (code de sortie 1 s'il y en a)
-    python regression_check.py --comparer --par-position
+    python regression_check.py --record         AVANT la modification : écrit la référence
+    python regression_check.py --compare        APRÈS : liste les écarts (code de sortie 1 s'il y en a)
+    python regression_check.py --compare --by-position
                                                idem quand des noms ont changé (traduction, renommage) :
                                                les résultats sont appariés dans leur ordre d'enregistrement
 
@@ -32,134 +32,134 @@ import time
 
 import numpy as np
 
-from simulation.loop import Resultats, simuler
-from simulation.config import Config, ParametresCamera, carre, centre
-from simulation.parallel import executer
-from simulation.mujoco_physics import acceleration_roulement, restitution_mesuree
+from simulation.loop import Results, simulate
+from simulation.config import Config, CameraParams, square, center
+from simulation.parallel import execute
+from simulation.mujoco_physics import rolling_acceleration, measured_restitution
 from simulation.session import Session
 
-FICHIER = Path(__file__).parent / "results" / "reference" / "reference.npz"
-INFOS = "__info__"           # clé réservée : date et environnement de la référence. Le format du fichier
+REFERENCE_FILE = Path(__file__).parent / "results" / "reference" / "reference.npz"
+INFO_KEY = "__info__"           # clé réservée : date et environnement de la référence. Le format du fichier
                              # (cette clé et les clés JSON) est en anglais et ne doit plus changer.
 
 # --- Cas de référence --------------------------------------------------------------------------
-CAMERA = Config(capteur="camera", camera=ParametresCamera(largeur=160, hauteur_image=120))
+CAMERA = Config(sensor="camera", camera=CameraParams(width=160, image_height=120))
 PM = CAMERA.mujoco_params
 
 
-def _lancer(inclinaison_deg: float, vitesse: float) -> Config:
+def _throw(tilt_deg: float, speed: float) -> Config:
     """Balle lancée depuis x = -10 cm vers +x, consigne au centre."""
-    return replace(CAMERA, theta_max=math.radians(inclinaison_deg), trajectoire=centre, duree=5.0,
-                   depart=(-0.10, 0.0), vitesse_depart=(vitesse, 0.0))
+    return replace(CAMERA, theta_max=math.radians(tilt_deg), trajectory=center, duration=5.0,
+                   start_position=(-0.10, 0.0), start_velocity=(speed, 0.0))
 
 
-def _poussee(dv: float) -> Config:
+def _push(dv: float) -> Config:
     """Balle au repos au centre, poussée à t = 1 s."""
-    return replace(CAMERA, trajectoire=centre, duree=5.0, depart=(0.0, 0.0),
-                   poussees=((1.0, 0.8 * dv, 0.6 * dv),))
+    return replace(CAMERA, trajectory=center, duration=5.0, start_position=(0.0, 0.0),
+                   pushes=((1.0, 0.8 * dv, 0.6 * dv),))
 
 
 SIMULATIONS = {
-    "maison_plateau": Config(physique="simple", mecanisme=False),
-    "maison_robot": Config(physique="simple"),
-    "mujoco_plateau": Config(mecanisme=False),
+    "simple_plate": Config(physics="simple", mechanism=False),
+    "simple_robot": Config(physics="simple"),
+    "mujoco_plate": Config(mechanism=False),
     "mujoco_robot": Config(),
     "camera": CAMERA,
-    "lancer_10deg_0.5": _lancer(10, 0.5),
-    "lancer_10deg_0.6": _lancer(10, 0.6),
-    "lancer_20deg_0.6": _lancer(20, 0.6),
-    "lancer_20deg_0.7": _lancer(20, 0.7),
-    "poussee_0.4": _poussee(0.4),
-    "poussee_0.5": _poussee(0.5),
-    "bille_pleine": replace(CAMERA, mujoco_params=replace(PM, k_reel=2 / 5)),
-    "balle_lourde": replace(CAMERA, mujoco_params=replace(PM, masse_balle=0.027)),
-    "frottement_0.2": replace(CAMERA, mujoco_params=replace(PM, frottement=0.2)),
-    "frottement_0.02": replace(CAMERA, mujoco_params=replace(PM, frottement=0.02)),
-    "plateau_lourd": replace(CAMERA, mujoco_params=replace(PM, masse_plateau=0.5)),
-    "latence_20ms_compensee": replace(CAMERA, compensation_retard=True),
-    "latence_60ms": replace(CAMERA, retard=3),
-    "latence_60ms_compensee": replace(CAMERA, retard=3, compensation_retard=True),
-    "latence_100ms": replace(CAMERA, retard=5),
-    "latence_100ms_compensee": replace(CAMERA, retard=5, compensation_retard=True),
-    "carre": replace(CAMERA, trajectoire=carre, duree=16.0, depart=(0.05, 0.05)),
-    "carre_compense": replace(CAMERA, trajectoire=carre, duree=16.0, depart=(0.05, 0.05),
-                              compensation_retard=True),
+    "throw_10deg_0.5": _throw(10, 0.5),
+    "throw_10deg_0.6": _throw(10, 0.6),
+    "throw_20deg_0.6": _throw(20, 0.6),
+    "throw_20deg_0.7": _throw(20, 0.7),
+    "push_0.4": _push(0.4),
+    "push_0.5": _push(0.5),
+    "solid_ball": replace(CAMERA, mujoco_params=replace(PM, k_actual=2 / 5)),
+    "heavy_ball": replace(CAMERA, mujoco_params=replace(PM, ball_mass=0.027)),
+    "friction_0.2": replace(CAMERA, mujoco_params=replace(PM, friction=0.2)),
+    "friction_0.02": replace(CAMERA, mujoco_params=replace(PM, friction=0.02)),
+    "heavy_plate": replace(CAMERA, mujoco_params=replace(PM, plate_mass=0.5)),
+    "latency_20ms_compensated": replace(CAMERA, latency_compensation=True),
+    "latency_60ms": replace(CAMERA, latency=3),
+    "latency_60ms_compensated": replace(CAMERA, latency=3, latency_compensation=True),
+    "latency_100ms": replace(CAMERA, latency=5),
+    "latency_100ms_compensated": replace(CAMERA, latency=5, latency_compensation=True),
+    "square": replace(CAMERA, trajectory=square, duration=16.0, start_position=(0.05, 0.05)),
+    "square_compensated": replace(CAMERA, trajectory=square, duration=16.0, start_position=(0.05, 0.05),
+                              latency_compensation=True),
 }
 
 
-def extraire(r: Resultats) -> dict:
+def extract(r: Results) -> dict:
     """Tous les champs de r en tableaux numpy (les historiques en float64)."""
-    tableaux = {}
-    for f in fields(Resultats):
-        valeur = getattr(r, f.name)
-        tableaux[f.name] = np.asarray(valeur, dtype=float) if isinstance(valeur, list) else np.asarray(valeur)
-    return tableaux
+    arrays = {}
+    for f in fields(Results):
+        value = getattr(r, f.name)
+        arrays[f.name] = np.asarray(value, dtype=float) if isinstance(value, list) else np.asarray(value)
+    return arrays
 
 
-def resultats_simulation(cfg: Config) -> dict:
-    return extraire(simuler(cfg))
+def simulation_results(cfg: Config) -> dict:
+    return extract(simulate(cfg))
 
 
-def _physique() -> dict:
+def _physics() -> dict:
     """Validation de la physique : section 1 de la campagne."""
-    k = CAMERA.plateau.k_inertie
+    k = CAMERA.plate.k_inertia
     theta = math.radians(10)
     mu_min = k * math.tan(theta) / (1 + k)
-    return {"roulement": np.asarray(acceleration_roulement(k, theta, frottement=1.3 * mu_min)),
-            "glissement": np.asarray(acceleration_roulement(k, theta, frottement=0.7 * mu_min)),
-            "restitution": np.asarray(restitution_mesuree())}
+    return {"rolling": np.asarray(rolling_acceleration(k, theta, friction=1.3 * mu_min)),
+            "sliding": np.asarray(rolling_acceleration(k, theta, friction=0.7 * mu_min)),
+            "restitution": np.asarray(measured_restitution())}
 
 
 def _session() -> dict:
     """Bac à sable : lâcher de 30,5 cm au centre, lancer rattrapé, lancer trop rapide (chute)."""
-    s = Session(enregistrer=False)
-    instantanes = []
+    s = Session(record=False)
+    snapshots = []
 
-    def avancer(duree: float) -> None:
-        for _ in range(round(duree / s.dt)):
-            s.pas()
-        instantanes.append(np.asarray(list(s.courbes), dtype=float))   # 10 dernières secondes
+    def advance(duration: float) -> None:
+        for _ in range(round(duration / s.dt)):
+            s.step()
+        snapshots.append(np.asarray(list(s.curves), dtype=float))   # 10 dernières secondes
 
-    avancer(1.0)
-    s.lancer(0.0, 0.0, hauteur=0.305)
-    avancer(6.0)
-    s.lancer(0.10, 180, vitesse=0.4)
-    avancer(4.0)
-    s.lancer(0.10, 180, vitesse=1.0)
-    avancer(3.0)
-    lignes = [_valeurs_numeriques(ligne) for ligne in s.fermer()]
-    return {"courbes": np.concatenate(instantanes),
-            "resume": np.asarray([v for ligne in lignes for v in ligne], dtype=float),
-            "resume_tailles": np.asarray([len(ligne) for ligne in lignes])}
+    advance(1.0)
+    s.throw(0.0, 0.0, height=0.305)
+    advance(6.0)
+    s.throw(0.10, 180, speed=0.4)
+    advance(4.0)
+    s.throw(0.10, 180, speed=1.0)
+    advance(3.0)
+    rows = [_numeric_values(row) for row in s.close()]
+    return {"curves": np.concatenate(snapshots),
+            "summary": np.asarray([v for row in rows for v in row], dtype=float),
+            "summary_sizes": np.asarray([len(row) for row in rows])}
 
 
-def _valeurs_numeriques(ligne: dict) -> list:
+def _numeric_values(row: dict) -> list:
     """Valeurs numériques d'une ligne du résumé, dans l'ordre (None -> NaN, booléen -> 0 ou 1).
     Les textes (action, résultat, heure...) sont ignorés : ils ne dépendent pas du calcul, et ils
     changeront si on les traduit."""
-    return [math.nan if v is None else float(v) for v in ligne.values() if not isinstance(v, str)]
+    return [math.nan if v is None else float(v) for v in row.values() if not isinstance(v, str)]
 
 
-CAS = {**{nom: partial(resultats_simulation, cfg) for nom, cfg in SIMULATIONS.items()},
-       "physique": _physique, "session": _session}
+CASES = {**{name: partial(simulation_results, cfg) for name, cfg in SIMULATIONS.items()},
+       "physics": _physics, "session": _session}
 
 
-def calculer(nom: str) -> dict:
+def compute(name: str) -> dict:
     """Résultats du cas `nom` : {champ: tableau}."""
-    return CAS[nom]()
+    return CASES[name]()
 
 
-def calculer_tout(processus: int = None) -> dict:
+def compute_all(processes: int = None) -> dict:
     """Résultats de tous les cas : {"cas/champ": tableau}."""
-    noms = list(CAS)
-    tableaux = {}
-    for nom, resultat in zip(noms, executer(calculer, noms, processus)):
-        tableaux.update({f"{nom}/{champ}": valeur for champ, valeur in resultat.items()})
-    return tableaux
+    names = list(CASES)
+    arrays = {}
+    for name, result in zip(names, execute(compute, names, processes)):
+        arrays.update({f"{name}/{field_name}": value for field_name, value in result.items()})
+    return arrays
 
 
 # --- Enregistrement et comparaison ---------------------------------------------------------------
-def environnement() -> dict:
+def environment() -> dict:
     """Ce dont dépend l'identité au bit près : plateforme et versions."""
     import cv2
     import mujoco
@@ -168,109 +168,109 @@ def environnement() -> dict:
             "mujoco": mujoco.__version__, "opencv": cv2.__version__}
 
 
-def enregistrer(tableaux: dict, fichier: Path = FICHIER) -> None:
-    fichier.parent.mkdir(parents=True, exist_ok=True)
-    infos = {"date": datetime.datetime.now().isoformat(timespec="seconds"), "environment": environnement()}
-    np.savez_compressed(fichier, **tableaux, **{INFOS: np.asarray(json.dumps(infos, ensure_ascii=False))})
+def record(arrays: dict, file: Path = REFERENCE_FILE) -> None:
+    file.parent.mkdir(parents=True, exist_ok=True)
+    info = {"date": datetime.datetime.now().isoformat(timespec="seconds"), "environment": environment()}
+    np.savez_compressed(file, **arrays, **{INFO_KEY: np.asarray(json.dumps(info, ensure_ascii=False))})
 
 
-def charger(fichier: Path = FICHIER):
+def load(file: Path = REFERENCE_FILE):
     """Renvoie (tableaux, infos) d'une référence enregistrée."""
-    with np.load(fichier) as donnees:
-        tableaux = {cle: donnees[cle] for cle in donnees.files if cle != INFOS}
-        infos = json.loads(str(donnees[INFOS]))
-    return tableaux, infos
+    with np.load(file) as data:
+        arrays = {key: data[key] for key in data.files if key != INFO_KEY}
+        info = json.loads(str(data[INFO_KEY]))
+    return arrays, info
 
 
-def _ecart(a: np.ndarray, b: np.ndarray) -> str:
+def _diff(a: np.ndarray, b: np.ndarray) -> str:
     """Description de la différence entre deux tableaux ; chaîne vide s'ils sont identiques au bit près."""
     if a.dtype != b.dtype or a.shape != b.shape:
         return f"type ou forme différents ({a.dtype} {a.shape} -> {b.dtype} {b.shape})"
     if a.tobytes() == b.tobytes():
         return ""
     # Comparaison élément par élément, sur les octets (0,0 et -0,0 diffèrent, NaN est comparable)
-    octets_a = np.ascontiguousarray(a).reshape(-1).view(np.uint8).reshape(a.size, a.dtype.itemsize)
-    octets_b = np.ascontiguousarray(b).reshape(-1).view(np.uint8).reshape(b.size, b.dtype.itemsize)
-    differents = (octets_a != octets_b).any(axis=1)
-    premier = np.unravel_index(int(np.argmax(differents)), a.shape) if a.ndim else ()
-    texte = (f"{int(differents.sum())} valeur(s) différente(s) sur {a.size}, "
-             f"la première à l'indice {tuple(int(i) for i in premier)}")
+    bytes_a = np.ascontiguousarray(a).reshape(-1).view(np.uint8).reshape(a.size, a.dtype.itemsize)
+    bytes_b = np.ascontiguousarray(b).reshape(-1).view(np.uint8).reshape(b.size, b.dtype.itemsize)
+    differs = (bytes_a != bytes_b).any(axis=1)
+    first = np.unravel_index(int(np.argmax(differs)), a.shape) if a.ndim else ()
+    text = (f"{int(differs.sum())} valeur(s) différente(s) sur {a.size}, "
+             f"la première à l'indice {tuple(int(i) for i in first)}")
     if np.issubdtype(a.dtype, np.number) or a.dtype == bool:
-        d = np.abs(a.astype(float).reshape(-1) - b.astype(float).reshape(-1))[differents]
-        texte += f", écart max {np.max(d):.3g}"
-    return texte
+        d = np.abs(a.astype(float).reshape(-1) - b.astype(float).reshape(-1))[differs]
+        text += f", écart max {np.max(d):.3g}"
+    return text
 
 
-def comparer(reference: dict, actuel: dict) -> list:
+def compare(reference: dict, current: dict) -> list:
     """Écarts au bit près entre deux jeux {clé: tableau}. Liste vide : identiques."""
-    ecarts = []
-    for cle in sorted(reference.keys() | actuel.keys()):
-        if cle not in actuel:
-            ecarts.append(f"{cle} : absent des résultats actuels")
-        elif cle not in reference:
-            ecarts.append(f"{cle} : nouveau, absent de la référence")
-        elif texte := _ecart(reference[cle], actuel[cle]):
-            ecarts.append(f"{cle} : {texte}")
-    return ecarts
+    diffs = []
+    for key in sorted(reference.keys() | current.keys()):
+        if key not in current:
+            diffs.append(f"{key} : absent des résultats actuels")
+        elif key not in reference:
+            diffs.append(f"{key} : nouveau, absent de la référence")
+        elif text := _diff(reference[key], current[key]):
+            diffs.append(f"{key} : {text}")
+    return diffs
 
 
-def comparer_par_position(reference: dict, actuel: dict) -> list:
+def compare_by_position(reference: dict, current: dict) -> list:
     """Comme comparer, mais apparie les tableaux dans leur ordre d'enregistrement, quels que soient
     leurs noms. Sert après un renommage : l'ordre des cas et des champs ne doit pas changer
     (une permutation serait signalée comme un écart, sauf entre deux tableaux identiques)."""
-    ecarts = []
-    if len(reference) != len(actuel):
-        ecarts.append(f"nombre de tableaux différent : {len(reference)} -> {len(actuel)}")
-    for (cle_ref, a), (cle, b) in zip(reference.items(), actuel.items()):
-        if texte := _ecart(a, b):
-            ecarts.append(f"{cle_ref} -> {cle} : {texte}")
-    return ecarts
+    diffs = []
+    if len(reference) != len(current):
+        diffs.append(f"nombre de tableaux différent : {len(reference)} -> {len(current)}")
+    for (ref_key, a), (key, b) in zip(reference.items(), current.items()):
+        if text := _diff(a, b):
+            diffs.append(f"{ref_key} -> {key} : {text}")
+    return diffs
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Non-régression au bit près de toutes les simulations")
     action = parser.add_mutually_exclusive_group(required=True)
-    action.add_argument("--enregistrer", action="store_true", help="écrit la référence (avant une modification)")
-    action.add_argument("--comparer", action="store_true", help="compare à la référence (après la modification)")
-    parser.add_argument("--remplacer", action="store_true", help="avec --enregistrer : écrase la référence existante")
-    parser.add_argument("--par-position", action="store_true",
-                        help="avec --comparer : apparie les résultats par leur ordre, pas par leur nom")
-    parser.add_argument("--processus", type=int, default=None, help="nombre de processus (défaut : un par cœur)")
+    action.add_argument("--record", action="store_true", help="écrit la référence (avant une modification)")
+    action.add_argument("--compare", action="store_true", help="compare à la référence (après la modification)")
+    parser.add_argument("--replace", action="store_true", help="avec --record : écrase la référence existante")
+    parser.add_argument("--by-position", action="store_true",
+                        help="avec --compare : apparie les résultats par leur ordre, pas par leur nom")
+    parser.add_argument("--processes", type=int, default=None, help="nombre de processus (défaut : un par cœur)")
     args = parser.parse_args()
 
-    if args.enregistrer and FICHIER.exists() and not args.remplacer:
-        sys.exit(f"Une référence existe déjà ({FICHIER}). Ajoute --remplacer pour l'écraser.")
-    if args.comparer and not FICHIER.exists():
-        sys.exit(f"Aucune référence ({FICHIER}) : lance d'abord --enregistrer.")
+    if args.record and REFERENCE_FILE.exists() and not args.replace:
+        sys.exit(f"Une référence existe déjà ({REFERENCE_FILE}). Ajoute --replace pour l'écraser.")
+    if args.compare and not REFERENCE_FILE.exists():
+        sys.exit(f"Aucune référence ({REFERENCE_FILE}) : lance d'abord --record.")
 
-    debut = time.perf_counter()
-    print(f"Calcul de {len(CAS)} cas...")
-    actuel = calculer_tout(args.processus)
-    print(f"Terminé en {time.perf_counter() - debut:.0f} s.")
+    start = time.perf_counter()
+    print(f"Calcul de {len(CASES)} cas...")
+    current = compute_all(args.processes)
+    print(f"Terminé en {time.perf_counter() - start:.0f} s.")
 
-    if args.enregistrer:
-        enregistrer(actuel)
-        print(f"Référence écrite : {FICHIER}")
+    if args.record:
+        record(current)
+        print(f"Référence écrite : {REFERENCE_FILE}")
         return
 
-    reference, infos = charger()
-    print(f"Référence du {infos['date']}.")
-    for cle, valeur in environnement().items():
-        if infos["environment"].get(cle) != valeur:
-            print(f"Attention, {cle} différent : {infos['environment'].get(cle)} -> {valeur} "
+    reference, info = load()
+    print(f"Référence du {info['date']}.")
+    for key, value in environment().items():
+        if info["environment"].get(key) != value:
+            print(f"Attention, {key} différent : {info['environment'].get(key)} -> {value} "
                   "(l'identité au bit près n'est plus garantie).")
-    if args.par_position:
-        renommes = sum(a != b for a, b in zip(reference, actuel))
-        print(f"Appariement par position : {renommes} nom(s) sur {len(reference)} ont changé.")
-        ecarts = comparer_par_position(reference, actuel)
+    if args.by_position:
+        renamed_count = sum(a != b for a, b in zip(reference, current))
+        print(f"Appariement par position : {renamed_count} nom(s) sur {len(reference)} ont changé.")
+        diffs = compare_by_position(reference, current)
     else:
-        ecarts = comparer(reference, actuel)
-    if not ecarts:
-        print(f"Identique au bit près : {len(CAS)} cas sur {len(CAS)}.")
+        diffs = compare(reference, current)
+    if not diffs:
+        print(f"Identique au bit près : {len(CASES)} cas sur {len(CASES)}.")
         return
-    cas = sorted({e.split("/")[0] for e in ecarts})
-    print(f"ÉCARTS dans {len(cas)} cas sur {len(CAS)} ({', '.join(cas)}) :")
-    for e in ecarts:
+    failed = sorted({e.split("/")[0] for e in diffs})
+    print(f"ÉCARTS dans {len(failed)} cas sur {len(CASES)} ({', '.join(failed)}) :")
+    for e in diffs:
         print(f"  {e}")
     sys.exit(1)
 

@@ -23,44 +23,44 @@ class PID:
     """
 
     def __init__(self, kp: float, ki: float = 0.0, kd: float = 0.0,
-                 sortie_min: float = -math.inf, sortie_max: float = math.inf,
+                 output_min: float = -math.inf, output_max: float = math.inf,
                  tau_d: float = 0.0):
         self.kp, self.ki, self.kd = kp, ki, kd
-        self.sortie_min, self.sortie_max = sortie_min, sortie_max
+        self.output_min, self.output_max = output_min, output_max
         self.tau_d = tau_d
         self.reset()
 
     def reset(self) -> None:
         """Remet à zéro la mémoire du contrôleur."""
-        self.integrale = 0.0
-        self.erreur_precedente = None
-        self.derivee = 0.0
-        self.termes = (0.0, 0.0, 0.0)     # (terme P, terme I, terme D) du dernier calcul
+        self.integral = 0.0
+        self.previous_error = None
+        self.derivative = 0.0
+        self.terms = (0.0, 0.0, 0.0)     # (terme P, terme I, terme D) du dernier calcul
 
-    def _saturer(self, u: float) -> float:
-        return min(max(u, self.sortie_min), self.sortie_max)
+    def _saturate(self, u: float) -> float:
+        return min(max(u, self.output_min), self.output_max)
 
-    def calculer(self, consigne: float, mesure: float, dt: float, anticipation: float = 0.0) -> float:
+    def compute(self, setpoint: float, measurement: float, dt: float, feedforward: float = 0.0) -> float:
         """Calcule la commande pour un pas de contrôle de durée dt."""
-        e = consigne - mesure
+        e = setpoint - measurement
 
         # Dérivée filtrée : d <- a·d + (1 - a)·d_brute, avec a = tau_d / (tau_d + dt)
-        brute = 0.0 if self.erreur_precedente is None else (e - self.erreur_precedente) / dt
+        raw = 0.0 if self.previous_error is None else (e - self.previous_error) / dt
         a = self.tau_d / (self.tau_d + dt)
-        self.derivee = a * self.derivee + (1 - a) * brute
-        self.erreur_precedente = e
+        self.derivative = a * self.derivative + (1 - a) * raw
+        self.previous_error = e
 
         up = self.kp * e
-        ud = self.kd * self.derivee
-        integrale_candidate = self.integrale + e * dt
-        u = up + self.ki * integrale_candidate + ud + anticipation
-        u_sat = self._saturer(u)
+        ud = self.kd * self.derivative
+        candidate_integral = self.integral + e * dt
+        u = up + self.ki * candidate_integral + ud + feedforward
+        u_sat = self._saturate(u)
 
         # Anti-windup : saturé ET l'erreur pousse dans le sens de la saturation -> on gèle l'intégrale
         if u_sat != u and (u - u_sat) * e > 0:
-            u_sat = self._saturer(up + self.ki * self.integrale + ud + anticipation)
+            u_sat = self._saturate(up + self.ki * self.integral + ud + feedforward)
         else:
-            self.integrale = integrale_candidate
+            self.integral = candidate_integral
 
-        self.termes = (up, self.ki * self.integrale, ud)
+        self.terms = (up, self.ki * self.integral, ud)
         return u_sat

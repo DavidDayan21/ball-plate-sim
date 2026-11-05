@@ -2,82 +2,82 @@
 import math
 from dataclasses import replace
 
-from simulation.loop import simuler
-from simulation.config import Config, centre
-from simulation.metrics import ecart_type_theta, erreur_suivi_rms
+from simulation.loop import simulate
+from simulation.config import Config, center
+from simulation.metrics import theta_std, tracking_error_rms
 
-PLATEAU_SIMPLE = Config(physique="simple", mecanisme=False)
-ROBOT_SIMPLE = Config(physique="simple", acceleration_max=math.inf)
+SIMPLE_PLATE = Config(physics="simple", mechanism=False)
+SIMPLE_ROBOT = Config(physics="simple", max_acceleration=math.inf)
 
 
-def cercle(cfg) -> float:
-    return erreur_suivi_rms(simuler(cfg), 12, 20)
+def circle_error(cfg) -> float:
+    return tracking_error_rms(simulate(cfg), 12, 20)
 
 
 # --- Physique simple --------------------------------------------------------------------------
-def test_filtre_derivee_reduit_le_bruit():
-    filtre = ecart_type_theta(simuler(PLATEAU_SIMPLE), 2.5, 4)
-    brut = ecart_type_theta(simuler(replace(PLATEAU_SIMPLE, tau_d=0.0)), 2.5, 4)
-    assert filtre < 0.5 * brut
+def test_derivative_filter_reduces_noise():
+    filtered = theta_std(simulate(SIMPLE_PLATE), 2.5, 4)
+    raw = theta_std(simulate(replace(SIMPLE_PLATE, tau_d=0.0)), 2.5, 4)
+    assert filtered < 0.5 * raw
 
 
-def test_anticipation_ameliore_le_suivi():
-    assert cercle(PLATEAU_SIMPLE) < 0.2 * cercle(replace(PLATEAU_SIMPLE, anticipation=False))
+def test_feedforward_improves_tracking():
+    assert circle_error(SIMPLE_PLATE) < 0.2 * circle_error(replace(SIMPLE_PLATE, feedforward=False))
 
 
-def test_plateau_simple():
-    r = simuler(PLATEAU_SIMPLE)
-    assert not r.tombee and erreur_suivi_rms(r, 12, 20) < 0.006
+def test_simple_plate():
+    r = simulate(SIMPLE_PLATE)
+    assert not r.fallen and tracking_error_rms(r, 12, 20) < 0.006
 
 
-def test_robot_simple():
-    r = simuler(ROBOT_SIMPLE)
-    assert not r.tombee and r.poses_hors_portee == 0 and erreur_suivi_rms(r, 12, 20) < 0.006
+def test_simple_robot():
+    r = simulate(SIMPLE_ROBOT)
+    assert not r.fallen and r.unreachable_poses == 0 and tracking_error_rms(r, 12, 20) < 0.006
 
 
-def test_moteurs_lents_degradent_le_suivi():
-    assert cercle(replace(ROBOT_SIMPLE, vitesse_max=0.5)) > 1.5 * cercle(ROBOT_SIMPLE)
+def test_slow_motors_degrade_tracking():
+    assert circle_error(replace(SIMPLE_ROBOT, max_speed=0.5)) > 1.5 * circle_error(SIMPLE_ROBOT)
 
 
 # --- MuJoCo -------------------------------------------------------------------------------------
-def test_mujoco_plateau_en_angles():
-    r = simuler(Config(mecanisme=False))
-    assert not r.tombee and erreur_suivi_rms(r, 12, 20) < 0.008
+def test_mujoco_angle_driven_plate():
+    r = simulate(Config(mechanism=False))
+    assert not r.fallen and tracking_error_rms(r, 12, 20) < 0.008
 
 
-def test_mujoco_robot_avec_rampes():
-    r = simuler(Config())
-    assert not r.tombee and r.poses_hors_portee == 0
-    assert erreur_suivi_rms(r, 12, 20) < 0.008
-    assert r.part_decollee < 0.01                      # la balle ne décolle quasiment pas
+def test_mujoco_robot_with_ramps():
+    r = simulate(Config())
+    assert not r.fallen and r.unreachable_poses == 0
+    assert tracking_error_rms(r, 12, 20) < 0.008
+    assert r.airborne_fraction < 0.01                      # la balle ne décolle quasiment pas
 
 
-def test_rampes_suppriment_les_rebonds():
+def test_ramps_suppress_bounces():
     # Balle élastique (e ≈ 0,88) : sans rampes, les à-coups du plateau la font rebondir
-    assert simuler(Config(acceleration_max=math.inf)).part_decollee > 0.5
-    assert simuler(Config()).part_decollee < 0.01
+    assert simulate(Config(max_acceleration=math.inf)).airborne_fraction > 0.5
+    assert simulate(Config()).airborne_fraction < 0.01
 
 
-def test_robot_pilote_par_la_camera():
-    r = simuler(Config(capteur="camera"))
-    assert not r.tombee and r.non_detectee == 0 and erreur_suivi_rms(r, 12, 20) < 0.008
+def test_robot_driven_by_camera():
+    r = simulate(Config(sensor="camera"))
+    assert not r.fallen and r.undetected == 0 and tracking_error_rms(r, 12, 20) < 0.008
 
 
-def test_latence_degrade_le_suivi():
-    assert cercle(Config(capteur="camera", retard=5)) > 2 * cercle(Config(capteur="camera"))
+def test_latency_degrades_tracking():
+    assert circle_error(Config(sensor="camera", latency=5)) > 2 * circle_error(Config(sensor="camera"))
 
 
-def test_compensation_de_latence():
-    assert cercle(Config(retard=5, compensation_retard=True)) < 0.5 * cercle(Config(retard=5))
+def test_latency_compensation():
+    assert circle_error(Config(latency=5, latency_compensation=True)) < 0.5 * circle_error(Config(latency=5))
 
 
-def test_balle_lancee_rattrapee():
-    r = simuler(Config(trajectoire=centre, duree=5.0, depart=(-0.10, 0.0), vitesse_depart=(0.4, 0.0)))
-    assert not r.tombee and math.hypot(r.x[-1], r.y[-1]) < 0.01
+def test_thrown_ball_caught():
+    r = simulate(Config(trajectory=center, duration=5.0, start_position=(-0.10, 0.0), start_velocity=(0.4, 0.0)))
+    assert not r.fallen and math.hypot(r.x[-1], r.y[-1]) < 0.01
 
 
-def test_la_masse_de_la_balle_ne_change_rien():
+def test_ball_mass_has_no_effect():
     # ẍ = g·sin θ / (1 + k) : la masse se simplifie
     pm = Config().mujoco_params
-    lourde = cercle(Config(mujoco_params=replace(pm, masse_balle=0.027)))
-    assert abs(lourde / cercle(Config()) - 1) < 0.15
+    heavy = circle_error(Config(mujoco_params=replace(pm, ball_mass=0.027)))
+    assert abs(heavy / circle_error(Config()) - 1) < 0.15
