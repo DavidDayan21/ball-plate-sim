@@ -12,13 +12,34 @@ def tracking_error_rms(r, t0: float, t1: float) -> float:
     return math.sqrt(sum((r.x[i] - r.x_ref[i]) ** 2 + (r.y[i] - r.y_ref[i]) ** 2 for i in idx) / len(idx))
 
 
-def settling_time_5(r, t1: float) -> float:
-    """Settling time to within 5 % of the initial distance to the setpoint (before t1)."""
-    d0 = math.hypot(r.x[0] - r.x_ref[0], r.y[0] - r.y_ref[0])
-    for i in reversed(indices(r, 0.0, t1)):
-        if math.hypot(r.x[i] - r.x_ref[i], r.y[i] - r.y_ref[i]) > 0.05 * d0:
-            return r.t[i]
-    return 0.0
+def distance(r, i: int) -> float:
+    """Distance between the ball and the setpoint at sample i (m)."""
+    return math.hypot(r.x[i] - r.x_ref[i], r.y[i] - r.y_ref[i])
+
+
+# Return to the center. A settling time (the last time the distance exceeds a threshold) is not used:
+# when the response oscillates, it jumps as soon as a peak crosses the threshold (a 4.9 mm or a 5.1 mm
+# peak changed it by more than a second). The metrics below vary continuously with the response.
+
+def max_distance(r, t0: float, t1: float) -> float:
+    """Maximum distance between the ball and the setpoint over [t0, t1[ (m).
+    Objective "back to the center in less than 2 s": max_distance(r, 2, 4) ≤ 5 mm."""
+    return max(distance(r, i) for i in indices(r, t0, t1))
+
+
+def arrival_time(r, t1: float, fraction: float = 0.05) -> float:
+    """First time the distance falls below `fraction` of the initial distance, before t1 (s).
+    NaN if it never does."""
+    d0 = distance(r, 0)
+    return next((r.t[i] for i in indices(r, 0.0, t1) if distance(r, i) < fraction * d0), math.nan)
+
+
+def overshoot(r, t1: float, fraction: float = 0.05) -> float:
+    """Maximum distance after the arrival (see arrival_time), before t1 (m). NaN without arrival."""
+    t_arrival = arrival_time(r, t1, fraction)
+    if math.isnan(t_arrival):
+        return math.nan
+    return max_distance(r, t_arrival, t1)
 
 
 def theta_std(r, t0: float, t1: float) -> float:

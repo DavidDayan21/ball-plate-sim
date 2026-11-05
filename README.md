@@ -24,8 +24,8 @@ Building the real robot remains a distant goal: the code will then be ready.
 | E. Construction (distant) | Design, real-world defects, complete error budget | Later |
 
 Quantified goals for both brains: thrown ball caught up to at least 90 % of the physical limit,
-error on the circle < 2 mm with 60 ms of latency, return to the center < 2 s, no fall in the robustness
-variants.
+error on the circle < 2 mm with 60 ms of latency, return to the center < 2 s (from 10 cm away, the ball
+stays within 5 mm of the center from 2 s on), no fall in the robustness variants.
 
 ## Structure
 
@@ -42,11 +42,11 @@ simulation/
   motor.py               Stepper motor: max speed, microsteps, limits, ramps
   sensor.py              Synthetic sensor: noise + latency
   camera.py              Virtual camera: rendering, OpenCV detection, projection
-  metrics.py             Metrics: tracking error, settling time, command jitter
+  metrics.py             Metrics: tracking error, return to the center, command jitter
   session.py             Sandbox: series of attempts, automatic end, CSV recording
   parallel.py            Independent simulations spread over several processes
 tests/                   Automated tests, by theme (controller, mechanics, sensors, physics,
-                         scenarios, session, regression check, campaign)
+                         scenarios, metrics, session, regression check, campaign)
 campaign.py              Full measurement campaign over N draws, in parallel -> results/report.md
 sandbox.py               The robot in 3D and in real time, driven from a control panel
 regression_check.py      Checks that a change leaves all the results bit-identical

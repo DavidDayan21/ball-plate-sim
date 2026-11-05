@@ -35,7 +35,7 @@ import matplotlib.pyplot as plt
 
 from simulation.config import G, Config, CameraParams, square, center
 from simulation.loop import simulate
-from simulation.metrics import theta_std, tracking_error_rms, settling_time_5
+from simulation.metrics import arrival_time, max_distance, overshoot, theta_std, tracking_error_rms
 from simulation.mujoco_physics import rolling_acceleration, measured_restitution
 from simulation.parallel import execute
 
@@ -188,8 +188,18 @@ def square_error(r) -> float:
     return math.nan if r.fallen else tracking_error_rms(r, 8, 16)
 
 
-def settling(r) -> float:
-    return math.nan if r.fallen else settling_time_5(r, 4)
+def return_distance(r) -> float:
+    """Objective "back to the center in less than 2 s": max distance between 2 s and 4 s ≤ 5 mm
+    (reference scenario: start 10 cm away, setpoint at the center until 4 s)."""
+    return math.nan if r.fallen else max_distance(r, 2, 4)
+
+
+def arrival(r) -> float:
+    return math.nan if r.fallen else arrival_time(r, 4)
+
+
+def overshoot_after_arrival(r) -> float:
+    return math.nan if r.fallen else overshoot(r, 4)
 
 
 def jitter(r) -> float:
@@ -313,17 +323,27 @@ def write_report(data: dict, path: str = os.path.join("results", "report.md")) -
               ("MuJoCo: 3-arm robot", "mujoco_robot", "simple_robot", "physics"),
               ("MuJoCo: 3-arm robot + camera", "camera", "mujoco_robot", "sensor"))
     rows = []
+    for label, case, _, _ in levels:
+        rs = runs[case]
+        rows.append([label, fallen(rs), fmt([arrival(r) for r in rs], " s"),
+                     fmt([overshoot_after_arrival(r) for r in rs], " mm", scale=1000),
+                     fmt([return_distance(r) for r in rs], " mm", scale=1000)])
+    rep.table(["Level", "Fallen", "Arrival (first time < 5 mm)", "Overshoot after arrival",
+               "Max distance between 2 s and 4 s"], rows)
+    rep.text("Return to the center (start 10 cm away, setpoint at the center until 4 s). Objective "
+             "\"back to the center in less than 2 s\": max distance between 2 s and 4 s ≤ 5 mm.")
+    rows = []
     for label, case, compared, factor in levels:
         rs = runs[case]
         delta = "-" if compared is None else fmt_delta([circle_error(r) for r in runs[compared]],
                                                        [circle_error(r) for r in rs], " mm", scale=1000)
         contact = fmt([airborne(r) for r in rs], " %", 1, 100) if CASES[case].physics == "mujoco" else "-"
-        rows.append([label, fallen(rs), fmt([settling(r) for r in rs], " s"),
-                     fmt([circle_error(r) for r in rs], " mm", scale=1000), factor, delta,
+        rows.append([label, fmt([circle_error(r) for r in rs], " mm", scale=1000), factor, delta,
                      fmt([jitter(r) for r in rs], "°", scale=180 / math.pi), contact])
-    rep.table(["Level", "Fallen", "Settling time (5 %)", "Circle error", "Factor changed",
-               "Δ circle error (effect of the factor)", "θx jitter", "Airborne"], rows)
-    rep.text("Factor changed: compared with the level above that differs only by this factor "
+    rep.table(["Level", "Circle error", "Factor changed", "Δ circle error (effect of the factor)",
+               "θx jitter", "Airborne"], rows)
+    rep.text("Circle: 6 cm radius in 4 s, error = root-mean-square distance from 12 s to 20 s. "
+             "Factor changed: compared with the level above that differs only by this factor "
              "(the mechanism: the simple plate; the physics: the same level in simple physics; "
              "the sensor: the MuJoCo robot).")
 
@@ -365,11 +385,12 @@ def write_report(data: dict, path: str = os.path.join("results", "report.md")) -
     for label, case in variants.items():
         rs = runs[case]
         errors = [circle_error(r) for r in rs]
-        rows.append([label, fallen(rs), fmt([settling(r) for r in rs], " s"), fmt(errors, " mm", scale=1000),
+        rows.append([label, fallen(rs), fmt([return_distance(r) for r in rs], " mm", scale=1000),
+                     fmt(errors, " mm", scale=1000),
                      "-" if case == "camera" else fmt_delta(nominal, errors, " mm", scale=1000),
                      fmt([airborne(r) for r in rs], " %", 1, 100)])
-    rep.table(["Variant", "Fallen", "Settling time (5 %)", "Circle error", "Δ circle error vs nominal",
-               "Airborne"], rows)
+    rep.table(["Variant", "Fallen", "Max distance between 2 s and 4 s", "Circle error",
+               "Δ circle error vs nominal", "Airborne"], rows)
 
     rep.section("5. Camera latency: without and with compensation by prediction")
     rows = []
@@ -379,16 +400,17 @@ def write_report(data: dict, path: str = os.path.join("results", "report.md")) -
         for compensated, case in ((False, without), (True, with_)):
             rs = runs[case]
             if compensated:
-                d_settling = fmt_delta([settling(r) for r in runs[without]], [settling(r) for r in rs], " s")
+                d_return = fmt_delta([return_distance(r) for r in runs[without]],
+                                     [return_distance(r) for r in rs], " mm", scale=1000)
                 d_error = fmt_delta([circle_error(r) for r in runs[without]], [circle_error(r) for r in rs],
                                     " mm", scale=1000)
             else:
-                d_settling = d_error = "-"
+                d_return = d_error = "-"
             rows.append([f"{ms} ms", "with" if compensated else "without", fallen(rs),
-                         fmt([settling(r) for r in rs], " s"), d_settling,
+                         fmt([return_distance(r) for r in rs], " mm", scale=1000), d_return,
                          fmt([circle_error(r) for r in rs], " mm", scale=1000), d_error])
-    rep.table(["Latency", "Compensation", "Fallen", "Settling time (5 %)", "Δ settling (with - without)",
-               "Circle error", "Δ circle error (with - without)"], rows)
+    rep.table(["Latency", "Compensation", "Fallen", "Max distance between 2 s and 4 s",
+               "Δ (with - without)", "Circle error", "Δ circle error (with - without)"], rows)
 
     rep.section("6. Square trajectory (10 cm sides, 5 cm/s), latency 20 ms")
     without = [square_error(r) for r in runs["square"]]
