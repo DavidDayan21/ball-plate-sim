@@ -2,16 +2,20 @@
 
 Simulated chain: MuJoCo (3-arm robot, motor ramps) + 160×120 camera + OpenCV + PID.
 
+Each case is simulated over 10 draw(s). Draw 0 is the nominal configuration; draw k ≥ 1 uses noise seed k and a start position shifted by up to ±0.5 mm on each axis (the only source of variation for the camera cases). Values: mean ± standard deviation over the draws; draws where the ball fell are counted in 'Fallen' and left out of the other columns. Δ: mean of the paired differences over the same draws ± standard error, in **bold** when significant (paired t-test at the 5 % level: |Δ| > t × standard error, t = 97.5 % quantile of Student's distribution, 2.26 for 10 draws).
+
 
 ## 0. From the simple model to the full chain (reference scenario, same settings)
 
-| Level | Fallen | Settling time (5 %) | Circle error | θx jitter | Airborne |
-|---|---|---|---|---|---|
-| Simple physics: angle-driven plate | no | 2.76 s | 3.34 mm | 0.55° | - |
-| Simple physics: 3-arm robot | no | 2.72 s | 4.35 mm | 0.57° | - |
-| MuJoCo: angle-driven plate | no | 3.98 s | 3.01 mm | 0.55° | 75.2 % |
-| MuJoCo: 3-arm robot | no | 2.68 s | 5.46 mm | 0.58° | 0.0 % |
-| MuJoCo: 3-arm robot + camera | no | 2.78 s | 4.61 mm | 0.12° | 0.0 % |
+| Level | Fallen | Settling time (5 %) | Circle error | Factor changed | Δ circle error (effect of the factor) | θx jitter | Airborne |
+|---|---|---|---|---|---|---|---|
+| Simple physics: angle-driven plate | 0/10 | 2.74 ± 0.02 s | 3.43 ± 0.08 mm | - | - | 0.58 ± 0.05° | - |
+| Simple physics: 3-arm robot | 0/10 | 3.06 ± 0.54 s | 4.75 ± 0.45 mm | mechanism | **+1.32 ± 0.15 mm** | 0.59 ± 0.06° | - |
+| MuJoCo: angle-driven plate | 0/10 | 3.98 ± 0.01 s | 2.56 ± 0.71 mm | physics | **-0.87 ± 0.23 mm** | 0.58 ± 0.05° | 72.3 ± 2.9 % |
+| MuJoCo: 3-arm robot | 0/10 | 3.38 ± 0.58 s | 5.39 ± 0.45 mm | physics | **+0.64 ± 0.09 mm** | 0.59 ± 0.06° | 0.0 ± 0.0 % |
+| MuJoCo: 3-arm robot + camera | 0/10 | 2.78 ± 0.00 s | 4.61 ± 0.03 mm | sensor | **-0.79 ± 0.14 mm** | 0.12 ± 0.00° | 0.0 ± 0.0 % |
+
+Factor changed: compared with the level above that differs only by this factor (the mechanism: the simple plate; the physics: the same level in simple physics; the sensor: the MuJoCo robot).
 
 
 ## 1. Theoretical limits and contact calibration
@@ -26,47 +30,49 @@ Simulated chain: MuJoCo (3-arm robot, motor ramps) + 160×120 camera + OpenCV + 
 
 ## 2. Ball thrown from x = -10 cm toward the opposite edge (setpoint: center)
 
-| Max tilt | Max speed caught | Physical limit √(2·c·g·sin θmax·d) |
-|---|---|---|
-| ±10° | 0.5 m/s | 0.71 m/s |
-| ±20° | 0.6 m/s | 1.00 m/s |
+| Max tilt | Max speed caught | Physical limit √(2·c·g·sin θmax·d) | Share of the limit | Monotonic around the threshold (draw 0) |
+|---|---|---|---|---|
+| ±10° | 0.51 ± 0.00 m/s | 0.71 m/s | 71 ± 0 % | yes |
+| ±20° | 0.62 ± 0.00 m/s | 1.00 m/s | 62 ± 0 % | yes |
 
 
 ## 3. Push on the ball at rest at the center (t = 1 s)
 
-| Max impulse absorbed (Δv) | Physical limit (d = 15 cm, ±10°) |
-|---|---|
-| 0.4 m/s | 0.55 m/s |
+| Max tilt | Max impulse absorbed (Δv) | Physical limit √(2·c·g·sin θmax·d) | Share of the limit | Monotonic around the threshold (draw 0) |
+|---|---|---|---|---|
+| ±10° | 0.45 ± 0.00 m/s | 0.55 m/s | 81 ± 0 % | yes |
+
+Maximum speeds found by bisection, to 0.01 m/s, between 0.1 and 1.5 m/s. Distance d: from the start to the edge (throw), from the center to the edge (push).
 
 
 ## 4. Robustness to physical parameters (controller unchanged, tuned for the ping-pong ball)
 
-| Variant | Fallen | Settling time (5 %) | Circle error | Airborne |
-|---|---|---|---|---|
-| Nominal (ping-pong, μ = 1) | no | 2.78 s | 4.61 mm | 0.0 % |
-| Solid ball (k = 2/5) | no | 2.90 s | 7.11 mm | 0.0 % |
-| Ball 10× heavier (27 g) | no | 2.78 s | 4.61 mm | 0.0 % |
-| Friction μ = 0.2 | no | 2.78 s | 4.45 mm | 0.0 % |
-| Friction μ = 0.02 | no | 2.84 s | 4.47 mm | 0.0 % |
-| Plate 2× heavier (0.5 kg) | no | 2.78 s | 4.56 mm | 0.0 % |
+| Variant | Fallen | Settling time (5 %) | Circle error | Δ circle error vs nominal | Airborne |
+|---|---|---|---|---|---|
+| Nominal (ping-pong, μ = 1) | 0/10 | 2.78 ± 0.00 s | 4.61 ± 0.03 mm | - | 0.0 ± 0.0 % |
+| Solid ball (k = 2/5) | 0/10 | 2.89 ± 0.01 s | 7.11 ± 0.02 mm | **+2.50 ± 0.01 mm** | 0.0 ± 0.0 % |
+| Ball 10× heavier (27 g) | 0/10 | 2.78 ± 0.00 s | 4.59 ± 0.02 mm | -0.01 ± 0.01 mm | 0.0 ± 0.0 % |
+| Friction μ = 0.2 | 0/10 | 2.78 ± 0.00 s | 4.48 ± 0.04 mm | **-0.12 ± 0.01 mm** | 0.0 ± 0.0 % |
+| Friction μ = 0.02 | 0/10 | 2.85 ± 0.01 s | 4.47 ± 0.02 mm | **-0.14 ± 0.01 mm** | 0.0 ± 0.0 % |
+| Plate 2× heavier (0.5 kg) | 0/10 | 2.78 ± 0.00 s | 4.58 ± 0.05 mm | -0.02 ± 0.02 mm | 0.0 ± 0.0 % |
 
 
 ## 5. Camera latency: without and with compensation by prediction
 
-| Latency | Compensation | Fallen | Settling time (5 %) | Circle error |
-|---|---|---|---|---|
-| 20 ms | without | no | 2.78 s | 4.61 mm |
-| 20 ms | with | no | 2.82 s | 1.47 mm |
-| 60 ms | without | no | 2.68 s | 10.56 mm |
-| 60 ms | with | no | 2.82 s | 1.66 mm |
-| 100 ms | without | no | 2.62 s | 16.66 mm |
-| 100 ms | with | no | 3.72 s | 1.94 mm |
+| Latency | Compensation | Fallen | Settling time (5 %) | Δ settling (with - without) | Circle error | Δ circle error (with - without) |
+|---|---|---|---|---|---|---|
+| 20 ms | without | 0/10 | 2.78 ± 0.00 s | - | 4.61 ± 0.03 mm | - |
+| 20 ms | with | 0/10 | 2.82 ± 0.00 s | **+0.04 ± 0.00 s** | 1.46 ± 0.02 mm | **-3.14 ± 0.01 mm** |
+| 60 ms | without | 0/10 | 2.68 ± 0.01 s | - | 10.59 ± 0.04 mm | - |
+| 60 ms | with | 0/10 | 2.80 ± 0.01 s | **+0.13 ± 0.00 s** | 1.66 ± 0.01 mm | **-8.93 ± 0.01 mm** |
+| 100 ms | without | 0/10 | 2.61 ± 0.01 s | - | 16.67 ± 0.03 mm | - |
+| 100 ms | with | 0/10 | 3.75 ± 0.04 s | **+1.14 ± 0.02 s** | 1.96 ± 0.03 mm | **-14.70 ± 0.01 mm** |
 
 
 ## 6. Square trajectory (10 cm sides, 5 cm/s), latency 20 ms
 
-| Compensation | Fallen | Error (2nd lap) |
-|---|---|---|
-| without | no | 9.81 mm |
-| with | no | 9.34 mm |
+| Compensation | Fallen | Error (2nd lap) | Δ (with - without) |
+|---|---|---|---|
+| without | 0/10 | 9.83 ± 0.01 mm | - |
+| with | 0/10 | 9.34 ± 0.01 mm | **-0.49 ± 0.01 mm** |
 

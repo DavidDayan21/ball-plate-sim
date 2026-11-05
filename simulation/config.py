@@ -116,6 +116,7 @@ class Config:
     # Sensor
     sensor: str = "synthetic"          # "synthetic" (Gaussian noise) or "camera" (MuJoCo only)
     sigma: float = 0.001               # synthetic sensor: standard deviation of the noise (m)
+    seed: int = 0                      # synthetic sensor: seed of the noise (same seed, same results)
     latency: int = 1                   # measurement latency, in control periods
     camera: CameraParams = field(default_factory=CameraParams)
     tilt_correction: bool = True

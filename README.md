@@ -46,8 +46,8 @@ simulation/
   session.py             Sandbox: series of attempts, automatic end, CSV recording
   parallel.py            Independent simulations spread over several processes
 tests/                   Automated tests, by theme (controller, mechanics, sensors, physics,
-                         scenarios, session, regression check)
-campaign.py              Full measurement campaign -> results/report.md
+                         scenarios, session, regression check, campaign)
+campaign.py              Full measurement campaign over N draws, in parallel -> results/report.md
 sandbox.py               The robot in 3D and in real time, driven from a control panel
 regression_check.py      Checks that a change leaves all the results bit-identical
 ```
@@ -66,6 +66,7 @@ python -m pytest
 ```powershell
 python -m pytest              # all the tests
 python campaign.py            # full measurement campaign, writes results/report.md (a few minutes)
+python campaign.py --draws 1  # same, nominal configuration only (one simulation per case)
 python sandbox.py             # 3D sandbox (see below)
 python sandbox.py --camera                             # same, ball measured by the virtual camera
 python -m simulation.mujoco_physics                    # exports the models to results/
@@ -74,6 +75,14 @@ python regression_check.py --record       # before a change: reference of all th
 python regression_check.py --compare      # after: checks that they are bit-identical
 python regression_check.py --compare --by-position    # same after a renaming (changed names, same order)
 ```
+
+Measurement campaign: every case is simulated over N draws (`--draws`, 10 by default), in parallel
+(`--processes`, one per core by default). Draw 0 is the nominal configuration; draw k ≥ 1 uses noise
+seed k (`Config.seed`) and a start position shifted by up to ±0.5 mm on each axis, the only source of
+variation for the camera, which draws no random number. The report gives mean ± standard deviation;
+a difference between two cases, paired over the same draws, is significant by a paired t-test at the
+5 % level (|mean| > t × standard error, t = 2.26 for 10 draws). Maximum speeds are found by bisection,
+to 0.01 m/s.
 
 Regression check: any refactoring must leave the results bit-identical. The reference
 (`results/reference/`, ignored by git) covers all the cases of the campaign, the physics validation

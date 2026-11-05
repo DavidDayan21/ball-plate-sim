@@ -1,4 +1,5 @@
 """Synthetic sensor and virtual camera (MuJoCo rendering + OpenCV detection)."""
+from dataclasses import replace
 import math
 
 import mujoco
@@ -9,6 +10,7 @@ from controller.kinematics import rotation
 from simulation.camera import BallCamera, inverse_rotation
 from simulation.sensor import Sensor
 from simulation.config import Config, CameraParams
+from simulation.loop import simulate
 from simulation.mujoco_physics import model_xml
 
 H, R = 0.12, 0.02
@@ -17,6 +19,14 @@ H, R = 0.12, 0.02
 def test_sensor_exact_latency():
     c = Sensor(sigma=0.0, latency=2)
     assert [c.measure(float(k), 0.0)[0] for k in range(6)] == [0.0, 0.0, 0.0, 1.0, 2.0, 3.0]
+
+
+def test_noise_seed_set_by_config():
+    # Same seed: identical results; another seed: other noise, hence another trajectory
+    cfg = Config(physics="simple", mechanism=False, duration=1.0)
+    a, b, c = simulate(cfg), simulate(cfg), simulate(replace(cfg, seed=1))
+    assert a.x == b.x and a.measurement_error == b.measurement_error
+    assert c.measurement_error != a.measurement_error and c.x != a.x
 
 
 def test_inverse_rotation():

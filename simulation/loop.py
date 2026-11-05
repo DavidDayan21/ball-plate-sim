@@ -82,7 +82,7 @@ class Simulation:
         if self.camera is not None:
             self.sensor = Sensor(sigma=0.0, latency=cfg.latency)   # the noise comes from the image
         else:
-            self.sensor = Sensor(cfg.sigma, cfg.latency)
+            self.sensor = Sensor(cfg.sigma, cfg.latency, cfg.seed)
         self.ctrl = PlateController(cfg.kp, cfg.ki, cfg.kd(), cfg.theta_max, cfg.tau_d,
                                       model_gain=cfg.plate.coefficient * G, feedforward=cfg.feedforward,
                                       latency_compensation=cfg.latency if cfg.latency_compensation else 0,
