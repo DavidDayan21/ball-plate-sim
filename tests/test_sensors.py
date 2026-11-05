@@ -1,4 +1,4 @@
-"""Capteur fictif et caméra virtuelle (rendu MuJoCo + détection OpenCV)."""
+"""Synthetic sensor and virtual camera (MuJoCo rendering + OpenCV detection)."""
 import math
 
 import mujoco
@@ -27,7 +27,7 @@ def test_inverse_rotation():
 
 @pytest.fixture(scope="module")
 def scene():
-    """Plateau en angles + caméra : on place la balle à la main pour tester la mesure."""
+    """Angle-driven plate + camera: the ball is placed by hand to test the measurement."""
     model = mujoco.MjModel.from_xml_string(model_xml(Config(mechanism=False, start_position=(0.0, 0.0))))
     data = mujoco.MjData(model)
     cameras = {c: BallCamera(model, CameraParams(), H, R, tilt_correction=c) for c in (True, False)}

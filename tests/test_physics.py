@@ -1,4 +1,4 @@
-"""Les deux physiques face à la théorie du roulement, et le modèle MuJoCo du robot."""
+"""Both physics against the theory of rolling, and the MuJoCo model of the robot."""
 import math
 
 import mujoco
@@ -13,7 +13,7 @@ K = 2 / 3
 
 
 def test_simple_physics_hollow_ball():
-    # ẍ = g·sin θ / (1 + k) = (3/5)·g·sin θ pour k = 2/3, axes indépendants
+    # ẍ = g·sin θ / (1 + k) = (3/5)·g·sin θ for k = 2/3, independent axes
     ax, ay = acceleration(math.radians(2), 0.0, PlateParams())
     assert math.isclose(ax, 0.6 * G * math.sin(math.radians(2)), rel_tol=1e-12)
     assert ay == 0.0
@@ -26,7 +26,7 @@ def test_mujoco_matches_rolling_law(k):
 
 
 def test_no_slip_condition():
-    # La balle roule si μ ≥ k·tan θ / (1 + k), sinon elle glisse : a = g·(sin θ - μ·cos θ)
+    # The ball rolls if μ ≥ k·tan θ / (1 + k), otherwise it slides: a = g·(sin θ - μ·cos θ)
     th = math.radians(10)
     mu_min = K * math.tan(th) / (1 + K)
     rolls = rolling_acceleration(K, th, friction=1.3 * mu_min)
@@ -36,7 +36,7 @@ def test_no_slip_condition():
 
 
 def test_bounce_complies_with_ittf_rule():
-    # Lâchée de 30,5 cm, une balle de ping-pong réglementaire remonte de 22 à 25 cm : e ∈ [0,85 ; 0,91]
+    # Dropped from 30.5 cm, a regulation ping-pong ball bounces back to 22-25 cm: e ∈ [0.85, 0.91]
     assert 0.85 <= measured_restitution(height=0.305) <= 0.91
 
 
@@ -50,7 +50,7 @@ def test_mujoco_robot_at_rest_plate_level():
 
 
 def test_inverse_kinematics_validated_by_mujoco():
-    # La chaîne fermée de MuJoCo (avec ses mouvements parasites) doit donner l'inclinaison voulue
+    # MuJoCo's closed chain (with its parasitic motions) must give the desired tilt
     model, data = build(Config())
     data.ctrl[:] = inverse_kinematics(Geometry(), math.radians(5), math.radians(-3))
     for _ in range(2000):

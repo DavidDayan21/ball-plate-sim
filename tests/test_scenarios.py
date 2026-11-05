@@ -1,4 +1,4 @@
-"""Scénarios complets en boucle fermée, de la physique simple à la chaîne MuJoCo + caméra."""
+"""Complete closed-loop scenarios, from the simple physics to the MuJoCo + camera chain."""
 import math
 from dataclasses import replace
 
@@ -14,7 +14,7 @@ def circle_error(cfg) -> float:
     return tracking_error_rms(simulate(cfg), 12, 20)
 
 
-# --- Physique simple --------------------------------------------------------------------------
+# --- Simple physics ---------------------------------------------------------------------------
 def test_derivative_filter_reduces_noise():
     filtered = theta_std(simulate(SIMPLE_PLATE), 2.5, 4)
     raw = theta_std(simulate(replace(SIMPLE_PLATE, tau_d=0.0)), 2.5, 4)
@@ -49,11 +49,11 @@ def test_mujoco_robot_with_ramps():
     r = simulate(Config())
     assert not r.fallen and r.unreachable_poses == 0
     assert tracking_error_rms(r, 12, 20) < 0.008
-    assert r.airborne_fraction < 0.01                      # la balle ne décolle quasiment pas
+    assert r.airborne_fraction < 0.01                      # the ball hardly ever leaves the plate
 
 
 def test_ramps_suppress_bounces():
-    # Balle élastique (e ≈ 0,88) : sans rampes, les à-coups du plateau la font rebondir
+    # Elastic ball (e ≈ 0.88): without ramps, the jerks of the plate make it bounce
     assert simulate(Config(max_acceleration=math.inf)).airborne_fraction > 0.5
     assert simulate(Config()).airborne_fraction < 0.01
 
@@ -77,7 +77,7 @@ def test_thrown_ball_caught():
 
 
 def test_ball_mass_has_no_effect():
-    # ẍ = g·sin θ / (1 + k) : la masse se simplifie
+    # ẍ = g·sin θ / (1 + k): the mass cancels out
     pm = Config().mujoco_params
     heavy = circle_error(Config(mujoco_params=replace(pm, ball_mass=0.027)))
     assert abs(heavy / circle_error(Config()) - 1) < 0.15

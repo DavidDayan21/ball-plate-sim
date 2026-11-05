@@ -1,1 +1,1 @@
-"""Simulation du robot équilibriste : configuration, physiques (maison et MuJoCo), capteurs, boucle."""
+"""Simulation of the balancing robot: configuration, physics (simple and MuJoCo), sensors, loop."""

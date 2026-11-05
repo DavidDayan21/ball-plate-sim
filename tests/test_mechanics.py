@@ -1,4 +1,4 @@
-"""Cinématique du mécanisme à 3 bras et modèle des moteurs."""
+"""Kinematics of the 3-arm mechanism and motor model."""
 import math
 
 import pytest
@@ -36,9 +36,9 @@ def test_unreachable_pose():
 
 def test_motor_bounded_speed_and_step():
     m = Motor(0.0, max_speed=2.0, resolution=0.01)
-    m.request(1.004)                         # arrondi au pas : 1,00
+    m.request(1.004)                         # rounded to the step: 1.00
     for _ in range(100):
-        m.advance(0.001)                      # 0,1 s à 2 rad/s
+        m.advance(0.001)                      # 0.1 s at 2 rad/s
     assert math.isclose(m.position, 0.2, rel_tol=1e-9)
     for _ in range(1000):
         m.advance(0.001)

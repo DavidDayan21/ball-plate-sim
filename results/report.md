@@ -1,72 +1,72 @@
-# Bilan de la campagne de mesures du robot équilibriste simulé
+# Measurement campaign report for the simulated balancing robot
 
-Chaîne simulée : MuJoCo (robot à 3 bras, rampes moteurs) + caméra 160×120 + OpenCV + PID.
+Simulated chain: MuJoCo (3-arm robot, motor ramps) + 160×120 camera + OpenCV + PID.
 
 
-## 0. Du modèle simple à la chaîne complète (scénario de référence, mêmes réglages)
+## 0. From the simple model to the full chain (reference scenario, same settings)
 
-| Niveau | Tombée | Retour 5 % | Erreur cercle | Agitation θ | Décollée |
+| Level | Fallen | Settling time (5 %) | Circle error | θx jitter | Airborne |
 |---|---|---|---|---|---|
-| Maison : plateau en angles | non | 2.76 s | 3.34 mm | 0.55° | - |
-| Maison : robot 3 bras | non | 2.72 s | 4.35 mm | 0.57° | - |
-| MuJoCo : plateau en angles | non | 3.98 s | 3.01 mm | 0.55° | 75.2 % |
-| MuJoCo : robot 3 bras | non | 2.68 s | 5.46 mm | 0.58° | 0.0 % |
-| MuJoCo : robot 3 bras + caméra | non | 2.78 s | 4.61 mm | 0.12° | 0.0 % |
+| Simple physics: angle-driven plate | no | 2.76 s | 3.34 mm | 0.55° | - |
+| Simple physics: 3-arm robot | no | 2.72 s | 4.35 mm | 0.57° | - |
+| MuJoCo: angle-driven plate | no | 3.98 s | 3.01 mm | 0.55° | 75.2 % |
+| MuJoCo: 3-arm robot | no | 2.68 s | 5.46 mm | 0.58° | 0.0 % |
+| MuJoCo: 3-arm robot + camera | no | 2.78 s | 4.61 mm | 0.12° | 0.0 % |
 
 
-## 1. Limites théoriques et étalonnage du contact
+## 1. Theoretical limits and contact calibration
 
-| Grandeur | Théorie | MuJoCo |
+| Quantity | Theory | MuJoCo |
 |---|---|---|
-| Frottement minimal pour rouler à 10° | 0.071 | - |
-| Accélération à 10°, frottement 1,3×min (roule) | 1.022 m/s² | 1.022 m/s² |
-| Accélération à 10°, frottement 0,7×min (glisse) | 1.227 m/s² | 1.234 m/s² |
-| Restitution, lâcher de 30,5 cm sur plan fixe (règle ITTF) | 0,85 à 0,91 | 0.874 |
+| Minimum friction to roll at 10° | 0.071 | - |
+| Acceleration at 10°, friction 1.3×min (rolls) | 1.022 m/s² | 1.022 m/s² |
+| Acceleration at 10°, friction 0.7×min (slides) | 1.227 m/s² | 1.234 m/s² |
+| Restitution, drop from 30.5 cm onto a fixed plane (ITTF rule) | 0.85 to 0.91 | 0.874 |
 
 
-## 2. Balle lancée depuis x = -10 cm vers le bord opposé (consigne : centre)
+## 2. Ball thrown from x = -10 cm toward the opposite edge (setpoint: center)
 
-| Inclinaison max | Vitesse max rattrapée | Limite physique √(2·c·g·sin θmax·d) |
+| Max tilt | Max speed caught | Physical limit √(2·c·g·sin θmax·d) |
 |---|---|---|
 | ±10° | 0.5 m/s | 0.71 m/s |
 | ±20° | 0.6 m/s | 1.00 m/s |
 
 
-## 3. Poussée sur la balle au repos au centre (t = 1 s)
+## 3. Push on the ball at rest at the center (t = 1 s)
 
-| Choc max encaissé (Δv) | Limite physique (d = 15 cm, ±10°) |
+| Max impulse absorbed (Δv) | Physical limit (d = 15 cm, ±10°) |
 |---|---|
 | 0.4 m/s | 0.55 m/s |
 
 
-## 4. Robustesse aux paramètres physiques (contrôleur inchangé, réglé pour la balle de ping-pong)
+## 4. Robustness to physical parameters (controller unchanged, tuned for the ping-pong ball)
 
-| Variante | Tombée | Retour 5 % | Erreur cercle | Décollée |
+| Variant | Fallen | Settling time (5 %) | Circle error | Airborne |
 |---|---|---|---|---|
-| Nominal (ping-pong, μ = 1) | non | 2.78 s | 4.61 mm | 0.0 % |
-| Bille pleine (k = 2/5) | non | 2.90 s | 7.11 mm | 0.0 % |
-| Balle 10× plus lourde (27 g) | non | 2.78 s | 4.61 mm | 0.0 % |
-| Frottement μ = 0,2 | non | 2.78 s | 4.45 mm | 0.0 % |
-| Frottement μ = 0,02 | non | 2.84 s | 4.47 mm | 0.0 % |
-| Plateau 2× plus lourd (0,5 kg) | non | 2.78 s | 4.56 mm | 0.0 % |
+| Nominal (ping-pong, μ = 1) | no | 2.78 s | 4.61 mm | 0.0 % |
+| Solid ball (k = 2/5) | no | 2.90 s | 7.11 mm | 0.0 % |
+| Ball 10× heavier (27 g) | no | 2.78 s | 4.61 mm | 0.0 % |
+| Friction μ = 0.2 | no | 2.78 s | 4.45 mm | 0.0 % |
+| Friction μ = 0.02 | no | 2.84 s | 4.47 mm | 0.0 % |
+| Plate 2× heavier (0.5 kg) | no | 2.78 s | 4.56 mm | 0.0 % |
 
 
-## 5. Latence de la caméra : sans et avec compensation par prédiction
+## 5. Camera latency: without and with compensation by prediction
 
-| Latence | Compensation | Tombée | Retour 5 % | Erreur cercle |
+| Latency | Compensation | Fallen | Settling time (5 %) | Circle error |
 |---|---|---|---|---|
-| 20 ms | sans | non | 2.78 s | 4.61 mm |
-| 20 ms | avec | non | 2.82 s | 1.47 mm |
-| 60 ms | sans | non | 2.68 s | 10.56 mm |
-| 60 ms | avec | non | 2.82 s | 1.66 mm |
-| 100 ms | sans | non | 2.62 s | 16.66 mm |
-| 100 ms | avec | non | 3.72 s | 1.94 mm |
+| 20 ms | without | no | 2.78 s | 4.61 mm |
+| 20 ms | with | no | 2.82 s | 1.47 mm |
+| 60 ms | without | no | 2.68 s | 10.56 mm |
+| 60 ms | with | no | 2.82 s | 1.66 mm |
+| 100 ms | without | no | 2.62 s | 16.66 mm |
+| 100 ms | with | no | 3.72 s | 1.94 mm |
 
 
-## 6. Trajectoire carrée (10 cm de côté, 5 cm/s), latence 20 ms
+## 6. Square trajectory (10 cm sides, 5 cm/s), latency 20 ms
 
-| Compensation | Tombée | Erreur (2e tour) |
+| Compensation | Fallen | Error (2nd lap) |
 |---|---|---|
-| sans | non | 9.81 mm |
-| avec | non | 9.34 mm |
+| without | no | 9.81 mm |
+| with | no | 9.34 mm |
 

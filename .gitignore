@@ -1,27 +1,27 @@
-# Environnement virtuel (se recrée avec requirements.txt)
+# Virtual environment (recreated with requirements.txt)
 .venv/
 
-# Cache Python
+# Python cache
 __pycache__/
 *.py[cod]
 .pytest_cache/
 
-# Journal d'erreurs écrit par MuJoCo
+# Error log written by MuJoCo
 MUJOCO_LOG.TXT
 
-# Éditeurs
+# Editors
 .vscode/
 .idea/
 
-# Fichiers système Windows
+# Windows system files
 Thumbs.db
 desktop.ini
 
-# Modèles MuJoCo exportés (se régénèrent avec python -m simulation.mujoco_physics)
+# Exported MuJoCo models (regenerated with python -m simulation.mujoco_physics)
 results/*.xml
 
-# Données des tentatives du bac à sable (propres à chaque essai)
+# Sandbox attempt data (specific to each session)
 results/attempts/
 
-# Référence de non-régression (propre à chaque machine, se régénère avec regression_check.py)
+# Regression check reference (specific to each machine, regenerated with regression_check.py)
 results/reference/

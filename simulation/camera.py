@@ -1,11 +1,11 @@
-"""Caméra virtuelle + détection de la balle par OpenCV.
+"""Virtual camera + ball detection with OpenCV.
 
-Chaîne de mesure, identique à ce que ferait le vrai robot :
-    image RGB -> seuillage de couleur (HSV) -> centre de la tache (moments) -> pixel (u, v)
-    -> rayon lumineux du modèle sténopé -> intersection avec le plan du centre de la balle
-    -> position (x, y) dans le repère du plateau
+Measurement chain, identical to what the real robot would do:
+    RGB image -> color thresholding (HSV) -> center of the blob (moments) -> pixel (u, v)
+    -> light ray of the pinhole model -> intersection with the plane of the ball center
+    -> position (x, y) in the plate frame
 
-La caméra est fixe, au-dessus du plateau, et regarde vers le bas.
+The camera is fixed, above the plate, and looks down.
 """
 import math
 
@@ -18,7 +18,7 @@ from simulation.config import CameraParams
 
 
 def inverse_rotation(theta_x: float, theta_y: float, v):
-    """Applique R^T = Rx(θy)·Ry(-θx), l'inverse de la rotation du plateau."""
+    """Applies R^T = Rx(θy)·Ry(-θx), the inverse of the plate rotation."""
     x, y, z = v
     cx, sx = math.cos(theta_x), math.sin(theta_x)
     x1, z1 = cx * x - sx * z, sx * x + cx * z           # Ry(-θx)
@@ -31,7 +31,7 @@ class BallCamera:
                  tilt_correction: bool = True):
         self.cam = cam
         self.renderer = mujoco.Renderer(model, cam.image_height, cam.width)
-        # Modèle sténopé : focale en pixels f = (H/2) / tan(fovy/2), centre optique au milieu de l'image
+        # Pinhole model: focal length in pixels f = (H/2) / tan(fovy/2), optical center in the middle of the image
         self.f = (cam.image_height / 2) / math.tan(math.radians(cam.fovy) / 2)
         self.cu, self.cv = cam.width / 2, cam.image_height / 2
         self.h, self.r = plate_height, ball_radius
@@ -43,24 +43,24 @@ class BallCamera:
         return self.renderer.render()
 
     def detect(self, img: np.ndarray):
-        """Centre (u, v) de la balle en pixels (sous-pixel, par les moments), et le masque."""
+        """Center (u, v) of the ball in pixels (sub-pixel, from the moments), and the mask."""
         hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)
         c = self.cam
         mask = cv2.inRange(hsv, (c.hue[0], c.saturation_min, c.value_min), (c.hue[1], 255, 255))
         m = cv2.moments(mask, binaryImage=True)
         if m["m00"] < c.pixels_min:
             return None, mask
-        # +0,5 : le pixel d'indice i couvre l'intervalle [i, i+1[, son centre est en i + 0,5
+        # +0.5: the pixel with index i covers the interval [i, i+1[, its center is at i + 0.5
         return (m["m10"] / m["m00"] + 0.5, m["m01"] / m["m00"] + 0.5), mask
 
     def pixel_to_plate(self, u: float, v: float, theta_x: float, theta_y: float):
-        """Position (x, y) de la balle dans le repère du plateau, à partir du pixel (u, v).
+        """Position (x, y) of the ball in the plate frame, from the pixel (u, v).
 
-        Rayon issu de la caméra C = (0, 0, h + H) : d = ((u - cu)/f, -(v - cv)/f, -1).
-        Le centre de la balle est dans le plan parallèle au plateau, à la distance r :
-            n·(p - p0) = 0, avec n = R·ez la normale et p0 = (0, 0, h) + r·n.
-        Intersection : p = C + s·d, avec s = n·(p0 - C) / (n·d).
-        Sans correction d'inclinaison, on prend θx = θy = 0 (plateau supposé horizontal).
+        Ray from the camera C = (0, 0, h + H): d = ((u - cu)/f, -(v - cv)/f, -1).
+        The ball center lies in the plane parallel to the plate, at the distance r:
+            n·(p - p0) = 0, with n = R·ez the normal and p0 = (0, 0, h) + r·n.
+        Intersection: p = C + s·d, with s = n·(p0 - C) / (n·d).
+        Without tilt correction, θx = θy = 0 is used (plate assumed horizontal).
         """
         if not self.correction:
             theta_x = theta_y = 0.0
@@ -73,7 +73,7 @@ class BallCamera:
         return x, y
 
     def measure(self, data, theta_x: float, theta_y: float, last=(0.0, 0.0)):
-        """Mesure complète. Si la balle n'est pas détectée, renvoie la dernière mesure connue."""
+        """Full measurement. If the ball is not detected, returns the last known measurement."""
         center, _ = self.detect(self.image(data))
         if center is None:
             self.undetected += 1

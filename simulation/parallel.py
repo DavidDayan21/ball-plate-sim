@@ -1,13 +1,13 @@
-"""Exécution de calculs indépendants (des simulations) sur plusieurs processus.
+"""Running independent computations (simulations) on several processes.
 
-Chaque simulation est déterministe et ne partage rien avec les autres : les lancer dans des
-processus séparés donne exactement les mêmes résultats qu'à la suite (vérifié dans
+Each simulation is deterministic and shares nothing with the others: running them in
+separate processes gives exactly the same results as running them one after the other (checked in
 tests/test_regression_check.py).
 
-Chaque processus redémarre Python (méthode « spawn », celle de Windows, imposée aussi sous Linux
-pour un comportement identique) : le script appelant doit protéger son code principal par
-`if __name__ == "__main__":`, et la fonction passée doit être définie au niveau d'un module
-(pas de lambda).
+Each process restarts Python (the "spawn" method, the one used on Windows, also enforced on Linux
+for identical behavior): the calling script must protect its main code with
+`if __name__ == "__main__":`, and the function passed must be defined at module level
+(no lambda).
 """
 from concurrent.futures import ProcessPoolExecutor
 import multiprocessing
@@ -15,9 +15,9 @@ import os
 
 
 def execute(function, arguments, processes: int = None) -> list:
-    """[fonction(a) for a in arguments], dans le même ordre, réparti sur `processus` processus.
+    """[function(a) for a in arguments], in the same order, spread over `processes` processes.
 
-    processus = None : un par cœur ; processus = 1 : tout dans le processus courant.
+    processes = None: one per core; processes = 1: everything in the current process.
     """
     arguments = list(arguments)
     processes = min(processes or os.cpu_count() or 1, len(arguments))

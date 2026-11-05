@@ -1,8 +1,8 @@
-"""Contrôleur du plateau 2D : un PID par axe + anticipation (feedforward)
-+ compensation de la latence de mesure par prédiction (phase 6, désactivée par défaut).
+"""2D plate controller: one PID per axis + feedforward
++ compensation of the measurement latency by prediction (optional, disabled by default).
 
-Indépendant du simulateur : il reçoit la consigne, la mesure et l'accélération voulue,
-et renvoie les deux inclinaisons (θx, θy) à appliquer au plateau.
+Independent of the simulator: it receives the setpoint, the measurement and the desired acceleration,
+and returns the two tilts (θx, θy) to apply to the plate.
 """
 from collections import deque
 
@@ -10,34 +10,34 @@ from controller.pid import PID
 
 
 class LatencyPredictor:
-    """Reconstruit la position ACTUELLE de la balle à partir d'une mesure en retard de N périodes.
+    """Reconstructs the CURRENT position of the ball from a measurement that is N periods late.
 
-    1. Observateur α-β avec modèle : on estime (x, v) à l'instant de la mesure, en prédisant
-       avec le modèle ẍ = c·g·θ et la commande appliquée à ce moment-là, puis en corrigeant
-       par l'écart avec la mesure : x += α·e, v += (β/T)·e.
-    2. Projection : on intègre le modèle sur les N périodes de retard, avec les N dernières
-       commandes, que le contrôleur connaît puisque c'est lui qui les a envoyées.
+    1. Model-based α-β observer: (x, v) is estimated at the time of the measurement, predicting
+       with the model ẍ = c·g·θ and the command applied at that time, then correcting
+       with the difference to the measurement: x += α·e, v += (β/T)·e.
+    2. Projection: the model is integrated over the N periods of latency, with the last N
+       commands, which the controller knows since it sent them itself.
     """
 
     def __init__(self, n_latency: int, period: float, model_gain: float, alpha: float = 0.5):
         self.n, self.T, self.g = n_latency, period, model_gain
         self.alpha = alpha
-        self.beta = alpha ** 2 / (2 - alpha)          # réglage classique d'un filtre α-β
+        self.beta = alpha ** 2 / (2 - alpha)          # standard tuning of an α-β filter
         self.commands = deque([0.0] * (n_latency + 1), maxlen=n_latency + 1)  # u_{k-N-1} ... u_{k-1}
         self.x = self.v = None
 
     def predict(self, measurement: float) -> float:
-        if self.x is None:                            # première mesure : on part de là, au repos
+        if self.x is None:                            # first measurement: start from there, at rest
             self.x, self.v = measurement, 0.0
         else:
-            # Prédiction de l'observateur jusqu'à l'instant de la mesure (avec u_{k-N-1})
+            # Observer prediction up to the time of the measurement (with u_{k-N-1})
             self.v += self.g * self.commands[0] * self.T
             self.x += self.v * self.T
-            # Correction par la mesure
+            # Correction by the measurement
             e = measurement - self.x
             self.x += self.alpha * e
             self.v += self.beta / self.T * e
-        # Projection jusqu'à maintenant avec u_{k-N} ... u_{k-1}
+        # Projection up to now with u_{k-N} ... u_{k-1}
         x, v = self.x, self.v
         for u in list(self.commands)[1:]:
             v += self.g * u * self.T
@@ -49,14 +49,14 @@ class LatencyPredictor:
 
 
 class PlateController:
-    """Deux PID indépendants (axes x et y), saturés à ±theta_max.
+    """Two independent PIDs (x and y axes), saturated at ±theta_max.
 
-    Anticipation : pour que la balle suive une trajectoire d'accélération a_ref, il faut
-    θ_ff = a_ref / (c·g) (modèle linéarisé). Le PID n'a plus qu'à corriger les écarts.
-    gain_modele = c·g = g / (1 + k), en (m/s²)/rad.
+    Feedforward: for the ball to follow a trajectory with acceleration a_ref, the plate needs
+    θ_ff = a_ref / (c·g) (linearized model). The PID only has to correct the deviations.
+    model_gain = c·g = g / (1 + k), in (m/s²)/rad.
 
-    compensation_retard = N > 0 : la mesure est supposée en retard de N périodes, et la
-    position actuelle est reconstruite par PredicteurRetard avant d'entrer dans les PID.
+    latency_compensation = N > 0: the measurement is assumed to be N periods late, and the
+    current position is reconstructed by LatencyPredictor before entering the PIDs.
     """
 
     def __init__(self, kp: float, ki: float, kd: float, theta_max: float,
@@ -70,7 +70,7 @@ class PlateController:
                             if latency_compensation > 0 else None)
 
     def compute(self, setpoint, measurement, setpoint_acc, dt: float):
-        """consigne, mesure, acc_consigne : couples (x, y). Renvoie (θx, θy) en rad."""
+        """setpoint, measurement, setpoint_acc: (x, y) pairs. Returns (θx, θy) in rad."""
         if self.predictors is not None:
             measurement = (self.predictors[0].predict(measurement[0]), self.predictors[1].predict(measurement[1]))
         ffx = setpoint_acc[0] / self.model_gain if self.feedforward else 0.0

@@ -1,10 +1,10 @@
-"""Boucle fermée unique, quelle que soit la physique.
+"""Single closed loop, whatever the physics.
 
-À chaque pas (0,5 ms) : la physique avance. Toutes les 20 ms (50 Hz) :
-    mesure (capteur fictif ou caméra) -> contrôleur -> commande (θx, θy) -> moteurs / servos
+At every step (0.5 ms): the physics advances. Every 20 ms (50 Hz):
+    measurement (synthetic sensor or camera) -> controller -> command (θx, θy) -> motors / servos
 
-    physique = "simple" : nos équations (simulation/simple_physics.py)
-    physique = "mujoco" : moteur physique 3D (simulation/mujoco_physics.py)
+    physics = "simple": our own equations (simulation/simple_physics.py)
+    physics = "mujoco": 3D physics engine (simulation/mujoco_physics.py)
 """
 from dataclasses import dataclass, field
 import math
@@ -17,25 +17,25 @@ from simulation.config import G, Config
 
 @dataclass
 class Results:
-    """Historique complet, échantillonné à chaque période de contrôle (données d'une tentative)."""
+    """Full history, sampled at every control period (the data of one attempt)."""
     t: list = field(default_factory=list)
-    x: list = field(default_factory=list)                    # vraie position de la balle (m)
+    x: list = field(default_factory=list)                    # true position of the ball (m)
     y: list = field(default_factory=list)
-    x_ref: list = field(default_factory=list)                # consigne (m)
+    x_ref: list = field(default_factory=list)                # setpoint (m)
     y_ref: list = field(default_factory=list)
-    theta_x: list = field(default_factory=list)              # commandes du contrôleur (rad)
+    theta_x: list = field(default_factory=list)              # controller commands (rad)
     theta_y: list = field(default_factory=list)
-    actual_tilt: list = field(default_factory=list)   # (θx, θy) réels du plateau (rad)
-    alphas: list = field(default_factory=list)               # angles des 3 moteurs (rad)
-    velocity: list = field(default_factory=list)              # (vx, vy) de la balle, repère du plateau (m/s)
-    height: list = field(default_factory=list)              # hauteur de la balle au-dessus du plateau (m)
-    torques: list = field(default_factory=list)              # couples des 3 moteurs (N·m), MuJoCo
-    airborne: list = field(default_factory=list)             # part de la période balle décollée, MuJoCo
-    measurement_error: list = field(default_factory=list)        # |mesure - vraie position| avant latence (m)
+    actual_tilt: list = field(default_factory=list)          # actual (θx, θy) of the plate (rad)
+    alphas: list = field(default_factory=list)               # angles of the 3 motors (rad)
+    velocity: list = field(default_factory=list)             # (vx, vy) of the ball, plate frame (m/s)
+    height: list = field(default_factory=list)               # height of the ball above the plate (m)
+    torques: list = field(default_factory=list)              # torques of the 3 motors (N·m), MuJoCo
+    airborne: list = field(default_factory=list)             # fraction of the period with the ball airborne, MuJoCo
+    measurement_error: list = field(default_factory=list)    # |measurement - true position| before latency (m)
     fallen: bool = False
     unreachable_poses: int = 0
     airborne_fraction: float = 0.0
-    undetected: int = 0                                    # caméra : images sans balle détectée
+    undetected: int = 0                                      # camera: images with no ball detected
 
 
 def create_physics(cfg: Config):
@@ -45,13 +45,13 @@ def create_physics(cfg: Config):
     if cfg.physics == "mujoco":
         from simulation.mujoco_physics import MujocoPhysics
         return MujocoPhysics(cfg)
-    raise ValueError(f"Physique inconnue : {cfg.physics}")
+    raise ValueError(f"Unknown physics: {cfg.physics}")
 
 
 class Simulation:
-    """Simulation pas à pas (un pas = dt_physique).
+    """Step-by-step simulation (one step = dt_physics).
 
-    simuler() l'enchaîne sur toute la durée du scénario ; le bac à sable la pilote en direct.
+    simulate() runs it over the whole scenario duration; the sandbox drives it live.
     """
 
     def __init__(self, cfg: Config):
@@ -63,24 +63,24 @@ class Simulation:
         self.reset_control()
         self.push_steps = {round(tp / cfg.dt_physics): (dvx, dvy) for tp, dvx, dvy in cfg.pushes}
         self.steps_per_control = round(cfg.control_period / cfg.dt_physics)
-        self.theta = (0.0, 0.0)             # dernière commande (connue du robot, sert à la caméra)
+        self.theta = (0.0, 0.0)             # last command (known to the robot, used by the camera)
         self.last_measurement = cfg.start_position
-        self.n = 0                          # numéro du prochain pas
+        self.n = 0                          # index of the next step
         self.r = Results()
 
     def create_camera(self) -> None:
-        """Caméra virtuelle. Son contexte OpenGL n'est utilisable que dans le fil (thread) qui l'a
-        créée : la simulation doit tourner dans ce même fil."""
+        """Virtual camera. Its OpenGL context can only be used in the thread that
+        created it: the simulation must run in that same thread."""
         from simulation.camera import BallCamera
         cfg = self.cfg
         self.camera = BallCamera(self.phys.model, cfg.camera, cfg.geometry.height,
                                   cfg.plate.ball_radius, cfg.tilt_correction)
 
     def reset_control(self) -> None:
-        """(Re)crée le capteur et le contrôleur à partir de self.cfg, mémoire remise à zéro."""
+        """(Re)creates the sensor and the controller from self.cfg, with their memory reset."""
         cfg = self.cfg
         if self.camera is not None:
-            self.sensor = Sensor(sigma=0.0, latency=cfg.latency)   # le bruit vient de l'image
+            self.sensor = Sensor(sigma=0.0, latency=cfg.latency)   # the noise comes from the image
         else:
             self.sensor = Sensor(cfg.sigma, cfg.latency)
         self.ctrl = PlateController(cfg.kp, cfg.ki, cfg.kd(), cfg.theta_max, cfg.tau_d,
@@ -90,10 +90,10 @@ class Simulation:
 
     @property
     def t(self) -> float:
-        return self.n * self.cfg.dt_physics    # pas de somme de dt : elle accumulerait des arrondis
+        return self.n * self.cfg.dt_physics    # no sum of dt: it would accumulate rounding errors
 
     def step(self) -> bool:
-        """Avance d'un pas. Renvoie False si la balle est tombée."""
+        """Advances one step. Returns False if the ball has fallen."""
         cfg, phys, r, n = self.cfg, self.phys, self.r, self.n
         t = self.t
         if phys.fallen():
@@ -108,7 +108,7 @@ class Simulation:
             else:
                 mx, my = bx, by
             xm, ym = self.sensor.measure(mx, my)
-            if self.camera is None:         # capteur fictif : mesure bruitée de cet instant (avant latence)
+            if self.camera is None:         # synthetic sensor: noisy measurement of this instant (before latency)
                 mx, my = self.sensor.queue[-1] if self.sensor.queue else (xm, ym)
             r.measurement_error.append(math.hypot(mx - bx, my - by))
             xr, yr, axr, ayr = cfg.trajectory(t)
@@ -131,7 +131,7 @@ class Simulation:
         return True
 
     def finish(self) -> Results:
-        """Libère les ressources et complète les indicateurs globaux."""
+        """Releases the resources and completes the global metrics."""
         r = self.r
         if self.camera is not None:
             r.undetected = self.camera.undetected
@@ -144,7 +144,7 @@ class Simulation:
 
 
 def simulate(cfg: Config, view: bool = False) -> Results:
-    """Simule le scénario de cfg. vue=True (MuJoCo) : fenêtre 3D en temps réel."""
+    """Simulates the scenario of cfg. view=True (MuJoCo): real-time 3D window."""
     sim = Simulation(cfg)
     viewer = None
     if view:
@@ -163,7 +163,7 @@ def simulate(cfg: Config, view: bool = False) -> Results:
             viewer.sync()
             ahead = sim.phys.data.time - (time.perf_counter() - start)
             if ahead > 0:
-                time.sleep(ahead)          # cale la simulation sur le temps réel
+                time.sleep(ahead)          # keeps the simulation in step with real time
 
     if viewer is not None:
         viewer.close()

@@ -1,7 +1,7 @@
-"""Le contrôleur face à la théorie : chaque résultat démontré est vérifié.
+"""The controller against theory: each derived result is checked.
 
-Les essais en boucle fermée utilisent une seule direction du plateau (y = 0) de la physique
-simple, dont la solution se calcule à la main.
+The closed-loop tests use a single direction of the plate (y = 0) of the simple
+physics, whose solution can be computed by hand.
 """
 import math
 from dataclasses import replace
@@ -16,7 +16,7 @@ CG = P.coefficient * G
 
 
 def loop_1d(pid, p=P, x0=0.10, dt=0.01, duration=10.0):
-    """Balle sur une seule direction du plateau, Euler semi-implicite. Renvoie (temps, positions, tombée)."""
+    """Ball on a single direction of the plate, semi-implicit Euler. Returns (times, positions, fallen)."""
     x, v = x0, 0.0
     T, X = [], []
     for n in range(round(duration / dt) + 1):
@@ -36,8 +36,8 @@ def kd_for(zeta, kp=1.0):
 
 def test_pid_basic_computation():
     pid = PID(kp=2.0, ki=0.5, kd=0.3)
-    u1 = pid.compute(1.0, 0.0, 0.1)          # e = 1, dérivée = 0, intégrale = 0,1
-    u2 = pid.compute(1.0, 0.5, 0.1)          # e = 0,5, dérivée = -5, intégrale = 0,15
+    u1 = pid.compute(1.0, 0.0, 0.1)          # e = 1, derivative = 0, integral = 0.1
+    u2 = pid.compute(1.0, 0.5, 0.1)          # e = 0.5, derivative = -5, integral = 0.15
     assert math.isclose(u1, 2.0 + 0.05, rel_tol=1e-12)
     assert math.isclose(u2, 1.0 + 0.075 - 1.5, rel_tol=1e-12)
 
@@ -50,7 +50,7 @@ def test_anti_windup_freezes_integral():
 
 
 def test_p_controller_period():
-    # Oscillateur harmonique : T0 = 2π / √(c·g·Kp) (petite amplitude : domaine linéaire)
+    # Harmonic oscillator: T0 = 2π / √(c·g·Kp) (small amplitude: linear range)
     kp = 0.5
     T, X, fallen = loop_1d(PID(kp=kp), x0=0.01)
     crossings = [T[i] for i in range(1, len(X)) if X[i - 1] * X[i] < 0]
@@ -81,7 +81,7 @@ def test_pd_steady_state_error_and_pid_removes_it():
 
 
 def test_pid_unstable_beyond_routh():
-    # Stable si et seulement si Ki < c·g·Kp·Kd
+    # Stable if and only if Ki < c·g·Kp·Kd
     kd = kd_for(0.7)
     limit = CG * 1.0 * kd
     _, _, fell_stable = loop_1d(PID(kp=1.0, ki=0.8 * limit, kd=kd), x0=0.05, duration=30)

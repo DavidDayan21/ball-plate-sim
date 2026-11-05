@@ -1,55 +1,55 @@
 # ball-plate-sim
 
-Simulation d'un robot équilibriste (« ball and plate ») : un plateau incliné par 3 moteurs maintient
-une balle en équilibre, la rattrape quand on la lance, et lui fait suivre une trajectoire.
-Objectif : un logiciel ludique, utilisable sans aucune notion de code, pour jouer avec le robot et
-comparer deux « cerveaux » qui le pilotent : un PID et une IA locale. La physique est calculée par MuJoCo.
-Construire le vrai robot reste un objectif lointain : le code sera alors prêt.
+Simulation of a balancing robot ("ball and plate"): a plate tilted by 3 motors keeps
+a ball balanced, catches it when it is thrown, and makes it follow a trajectory.
+Goal: a playful piece of software, usable without any knowledge of code, to play with the robot and
+compare two "brains" that drive it: a PID and a local AI. The physics is computed by MuJoCo.
+Building the real robot remains a distant goal: the code will then be ready.
 
-## État d'avancement
+## Progress
 
-| Étape | Contenu | État |
+| Stage | Content | Status |
 |---|---|---|
-| Modèles | Physique maison (équations démontrées) et MuJoCo (3D, contacts, chaîne fermée) | Fait |
-| Contrôle | PID filtré, anti-windup, anticipation, compensation de latence par prédiction | Fait |
-| Mécanisme | 3 bras, cinématique inverse exacte et directe, moteurs pas à pas avec rampes | Fait |
-| Capteur | Caméra virtuelle, détection OpenCV, projection sténopé | Fait |
-| Robustesse | Balle lancée, poussées, paramètres physiques, latence (`campaign.py`) | Fait |
-| Contact réaliste | Rebond de balle de ping-pong conforme à la règle ITTF (e = 0,874) | Fait |
-| Bac à sable 3D | Lancers, lâchers, rebonds, poussées, consignes, données de chaque tentative | Fait |
-| A. Mesures fiables | Non-régression au bit près, dispersion sur N tirages, indicateurs robustes, écart maison → MuJoCo | **En cours** |
-| B. Cerveau PID | Gains réglés par LQR, plateau à plat pendant les rebonds, commande adaptative | À faire |
-| C. Cerveau IA locale | Entraînement dans MuJoCo, mêmes règles que le PID (capteur, moteurs, ±10°) | À faire |
-| D. Logiciel grand public | Physique MuJoCo dans notre interface, choix du cerveau, comparatif | À faire |
-| E. Construction (lointaine) | Conception, défauts réels, budget d'erreur complet | Plus tard |
+| Models | Simple physics (derived equations) and MuJoCo (3D, contacts, closed chain) | Done |
+| Control | Filtered PID, anti-windup, feedforward, latency compensation by prediction | Done |
+| Mechanism | 3 arms, exact inverse and forward kinematics, stepper motors with ramps | Done |
+| Sensor | Virtual camera, OpenCV detection, pinhole projection | Done |
+| Robustness | Thrown ball, pushes, physical parameters, latency (`campaign.py`) | Done |
+| Realistic contact | Ping-pong ball bounce compliant with the ITTF rule (e = 0.874) | Done |
+| 3D sandbox | Throws, drops, bounces, pushes, setpoints, data of every attempt | Done |
+| A. Reliable measurements | Bit-exact regression check, spread over N draws, robust metrics, simple physics → MuJoCo gap | **In progress** |
+| B. PID brain | Gains tuned by LQR, plate kept level during bounces, adaptive control | To do |
+| C. Local AI brain | Training in MuJoCo, same rules as the PID (sensor, motors, ±10°) | To do |
+| D. Software for the general public | MuJoCo physics in our interface, choice of brain, comparison | To do |
+| E. Construction (distant) | Design, real-world defects, complete error budget | Later |
 
-Objectifs chiffrés des deux cerveaux : balle lancée rattrapée jusqu'à 90 % de la limite physique au moins,
-erreur sur le cercle < 2 mm avec 60 ms de latence, retour au centre < 2 s, aucune chute dans les variantes
-de robustesse.
+Quantified goals for both brains: thrown ball caught up to at least 90 % of the physical limit,
+error on the circle < 2 mm with 60 ms of latency, return to the center < 2 s, no fall in the robustness
+variants.
 
 ## Structure
 
 ```text
-controller/              Ce qui tournerait sur le vrai robot (indépendant du simulateur)
-  pid.py                 PID : filtre de dérivée, saturation, anti-windup, anticipation
-  plate.py               2 PID (axes x, y) + anticipation + prédicteur de latence
-  kinematics.py          Géométrie, cinématique inverse (exacte) et directe (Newton)
+controller/              What would run on the real robot (independent of the simulator)
+  pid.py                 PID: derivative filter, saturation, anti-windup, feedforward
+  plate.py               2 PIDs (x, y axes) + feedforward + latency predictor
+  kinematics.py          Geometry, inverse (exact) and forward (Newton) kinematics
 simulation/
-  config.py              Configuration unique, paramètres physiques, trajectoires de consigne
-  loop.py                Boucle fermée unique : capteur -> contrôleur -> moteurs -> physique
-  simple_physics.py      Physique maison (référence théorique)
-  mujoco_physics.py      Physique MuJoCo : génération des modèles 3D, contact, interface, validation
-  motor.py               Moteur pas à pas : vitesse max, micro-pas, butées, rampes
-  sensor.py              Capteur fictif : bruit + latence
-  camera.py              Caméra virtuelle : rendu, détection OpenCV, projection
-  metrics.py             Indicateurs : erreur de suivi, temps de réponse, agitation de la commande
-  session.py             Bac à sable : suite de tentatives, fin automatique, enregistrement CSV
-  parallel.py            Simulations indépendantes réparties sur plusieurs processus
-tests/                   Tests automatiques, par thème (contrôleur, mécanique, capteurs, physique,
-                         scénarios, session, non-régression)
-campaign.py              Campagne de mesures complète -> results/report.md
-sandbox.py               Le robot en 3D et en temps réel, piloté depuis un panneau de commandes
-regression_check.py      Vérifie qu'une modification laisse tous les résultats identiques au bit près
+  config.py              Single configuration, physical parameters, setpoint trajectories
+  loop.py                Single closed loop: sensor -> controller -> motors -> physics
+  simple_physics.py      Simple physics (theoretical reference)
+  mujoco_physics.py      MuJoCo physics: generation of the 3D models, contact, interface, validation
+  motor.py               Stepper motor: max speed, microsteps, limits, ramps
+  sensor.py              Synthetic sensor: noise + latency
+  camera.py              Virtual camera: rendering, OpenCV detection, projection
+  metrics.py             Metrics: tracking error, settling time, command jitter
+  session.py             Sandbox: series of attempts, automatic end, CSV recording
+  parallel.py            Independent simulations spread over several processes
+tests/                   Automated tests, by theme (controller, mechanics, sensors, physics,
+                         scenarios, session, regression check)
+campaign.py              Full measurement campaign -> results/report.md
+sandbox.py               The robot in 3D and in real time, driven from a control panel
+regression_check.py      Checks that a change leaves all the results bit-identical
 ```
 
 ## Installation (Windows)
@@ -61,75 +61,75 @@ pip install -r requirements.txt
 python -m pytest
 ```
 
-## Utilisation
+## Usage
 
 ```powershell
-python -m pytest              # tous les tests
-python campaign.py            # campagne de mesures complète, écrit results/report.md (quelques minutes)
-python sandbox.py             # bac à sable 3D (voir ci-dessous)
-python sandbox.py --camera                             # idem, balle mesurée par la caméra virtuelle
-python -m simulation.mujoco_physics                    # exporte les modèles dans results/
-python -m mujoco.viewer --mjcf=results/robot.xml       # ouvre le modèle seul dans MuJoCo
-python regression_check.py --record       # avant une modification : référence de tous les résultats
-python regression_check.py --compare      # après : vérifie qu'ils sont identiques au bit près
-python regression_check.py --compare --by-position    # idem après un renommage (noms changés, même ordre)
+python -m pytest              # all the tests
+python campaign.py            # full measurement campaign, writes results/report.md (a few minutes)
+python sandbox.py             # 3D sandbox (see below)
+python sandbox.py --camera                             # same, ball measured by the virtual camera
+python -m simulation.mujoco_physics                    # exports the models to results/
+python -m mujoco.viewer --mjcf=results/robot.xml       # opens the model alone in MuJoCo
+python regression_check.py --record       # before a change: reference of all the results
+python regression_check.py --compare      # after: checks that they are bit-identical
+python regression_check.py --compare --by-position    # same after a renaming (changed names, same order)
 ```
 
-Non-régression : toute refactorisation doit laisser les résultats identiques au bit près. La référence
-(`results/reference/`, ignorée par git) couvre tous les cas de la campagne, la validation de la physique
-et un enchaînement du bac à sable. Elle n'est valable que sur la machine et avec les versions qui l'ont
-produite (Windows et Linux divergent dès que la balle rebondit) : la comparaison prévient si elles ont changé.
+Regression check: any refactoring must leave the results bit-identical. The reference
+(`results/reference/`, ignored by git) covers all the cases of the campaign, the physics validation
+and a sandbox sequence. It is only valid on the machine and with the versions that produced
+it (Windows and Linux diverge as soon as the ball bounces): the comparison warns if they have changed.
 
-Une simulation se décrit par une `Config` ; tout ce qui n'est pas précisé prend la valeur de référence :
+A simulation is described by a `Config`; everything that is not specified takes the reference value:
 
 ```python
 from simulation.loop import simulate
 from simulation.config import Config, center
 
 r = simulate(Config(sensor="camera", latency=3, latency_compensation=True))
-r = simulate(Config(physics="simple", mechanism=False))           # modèle théorique
-r = simulate(Config(trajectory=center, start_position=(-0.1, 0.0), start_velocity=(0.4, 0.0)))  # balle lancée
+r = simulate(Config(physics="simple", mechanism=False))           # theoretical model
+r = simulate(Config(trajectory=center, start_position=(-0.1, 0.0), start_velocity=(0.4, 0.0)))  # thrown ball
 ```
 
-## Bac à sable 3D
+## 3D sandbox
 
-Deux fenêtres : la vue 3D MuJoCo et un panneau de commandes avec une vue de dessus et des courbes en direct.
+Two windows: the MuJoCo 3D view and a control panel with a top view and live curves.
 
-| Commande | Effet |
+| Control | Effect |
 |---|---|
-| Lancer | Balle posée au point de départ (distance, angle), à la hauteur choisie, lancée vers le centre (déviation possible) |
-| Lâcher | Même point de départ, même hauteur, sans vitesse : la balle tombe et rebondit |
-| Centre | Balle posée immobile au centre |
-| Tentative libre | Enregistre sans toucher à la balle |
-| Clic dans la vue de dessus | Choisit le point de départ |
-| Consigne, latence, compensation | Changent le comportement du contrôleur en direct |
-| Barre d'espace (vue 3D) ou Pause | Pause / reprise |
-| Double-clic sur la balle puis Ctrl + clic droit glissé (vue 3D) | Pousse la balle : une tentative « perturbation » démarre seule dès que la balle s'écarte de plus de 2 cm |
+| Throw | Ball placed at the starting point (distance, angle), at the chosen height, thrown toward the center (optional deviation) |
+| Drop | Same starting point, same height, without speed: the ball falls and bounces |
+| Center | Ball placed motionless at the center |
+| Free attempt | Records without touching the ball |
+| Click in the top view | Chooses the starting point |
+| Setpoint, latency, compensation | Change the behavior of the controller live |
+| Space bar (3D view) or Pause | Pause / resume |
+| Double-click on the ball then Ctrl + right drag (3D view) | Pushes the ball: a "disturbance" attempt starts by itself as soon as the ball moves more than 2 cm away |
 
-Une tentative se termine quand la balle tombe, reste 2 s à moins de 1 cm de la consigne (stabilisée),
-dure plus de 30 s, ou quand une autre commence. Chaque tentative est enregistrée dans
-`results/attempts/<date_heure>/` : `attempt_001.csv`… (toutes les mesures à 50 Hz) et `summary.csv`
-(une ligne par tentative : paramètres, résultat, temps de stabilisation, rebonds, marge au bord…).
-Format Excel français : séparateur `;`, virgule décimale.
+An attempt ends when the ball falls, stays within 1 cm of the setpoint for 2 s (stabilized),
+lasts longer than 30 s, or when another one starts. Each attempt is recorded in
+`results/attempts/<date_time>/`: `attempt_001.csv`… (all the measurements at 50 Hz) and `summary.csv`
+(one row per attempt: parameters, result, stabilization time, bounces, edge margin…).
+French Excel format: `;` separator, decimal comma.
 
 ## Conventions
 
-- Unités SI : mètres, secondes, radians (degrés seulement à l'affichage).
-- (x, y) : position de la balle dans le repère du plateau, origine au centre.
-- θx > 0 abaisse le côté +x du plateau (la balle accélère vers +x) ; idem pour θy.
-- Rotation du plateau : R = Ry(θx)·Rx(-θy).
+- SI units: meters, seconds, radians (degrees only for display).
+- (x, y): position of the ball in the plate frame, origin at the center.
+- θx > 0 lowers the +x side of the plate (the ball accelerates toward +x); same for θy.
+- Plate rotation: R = Ry(θx)·Rx(-θy).
 
-## Principales hypothèses (aucun modèle réel de référence)
+## Main assumptions (no real reference model)
 
-| Élément | Valeur de référence |
+| Element | Reference value |
 |---|---|
-| Plateau | Disque de 15 cm de rayon, 0,25 kg |
-| Balle | Ping-pong : 2 cm de rayon, 2,7 g, creuse (J = 2/3·m·r²) |
-| Contact balle-plateau | Restitution 0,88 visée (règle ITTF : lâchée de 30,5 cm, remonte de 22 à 25 cm), raideur 200 Hz, pas de simulation 0,5 ms |
-| Mécanisme | 3 bras de 5 cm, biellettes de 12 cm, rotules à 10 cm du centre |
-| Moteurs | 10 rad/s, 1/16 de pas, rampes à 50 rad/s², couple max 0,4 N·m |
-| Capteur | Caméra 50 cm au-dessus du plateau, 50 Hz, latence 20 ms |
-| Contrôleur | 50 Hz, Kp = 1 rad/m, Ki = 1 rad/(m·s), ζ = 0,7, inclinaison max ±10° |
+| Plate | Disk of radius 15 cm, 0.25 kg |
+| Ball | Ping-pong: radius 2 cm, 2.7 g, hollow (J = 2/3·m·r²) |
+| Ball-plate contact | Target restitution 0.88 (ITTF rule: dropped from 30.5 cm, bounces back to 22-25 cm), stiffness 200 Hz, simulation step 0.5 ms |
+| Mechanism | 3 arms of 5 cm, rods of 12 cm, ball joints 10 cm from the center |
+| Motors | 10 rad/s, 1/16 microsteps, ramps at 50 rad/s², max torque 0.4 N·m |
+| Sensor | Camera 50 cm above the plate, 50 Hz, latency 20 ms |
+| Controller | 50 Hz, Kp = 1 rad/m, Ki = 1 rad/(m·s), ζ = 0.7, max tilt ±10° |
 
 ## Technologies
 

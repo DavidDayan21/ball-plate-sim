@@ -1,1 +1,1 @@
-"""Contrôleurs, indépendants du simulateur (réutilisés jusqu'au robot réel)."""
+"""Controllers, independent of the simulator (to be reused up to the real robot)."""

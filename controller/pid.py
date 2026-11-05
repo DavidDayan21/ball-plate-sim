@@ -1,25 +1,25 @@
-"""Contrôleur PID discret.
+"""Discrete PID controller.
 
-Il ne connaît pas le simulateur : il reçoit une consigne et une mesure, et renvoie une commande.
-Le même code servira dans la simulation maison, dans MuJoCo, puis sur le vrai robot.
+It knows nothing about the simulator: it receives a setpoint and a measurement, and returns a command.
+The same code is meant to run in the simple physics, in MuJoCo, then on the real robot.
 """
 import math
 
 
 class PID:
-    """u = Kp·e + Ki·∫e·dt + Kd·de/dt + u_ff,   avec e = consigne - mesure.
+    """u = Kp·e + Ki·∫e·dt + Kd·de/dt + u_ff,   with e = setpoint - measurement.
 
-    - Dérivée : différence finie sur l'erreur, (e_n - e_{n-1}) / dt, filtrée par un
-      passe-bas du 1er ordre de constante de temps tau_d (tau_d = 0 : pas de filtre).
-    - Saturation : la sortie est bornée à [sortie_min, sortie_max].
-    - Anti-windup : quand la sortie est saturée et que l'erreur pousse encore plus loin
-      dans la saturation, l'intégrale est gelée.
-    - Anticipation (feedforward) : u_ff est ajoutée avant la saturation.
+    - Derivative: finite difference on the error, (e_n - e_{n-1}) / dt, filtered by a
+      first-order low-pass with time constant tau_d (tau_d = 0: no filter).
+    - Saturation: the output is clamped to [output_min, output_max].
+    - Anti-windup: when the output is saturated and the error pushes further
+      into saturation, the integral is frozen.
+    - Feedforward: u_ff is added before saturation.
 
-    Avec les valeurs par défaut (pas de filtre, pas de saturation, u_ff = 0), on retrouve
-    exactement le PID des phases 1b et 1c.
+    With the default values (no filter, no saturation, u_ff = 0), this is exactly the plain
+    textbook PID: proportional, rectangle-rule integral and unfiltered finite-difference derivative.
 
-    Unités pour la balle sur poutre : e en m, u = θ en rad, donc Kp en rad/m.
+    Units for one axis of the plate (a ball on a beam): e in m, u = θ in rad, hence Kp in rad/m.
     """
 
     def __init__(self, kp: float, ki: float = 0.0, kd: float = 0.0,
@@ -31,20 +31,20 @@ class PID:
         self.reset()
 
     def reset(self) -> None:
-        """Remet à zéro la mémoire du contrôleur."""
+        """Resets the controller memory."""
         self.integral = 0.0
         self.previous_error = None
         self.derivative = 0.0
-        self.terms = (0.0, 0.0, 0.0)     # (terme P, terme I, terme D) du dernier calcul
+        self.terms = (0.0, 0.0, 0.0)     # (P term, I term, D term) of the last computation
 
     def _saturate(self, u: float) -> float:
         return min(max(u, self.output_min), self.output_max)
 
     def compute(self, setpoint: float, measurement: float, dt: float, feedforward: float = 0.0) -> float:
-        """Calcule la commande pour un pas de contrôle de durée dt."""
+        """Computes the command for one control step of duration dt."""
         e = setpoint - measurement
 
-        # Dérivée filtrée : d <- a·d + (1 - a)·d_brute, avec a = tau_d / (tau_d + dt)
+        # Filtered derivative: d <- a·d + (1 - a)·d_raw, with a = tau_d / (tau_d + dt)
         raw = 0.0 if self.previous_error is None else (e - self.previous_error) / dt
         a = self.tau_d / (self.tau_d + dt)
         self.derivative = a * self.derivative + (1 - a) * raw
@@ -56,7 +56,7 @@ class PID:
         u = up + self.ki * candidate_integral + ud + feedforward
         u_sat = self._saturate(u)
 
-        # Anti-windup : saturé ET l'erreur pousse dans le sens de la saturation -> on gèle l'intégrale
+        # Anti-windup: saturated AND the error pushes in the direction of saturation -> freeze the integral
         if u_sat != u and (u - u_sat) * e > 0:
             u_sat = self._saturate(up + self.ki * self.integral + ud + feedforward)
         else:

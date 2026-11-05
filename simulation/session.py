@@ -1,19 +1,19 @@
-"""Session du bac à sable : une suite de tentatives sur un même robot MuJoCo, qui ne s'arrête jamais.
+"""Sandbox session: a series of attempts on the same MuJoCo robot, which never stops.
 
-Une tentative commence par une action (lancer, lâcher, centre, tentative libre) ou, en attente,
-dès que la balle s'écarte de plus de 2 cm de la consigne (poussée à la souris par exemple).
-Quand la balle est déplacée (lancer, lâcher, centre), le capteur et le contrôleur repartent de zéro
-(intégrale, prédicteur, latence) : les tentatives sont indépendantes les unes des autres.
-Elle se termine quand :
-    - la balle tombe ;
-    - la balle reste à moins de 1 cm de la consigne, posée sur le plateau, pendant 2 s (stabilisée) ;
-    - elle dure plus de duree_max (non stabilisée) ;
-    - une autre tentative commence (interrompue).
+An attempt starts with an action (throw, drop, center, free attempt) or, while waiting,
+as soon as the ball moves more than 2 cm away from the setpoint (pushed with the mouse, for example).
+When the ball is moved (throw, drop, center), the sensor and the controller restart from zero
+(integral, predictor, latency): the attempts are independent of each other.
+It ends when:
+    - the ball falls;
+    - the ball stays within 1 cm of the setpoint, resting on the plate, for 2 s (stabilized);
+    - it lasts longer than max_duration (not stabilized);
+    - another attempt starts (interrupted).
 
-Données écrites dans results/attempts/<date_heure>/ :
-    attempt_001.csv ...  toutes les mesures de la tentative, à 50 Hz
-    summary.csv             une ligne par tentative (paramètres et résultat)
-Format adapté à Excel en français : séparateur « ; », virgule décimale.
+Data written to results/attempts/<date_time>/:
+    attempt_001.csv ...  all the measurements of the attempt, at 50 Hz
+    summary.csv          one row per attempt (parameters and result)
+Format suited to Excel in French: ";" separator, decimal comma.
 """
 from collections import deque
 from dataclasses import fields, replace
@@ -28,26 +28,26 @@ from simulation.loop import Results, Simulation
 from simulation.config import Config, square, center, circle
 
 SETPOINTS = {"center": center, "circle": circle, "square": square}
-STABLE_THRESHOLD = 0.01          # (m) distance à la consigne
+STABLE_THRESHOLD = 0.01         # (m) distance to the setpoint
 STABLE_DURATION = 2.0           # (s)
-DISTURBANCE_THRESHOLD = 0.02    # (m) en attente : au-delà, une tentative démarre toute seule
-PRE_DISTURBANCE = 0.5     # (s) de mesures conservées avant le déclenchement
-MIN_FLIGHT = 0.010              # (s) un vol plus court n'est pas compté comme un atterrissage
-RESTING_HEIGHT = 0.001                # (m) balle considérée posée sous cette hauteur
+DISTURBANCE_THRESHOLD = 0.02    # (m) while waiting: beyond this, an attempt starts by itself
+PRE_DISTURBANCE = 0.5           # (s) of measurements kept before the trigger
+MIN_FLIGHT = 0.010              # (s) a shorter flight is not counted as a landing
+RESTING_HEIGHT = 0.001          # (m) the ball is considered resting below this height
 
 
 def sandbox_config() -> Config:
-    """Robot complet, balle au repos au centre, consigne au centre."""
+    """Complete robot, ball at rest at the center, setpoint at the center."""
     return Config(trajectory=center, start_position=(0.0, 0.0), duration=math.inf)
 
 
 def _shift(function, t0: float):
-    """Consigne qui démarre à t0 (un cercle commence à son point de départ)."""
+    """Setpoint that starts at t0 (a circle starts at its starting point)."""
     return lambda t: function(t - t0)
 
 
 def _keep_last(r: Results, n: int) -> Results:
-    """Copie des n derniers échantillons de r."""
+    """Copy of the last n samples of r."""
     tail = Results()
     for f in fields(Results):
         value = getattr(r, f.name)
@@ -57,7 +57,7 @@ def _keep_last(r: Results, n: int) -> Results:
 
 
 def _format_number(v: float, decimals: int = 3) -> str:
-    """Nombre au format français (virgule décimale)."""
+    """Number in French format (decimal comma)."""
     if v is None or (isinstance(v, float) and math.isnan(v)):
         return ""
     return f"{v:.{decimals}f}".replace(".", ",")
@@ -68,7 +68,7 @@ class Session:
                  ground: bool = True, record: bool = True):
         self.cfg = cfg or sandbox_config()
         if self.cfg.physics != "mujoco":
-            raise ValueError("Le bac à sable utilise la physique MuJoCo")
+            raise ValueError("The sandbox uses the MuJoCo physics")
         self.sim = Simulation(self.cfg)
         self.phys = self.sim.phys
         self.dt = self.cfg.dt_physics
@@ -79,24 +79,24 @@ class Session:
         self._apply_config()
         if ground:
             self._enable_ground()
-        # Enregistrement
+        # Recording
         self.record = record
         self.folder = Path(folder) / datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        self.summary = []                   # une ligne (dict) par tentative terminée
+        self.summary = []                # one row (dict) per finished attempt
         self.number = 0
-        self.attempt = None              # dict de la tentative en cours, None en attente
-        self.state = "waiting"              # "tentative", "attente" ou "tombée"
-        self.message = "Prêt."
-        # Affichage en direct, 10 s d'historique : (t, distance à la consigne, θx, θy, hauteur, x, y,
-        # x_consigne, y_consigne)
+        self.attempt = None              # dict of the current attempt, None while waiting
+        self.state = "waiting"           # "attempt", "waiting" or "fallen"
+        self.message = "Ready."
+        # Live display, 10 s of history: (t, distance to the setpoint, θx, θy, height, x, y,
+        # x_setpoint, y_setpoint)
         self.curves = deque(maxlen=round(10.0 / self.cfg.control_period))
-        # Suivi pas à pas (atterrissages)
+        # Step-by-step tracking (landings)
         self._steps_in_flight = 0
 
-    # --- Réglages ----------------------------------------------------------------------------
+    # --- Settings ----------------------------------------------------------------------------
     def _enable_ground(self) -> None:
-        """Le sol arrête la balle tombée (sans lui, elle tomberait indéfiniment).
-        Bit de collision 2 : le sol ne touche que la balle, jamais le plateau."""
+        """The ground stops the fallen ball (without it, the ball would fall forever).
+        Collision bit 2: the ground only touches the ball, never the plate."""
         m = self.phys.model
         ground, ball = m.geom("ground").id, m.geom("ball").id
         m.geom_contype[ground] = 2
@@ -112,7 +112,7 @@ class Session:
         self._apply_config()
 
     def set_latency(self, periods: int) -> None:
-        """Latence de mesure en périodes de contrôle (1 = 20 ms). Remet le contrôleur à zéro."""
+        """Measurement latency in control periods (1 = 20 ms). Resets the controller."""
         self._apply_config(latency=periods)
         self.sim.reset_control()
 
@@ -121,13 +121,13 @@ class Session:
         self.sim.reset_control()
 
     def enable_camera(self) -> None:
-        """Mesure par la caméra virtuelle, à appeler depuis le fil qui fait avancer la simulation."""
+        """Measurement by the virtual camera, to be called from the thread that advances the simulation."""
         if self.sim.camera is None:
             self.sim.create_camera()
             self.sim.reset_control()
 
     def close_camera(self) -> None:
-        """Libère la caméra (depuis le fil qui l'a créée) ; retour au capteur fictif."""
+        """Releases the camera (from the thread that created it); back to the synthetic sensor."""
         if self.sim.camera is not None:
             self.sim.camera.close()
             self.sim.camera = None
@@ -144,9 +144,9 @@ class Session:
     # --- Actions -----------------------------------------------------------------------------
     def throw(self, distance: float, angle_deg: float, speed: float = 0.0, height: float = 0.0,
                deviation_deg: float = 0.0, action: str = None) -> None:
-        """Place la balle au point de départ (distance, angle) du centre, à `hauteur` au-dessus du
-        plateau, avec une vitesse horizontale dirigée vers le centre, tournée de `deviation_deg`.
-        vitesse = 0 : simple lâcher. hauteur = 0 : balle lancée en roulant."""
+        """Places the ball at the starting point (distance, angle) from the center, at `height` above the
+        plate, with a horizontal velocity directed toward the center, rotated by `deviation_deg`.
+        speed = 0: simple drop. height = 0: ball thrown rolling."""
         a = math.radians(angle_deg)
         x, y = distance * math.cos(a), distance * math.sin(a)
         aim = a + math.pi + math.radians(deviation_deg)
@@ -156,21 +156,21 @@ class Session:
                                               speed_m_s=speed, height_cm=100 * height,
                                               deviation_deg=deviation_deg), reset=True)
         self.phys.place_ball(x, y, height, vx, vy, 0.0)
-        self.phys.read_period_airborne_steps()          # remet le compteur de la période à zéro
+        self.phys.read_period_airborne_steps()          # resets the period counter
         self.sim.last_measurement = (x, y)
 
     def center_ball(self) -> None:
-        """Balle posée immobile au centre."""
+        """Ball placed motionless at the center."""
         self.throw(0.0, 0.0, action="center")
 
     def free_attempt(self) -> None:
-        """Enregistre sans toucher à la balle (pour la pousser à la souris, changer de consigne...)."""
+        """Records without touching the ball (to push it with the mouse, change the setpoint...)."""
         if self.state == "fallen":
-            self.message = "La balle est tombée : utilise Lancer, Lâcher ou Centre."
+            self.message = "The ball has fallen: use Throw, Drop or Center."
             return
         self._new_attempt("free", {})
 
-    # --- Tentatives --------------------------------------------------------------------------
+    # --- Attempts ----------------------------------------------------------------------------
     def _new_attempt(self, action: str, params: dict, before: Results = None,
                             reset: bool = False) -> None:
         if self.attempt is not None:
@@ -187,7 +187,7 @@ class Session:
                               stable_since=None, landings=0, max_bounce=0.0)
         self.state = "attempt"
         self._steps_in_flight = 0
-        self.message = f"Tentative {self.number} ({action}) en cours."
+        self.message = f"Attempt {self.number} ({action}) in progress."
 
     def _finish(self, result: str) -> dict:
         att = self.attempt
@@ -223,18 +223,20 @@ class Session:
 
     @staticmethod
     def _describe(l: dict) -> str:
-        text = f"Tentative {l['number']} ({l['action']}) : {l['result']}"
+        result = "fell" if l["result"] == "fallen" else l["result"]   # display only: "fallen" stays in the data
+        text = f"Attempt {l['number']} ({l['action']}): {result}"
         if l["stabilized_in_s"] is not None:
-            text += f" en {l['stabilized_in_s']:.2f} s"
+            text += f" in {l['stabilized_in_s']:.2f} s"
         else:
-            text += f" après {l['duration_s']:.2f} s"
+            text += f" after {l['duration_s']:.2f} s"
         if l["landings"]:
-            text += f", {l['landings']} atterrissage(s), rebond max {l['max_bounce_mm']:.0f} mm"
+            plural = "" if l["landings"] == 1 else "s"
+            text += f", {l['landings']} landing{plural}, max bounce {l['max_bounce_mm']:.0f} mm"
         if l["min_edge_margin_mm"] is not None and l["result"] != "fallen":
-            text += f", passée à {l['min_edge_margin_mm']:.0f} mm du bord"
+            text += f", came within {l['min_edge_margin_mm']:.0f} mm of the edge"
         return text + "."
 
-    # --- Fichiers ----------------------------------------------------------------------------
+    # --- Files -------------------------------------------------------------------------------
     COLUMNS = ["t_s", "x_mm", "y_mm", "height_mm", "vx_m_s", "vy_m_s", "x_setpoint_mm", "y_setpoint_mm",
                 "setpoint_distance_mm", "theta_x_command_deg", "theta_y_command_deg", "theta_x_actual_deg",
                 "theta_y_actual_deg", "motor1_deg", "motor2_deg", "motor3_deg", "torque1_Nm", "torque2_Nm",
@@ -259,7 +261,7 @@ class Session:
                            1000 * r.measurement_error[i]]
                 w.writerow([_format_number(v, 4) for v in values])
         keys = list(row.keys())
-        for l in self.summary:                  # colonnes de toutes les tentatives (lancer ⊃ libre)
+        for l in self.summary:                  # columns of all the attempts (throw ⊃ free)
             keys += [k for k in l if k not in keys]
         with open(self.folder / "summary.csv", "w", newline="", encoding="utf-8-sig") as f:
             w = csv.writer(f, delimiter=";")
@@ -269,25 +271,25 @@ class Session:
                             ("yes" if l.get(k) is True else "no" if l.get(k) is False else
                              "" if l.get(k) is None else l.get(k)) for k in keys])
 
-    # --- Pas de simulation -------------------------------------------------------------------
+    # --- Simulation step ---------------------------------------------------------------------
     def step(self) -> None:
-        """Avance d'un pas de dt_physique, quoi qu'il arrive à la balle."""
+        """Advances by one step of dt_physics, whatever happens to the ball."""
         sim, phys = self.sim, self.phys
         if self.state == "fallen":
-            # Plus de balle à suivre : plateau ramené à plat, rien n'est enregistré
+            # No more ball to track: plate brought back level, nothing is recorded
             if sim.n % self.ppc == 0:
                 phys.command(0.0, 0.0)
-                phys.read_period_airborne_steps()     # non enregistré
+                phys.read_period_airborne_steps()     # not recorded
             phys.step(self.dt)
             sim.n += 1
             return
         control = sim.n % self.ppc == 0
-        if not sim.step():                       # balle tombée (détectée avant le pas)
+        if not sim.step():                       # ball fallen (detected before the step)
             if self.attempt is not None:
                 self._finish("fallen")
             else:
                 self.state = "fallen"
-                self.message = "La balle est tombée."
+                self.message = "The ball has fallen."
             return
         h = phys.ball_height()
         if self.attempt is not None:
@@ -296,8 +298,8 @@ class Session:
             self._after_control(h)
 
     def _track_step(self, h: float) -> None:
-        """Atterrissages (après un vol de plus de VOL_MIN au-dessus de POSEE) et hauteur maximale des
-        rebonds, vérifiés à chaque pas : un échantillonnage à 50 Hz les raterait."""
+        """Landings (after a flight of more than MIN_FLIGHT above RESTING_HEIGHT) and maximum height of
+        the bounces, checked at every step: sampling at 50 Hz would miss them."""
         att = self.attempt
         if h > RESTING_HEIGHT:
             self._steps_in_flight += 1
@@ -314,7 +316,7 @@ class Session:
         self.curves.append((r.t[-1], d, r.theta_x[-1], r.theta_y[-1], h, r.x[-1], r.y[-1],
                              r.x_ref[-1], r.y_ref[-1]))
         if self.attempt is None:
-            # Attente : on garde 0,5 s d'historique, et une perturbation démarre une tentative
+            # Waiting: keep 0.5 s of history, and a disturbance starts an attempt
             n_before = round(PRE_DISTURBANCE / self.cfg.control_period)
             if len(r.t) > 20 * n_before:
                 self.sim.r = _keep_last(r, n_before)
@@ -335,7 +337,7 @@ class Session:
             self._finish("not stabilized")
 
     def close(self) -> list:
-        """Termine la tentative en cours ; renvoie le résumé de toutes les tentatives."""
+        """Ends the current attempt; returns the summary of all the attempts."""
         if self.attempt is not None:
             self._finish("interrupted")
         self.close_camera()
