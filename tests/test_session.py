@@ -63,15 +63,17 @@ def test_files_written(session):
     summary = session.close()
     assert [l["result"] for l in summary] == ["interrupted", "interrupted"]
 
-    with open(session.folder / "summary.csv", encoding="utf-8-sig") as f:
-        rows = list(csv.DictReader(f, delimiter=";"))
+    with open(session.folder / "summary.csv", encoding="utf-8") as f:
+        assert f.read(1) != "﻿"                      # UTF-8 without BOM
+        f.seek(0)
+        rows = list(csv.DictReader(f, delimiter=","))
     assert len(rows) == 2 and rows[0]["action"] == "throw" and rows[1]["setpoint"] == "circle"
-    assert rows[0]["speed_m_s"] == "0,400"                # decimal comma (Excel in French)
+    assert rows[0]["speed_m_s"] == "0.400"                # decimal point, same number of decimals
+    assert rows[0]["stabilized_in_s"] == ""               # missing value: empty cell
 
-    with open(session.folder / "attempt_002.csv", encoding="utf-8-sig") as f:
-        measurements = list(csv.DictReader(f, delimiter=";"))
-    number = lambda text: float(text.replace(",", "."))
+    with open(session.folder / "attempt_002.csv", encoding="utf-8") as f:
+        measurements = list(csv.DictReader(f, delimiter=","))
     assert len(measurements) == 100                                # 2 s at 50 Hz
     # The circle setpoint starts at its starting point: 6 cm at 45°
-    x, y = number(measurements[0]["x_setpoint_mm"]), number(measurements[0]["y_setpoint_mm"])
+    x, y = float(measurements[0]["x_setpoint_mm"]), float(measurements[0]["y_setpoint_mm"])
     assert math.isclose(x, 60 * math.cos(math.pi / 4), abs_tol=0.01) and math.isclose(y, x, abs_tol=0.01)

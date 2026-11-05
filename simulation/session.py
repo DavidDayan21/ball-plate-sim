@@ -13,7 +13,7 @@ It ends when:
 Data written to results/attempts/<date_time>/:
     attempt_001.csv ...  all the measurements of the attempt, at 50 Hz
     summary.csv          one row per attempt (parameters and result)
-Format suited to Excel in French: ";" separator, decimal comma.
+International CSV format: "," separator, decimal point, UTF-8 encoding (no BOM).
 """
 from collections import deque
 from dataclasses import fields, replace
@@ -57,10 +57,10 @@ def _keep_last(r: Results, n: int) -> Results:
 
 
 def _format_number(v: float, decimals: int = 3) -> str:
-    """Number in French format (decimal comma)."""
+    """Number with a fixed number of decimals (decimal point); empty cell if missing."""
     if v is None or (isinstance(v, float) and math.isnan(v)):
         return ""
-    return f"{v:.{decimals}f}".replace(".", ",")
+    return f"{v:.{decimals}f}"
 
 
 class Session:
@@ -245,8 +245,8 @@ class Session:
     def _write(self, r: Results, row: dict) -> None:
         self.folder.mkdir(parents=True, exist_ok=True)
         t0 = self.attempt["t0"]
-        with open(self.folder / row["file"], "w", newline="", encoding="utf-8-sig") as f:
-            w = csv.writer(f, delimiter=";")
+        with open(self.folder / row["file"], "w", newline="", encoding="utf-8") as f:
+            w = csv.writer(f, delimiter=",")
             w.writerow(self.COLUMNS)
             for i in range(len(r.t)):
                 tx, ty = r.actual_tilt[i]
@@ -263,8 +263,8 @@ class Session:
         keys = list(row.keys())
         for l in self.summary:                  # columns of all the attempts (throw ⊃ free)
             keys += [k for k in l if k not in keys]
-        with open(self.folder / "summary.csv", "w", newline="", encoding="utf-8-sig") as f:
-            w = csv.writer(f, delimiter=";")
+        with open(self.folder / "summary.csv", "w", newline="", encoding="utf-8") as f:
+            w = csv.writer(f, delimiter=",")
             w.writerow(keys)
             for l in self.summary:
                 w.writerow([_format_number(l.get(k), 3) if isinstance(l.get(k), float) else

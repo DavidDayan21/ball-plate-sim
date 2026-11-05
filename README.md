@@ -110,7 +110,7 @@ An attempt ends when the ball falls, stays within 1 cm of the setpoint for 2 s (
 lasts longer than 30 s, or when another one starts. Each attempt is recorded in
 `results/attempts/<date_time>/`: `attempt_001.csv`… (all the measurements at 50 Hz) and `summary.csv`
 (one row per attempt: parameters, result, stabilization time, bounces, edge margin…).
-French Excel format: `;` separator, decimal comma.
+International CSV format: `,` separator, decimal point, UTF-8 encoding (no BOM).
 
 ## Conventions
 
