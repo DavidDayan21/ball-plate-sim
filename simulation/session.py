@@ -3,7 +3,8 @@
 An attempt starts with an action (throw, drop, center, free attempt) or, while waiting,
 as soon as the ball moves more than 2 cm away from the setpoint (pushed with the mouse, for example).
 When the ball is moved (throw, drop, center), the sensor and the controller restart from zero
-(integral, predictor, latency): the attempts are independent of each other.
+(integral, predictor, latency): the attempts are independent of each other. As at the start of a
+simulation, the first image then arrives one latency later; until then the plate keeps its command.
 It ends when:
     - the ball falls;
     - the ball stays within 1 cm of the setpoint, resting on the plate, for 2 s (stabilized);

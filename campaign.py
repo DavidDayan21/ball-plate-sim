@@ -486,10 +486,11 @@ def write_report(data: dict, path: str = os.path.join("results", "report.md")) -
               [limit_row("throw_10deg", "±10°"), limit_row("throw_20deg", "±20°"),
                limit_row("throw_10deg_no_wait", "±10°, without waiting for the speed"),
                limit_row("throw_10deg_slow_motors", "±10°, single motor ramp of 50 rad/s² (before B4)")])
-    rep.text(f"The brain waits for the second measurement, which gives the speed of the ball, before tilting the "
+    rep.text(f"The first image arrives one latency ({1000 * BASE.latency * BASE.control_period:.0f} ms) after the "
+             f"throw; the brain waits for the second one, which gives the speed of the ball, before tilting the "
              f"plate: at the first one, the position alone would tilt it the wrong way. Motor ramps: "
-             f"{BASE.fast_acceleration:.0f} rad/s² for the large moves (gap above {BASE.fast_move} rad: the "
-             f"plate flips in about 0.1 s), {BASE.max_acceleration:.0f} rad/s² for the small corrections.")
+             f"{BASE.fast_acceleration:.0f} rad/s² for the large moves (gap above {BASE.fast_move} rad), "
+             f"{BASE.max_acceleration:.0f} rad/s² for the small corrections.")
     rep.section("3. Push on the ball at rest at the center (t = 1 s)")
     rep.table(["Max tilt", "Max impulse absorbed (Δv)"] + headers, [limit_row("push", "±10°")])
     rep.text(f"Maximum speeds found by bisection, to {SPEED_STEP:.2f} m/s, between {SPEED_RANGE[0]} and "

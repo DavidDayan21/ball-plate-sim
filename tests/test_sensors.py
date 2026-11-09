@@ -17,8 +17,10 @@ H, R = 0.12, 0.02
 
 
 def test_sensor_exact_latency():
+    # Like a real camera, the first measurement arrives only after the latency
     c = Sensor(sigma=0.0, latency=2)
-    assert [c.measure(float(k), 0.0)[0] for k in range(6)] == [0.0, 0.0, 0.0, 1.0, 2.0, 3.0]
+    measures = [c.measure(float(k), 0.0) for k in range(6)]
+    assert measures[:2] == [None, None] and [m[0] for m in measures[2:]] == [0.0, 1.0, 2.0, 3.0]
 
 
 def test_height_noise_has_its_own_draws():
@@ -140,9 +142,11 @@ def test_flight_seen_by_the_camera():
     while phys.data.ncon == 0:
         if n % 40 == 0:
             last = cam.measure(phys.data, 0.0, 0.0, last)
-            est.observe(sensor.measure(*last))
-            est.command((0.0, 0.0))
-            if est.impact() is not None:
+            measured = sensor.measure(*last)
+            if measured is not None:
+                est.observe(measured)
+                est.command((0.0, 0.0))
+            if measured is not None and est.impact() is not None:
                 predictions.append((n * dt, est.impact()))
         vz = phys.data.qvel[phys._ball_address()[1] + 2]       # vertical speed just before the contact
         phys.command(0.0, 0.0)

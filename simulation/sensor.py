@@ -8,7 +8,8 @@ import random
 
 class Sensor:
     """Returns the measured position (x, y) and height of the ball above the plate, with Gaussian noise of
-    standard deviation sigma (position) and sigma_height (height), delayed by `latency` control periods."""
+    standard deviation sigma (position) and sigma_height (height), delayed by `latency` control periods.
+    Like a real camera, the first measurement arrives `latency` periods after the start: None until then."""
 
     def __init__(self, sigma: float = 0.001, latency: int = 1, seed: int = 0, sigma_height: float = 0.0):
         self.sigma, self.sigma_height = sigma, sigma_height
@@ -23,4 +24,4 @@ class Sensor:
                            height + self.rng_height.gauss(0, self.sigma_height)))
         if len(self.queue) > self.latency:
             return self.queue.popleft()
-        return self.queue[0]                  # at the very beginning: no history yet
+        return None                           # the first image arrives only after the latency

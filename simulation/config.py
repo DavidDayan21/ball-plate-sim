@@ -120,9 +120,10 @@ class Config:
     resolution: float = math.radians(1.8 / 16)   # 200 steps/turn in 1/16 microsteps
     max_acceleration: float = 50.0     # ramps (rad/s²); math.inf: no ramp. Gentle: the plate does not follow
                                        # the noise of the command, which would make the ball hop
-    fast_acceleration: float = 300.0   # ramps of the large moves (since B4): the plate flips in about 0.1 s
-                                       # instead of 0.2 s; peak torque about 0.25 N·m in MuJoCo (max 0.4 N·m).
-                                       # To check against a motor datasheet
+    fast_acceleration: float = 400.0   # ramps of the large moves (since B4): a move of 0.34 rad (motor 1 when
+                                       # the plate flips from 0 to 10°) takes 0.06 s instead of 0.16 s with
+                                       # 50 rad/s² (trapezoidal profile, calculated); peak torque about 0.31 N·m
+                                       # in MuJoCo (max 0.4 N·m). To check against a motor datasheet
     fast_move: float = 0.1             # (rad, motor angle) above this gap to its target, a move is large;
                                        # math.inf: gentle ramps only
     # Sensor

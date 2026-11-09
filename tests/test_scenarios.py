@@ -87,6 +87,23 @@ def test_thrown_ball_caught():
     assert not r.fallen and math.hypot(r.x[-1], r.y[-1]) < 0.01
 
 
+def test_first_image_after_the_latency():
+    # The first measurement arrives 3 periods after the start: until then the plate keeps its command;
+    # waiting for the speed, the brain acts at the second image
+    cfg = Config(physics="simple", latency=3, duration=0.2)
+    acting = lambda r: next(k for k, th in enumerate(r.theta_x) if th != 0.0)
+    assert acting(simulate(replace(cfg, wait_for_speed=False))) == 3
+    assert acting(simulate(cfg)) == 4
+
+
+def test_thrown_ball_braked_from_the_first_command():
+    # Thrown toward +x: the first command that tilts the plate already brakes the ball. When the first image
+    # was given twice (once without delay), the speed seemed zero at the second one and the plate first
+    # pushed the ball toward the edge
+    r = simulate(Config(trajectory=center, start_position=(-0.1, 0.0), start_velocity=(0.6, 0.0), duration=0.2))
+    assert next(th for th in r.theta_x if th != 0.0) < 0
+
+
 def test_ball_mass_has_no_effect():
     # ẍ = g·sin θ / (1 + k): the mass cancels out
     pm = Config().mujoco_params

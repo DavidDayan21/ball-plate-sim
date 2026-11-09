@@ -171,12 +171,12 @@ def level_impact(p0, v0):
 
 def track(images, theta, latency):
     """Estimator after one observation per image (image j delivered at the period j + latency, like the
-    sensor: the first ones arrive without delay), the plate held at the tilt theta since before the start."""
+    sensor), the plate held at the tilt theta since before the start."""
     est = FlightEstimator(PLATE_H, BALL_R, T_CTRL, latency, airborne_height=0.015, g=G)
     for _ in range(latency + 1):
         est.command(theta)
-    for k in range(len(images) + latency):
-        est.observe(images[max(k - latency, 0)])
+    for image in images:
+        est.observe(image)
         est.command(theta)
     return est
 

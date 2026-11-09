@@ -21,7 +21,7 @@ class FlightEstimator:
     Each control period: observe(measurement), then command(θ) with the tilt just sent to the motors.
     The image of the measurement received now was taken N periods ago, with the tilt commanded one
     period earlier (the camera corrects with the last command): θ_image = command N+1 periods ago.
-    At the start, the delay line is not full yet: the k-th measurement is only min(k, N) periods old.
+    The first measurement arrives N periods after the start (simulation/sensor.py): all are N periods old.
     """
 
     def __init__(self, plate_height: float, ball_radius: float, period: float, latency: int,
@@ -30,7 +30,6 @@ class FlightEstimator:
         self.airborne_height, self.g = airborne_height, g
         self.commands = deque([(0.0, 0.0)] * (latency + 1), maxlen=latency + 1)
         self.now = -period                     # time of the current control instant: 0 at the first observe
-        self.observed = 0
         self.samples = []                     # (t, x, y, z) in the world frame, measurements of the current flight
         self.last = None
 
@@ -41,8 +40,7 @@ class FlightEstimator:
         """measurement = (x, y, height above the plate), plate frame, N periods late."""
         self.now += self.T
         x, y, h = measurement
-        t = self.now - min(self.observed, self.N) * self.T          # time of the image
-        self.observed += 1
+        t = self.now - self.N * self.T                    # time of the image
         if h <= self.airborne_height:                     # ball on the plate: no flight in progress
             self.samples = []
         elif measurement != self.last:                    # a repeated measurement: the ball was not seen

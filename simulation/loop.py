@@ -2,6 +2,7 @@
 
 At every step (0.5 ms): the physics advances. Every 20 ms (50 Hz):
     measurement (synthetic sensor or camera) -> controller -> command (θx, θy) -> motors / servos
+The first measurement arrives one latency after the start: until then, the plate keeps its command.
 
     physics = "simple": our own equations (simulation/simple_physics.py)
     physics = "mujoco": 3D physics engine (simulation/mujoco_physics.py)
@@ -113,13 +114,14 @@ class Simulation:
                 self.last_measurement = (mx, my, mh)
             else:
                 mx, my, mh = bx, by, phys.ball_height()
-            xm, ym, hm = self.sensor.measure(mx, my, mh)
+            measured = self.sensor.measure(mx, my, mh)
             if self.camera is None:         # synthetic sensor: noisy measurement of this instant (before latency)
-                mx, my, mh = self.sensor.queue[-1] if self.sensor.queue else (xm, ym, mh)
+                mx, my, mh = self.sensor.queue[-1] if self.sensor.queue else measured
             r.measurement_error.append(math.hypot(mx - bx, my - by))
             r.measured_height.append(mh)
             xr, yr, axr, ayr = cfg.trajectory(t)
-            self.theta = self.ctrl.compute((xr, yr), (xm, ym, hm), (axr, ayr), cfg.control_period)
+            if measured is not None:        # before the first image arrives, the plate keeps its command
+                self.theta = self.ctrl.compute((xr, yr), measured, (axr, ayr), cfg.control_period)
             phys.command(*self.theta)
             for series, val in ((r.t, t), (r.x, bx), (r.y, by), (r.x_ref, xr), (r.y_ref, yr),
                                (r.theta_x, self.theta[0]), (r.theta_y, self.theta[1]),
