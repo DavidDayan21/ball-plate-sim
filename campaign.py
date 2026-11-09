@@ -8,10 +8,11 @@ The 160×120 camera is as accurate as 320×240, and faster to simulate.
     2. Thrown ball: maximum speed caught (max tilt 10°, then 20°)
     3. Push on a ball at rest at the center: maximum impulse absorbed
     4. Robustness to physical parameters and to a dropped ball
-    5. Camera latency, with and without compensation by prediction
-    6. Integral action: error integrated everywhere or only near the setpoint
-    7. Square trajectory
-    8. Gap between the simple physics and MuJoCo on the robot, explained term by term
+    5. Dropped ball: where and from how high
+    6. Camera latency, with and without compensation by prediction
+    7. Integral action: error integrated everywhere or only near the setpoint
+    8. Square trajectory
+    9. Gap between the simple physics and MuJoCo on the robot, explained term by term
 
 Every case is simulated over N draws, so that each result comes with its spread:
     - draw 0 is the nominal configuration (noise seed 0, nominal start position);
@@ -48,19 +49,35 @@ CG = BASE.plate.coefficient * G
 R_PLATE = BASE.plate.plate_radius
 THROW_START = -0.10                 # the ball is thrown from x = -10 cm toward +x
 DROP_HEIGHT = 0.305                 # (m) ITTF rule: height of the bounce test
+DROP_DISTANCES = (0.0, 0.05, 0.10)  # (m) section 5: from the center, toward the start point of the reference scenario
+DROP_HEIGHTS = (0.10, 0.20, DROP_HEIGHT)
+DROP_DURATION = 6.0                 # (s)
 START_OFFSET = 0.0005               # (m) draws k ≥ 1: start position shifted by up to ±0.5 mm per axis
 SPEED_STEP = 0.01                   # (m/s) resolution of the maximum speeds
 SPEED_RANGE = (0.1, 1.5)            # (m/s) bisection bracket: caught at the low end, fallen at the high end
 CHECK_SPAN = 5                      # draw 0: every speed within ±5 steps of the threshold is simulated
 
-# Sections 0 and 8 validate the simulator, not the brain: they use a frozen reference controller (the PID
+# Sections 0 and 9 validate the simulator, not the brain: they use a frozen reference controller (the PID
 # without latency compensation, error integrated everywhere), so that their results do not change when
 # the brain improves.
 REFERENCE_CONTROLLER = {"latency_compensation": False, "integration_zone": math.inf}
 
+def drop_case(distance: float, height: float) -> str:
+    return f"drop_{round(1000 * distance)}mm_{round(1000 * height)}mm"
+
+
+def drop_config(distance: float, height: float) -> Config:
+    """Ball released without speed `height` above the plate, at `distance` from the center toward the start
+    point of the reference scenario; setpoint at the center."""
+    x0, y0 = BASE.start_position
+    d0 = math.hypot(x0, y0)
+    return replace(BASE, trajectory=center, duration=DROP_DURATION, start_height=height,
+                   start_position=(x0 * distance / d0, y0 * distance / d0))
+
+
 # Closed-loop cases (nominal configurations), each simulated over every draw
 CASES = {
-    # Simulator validation (sections 0 and 8), reference controller
+    # Simulator validation (sections 0 and 9), reference controller
     "simple_plate": Config(physics="simple", mechanism=False, **REFERENCE_CONTROLLER),
     "simple_robot": Config(physics="simple", **REFERENCE_CONTROLLER),
     "simple_robot_rolling": Config(physics="simple", rolling_term=True, **REFERENCE_CONTROLLER),
@@ -86,7 +103,9 @@ CASES = {
     "latency_60ms": replace(BASE, latency=3),
     "latency_100ms": replace(BASE, latency=5),
     "square": replace(BASE, trajectory=square, duration=16.0, start_position=(0.05, 0.05)),
-    # The brain without one of its parts: latency compensation (sections 5 and 7), integration zone (section 6)
+    # Dropped ball (section 5)
+    **{drop_case(d, h): drop_config(d, h) for d in DROP_DISTANCES for h in DROP_HEIGHTS},
+    # The brain without one of its parts: latency compensation (sections 6 and 8), integration zone (section 7)
     "camera_uncompensated": replace(BASE, latency_compensation=False),
     "latency_60ms_uncompensated": replace(BASE, latency=3, latency_compensation=False),
     "latency_100ms_uncompensated": replace(BASE, latency=5, latency_compensation=False),
@@ -241,6 +260,11 @@ def airborne(r) -> float:
     return math.nan if r.fallen else r.airborne_fraction
 
 
+def settled_distance(r) -> float:
+    """Dropped ball: max distance from the setpoint over the last 2 s of the drop."""
+    return math.nan if r.fallen else max_distance(r, DROP_DURATION - 2, DROP_DURATION)
+
+
 # --- Formatting ----------------------------------------------------------------------------------
 def fmt(values, unit: str = "", decimals: int = 2, scale: float = 1.0) -> str:
     """'mean ± std unit' over the draws ('mean unit' with a single draw)."""
@@ -369,7 +393,7 @@ def write_report(data: dict, path: str = os.path.join("results", "report.md")) -
              "in **bold** when significant (paired t-test at the 5 % level: |Δ| > t × standard error, "
              "t = 97.5 % quantile of Student's distribution, 2.26 for 10 draws).")
     rep.text("The brain is the PID with its latency compensation and its integration zone (default settings): "
-             "it is judged by the objectives and sections 2 to 7. Sections 0 and 8 validate the simulator: "
+             "it is judged by the objectives and sections 2 to 8. Sections 0 and 9 validate the simulator: "
              "they use a frozen reference controller (the PID without latency compensation, error integrated "
              "everywhere).")
 
@@ -458,7 +482,21 @@ def write_report(data: dict, path: str = os.path.join("results", "report.md")) -
              f"{100 * DROP_HEIGHT:.1f} cm above the plate. A ball in the air beyond the edge of the tilted plate "
              "counts as fallen only once it is level with the plate.")
 
-    rep.section("5. Camera latency: without and with compensation by prediction")
+    rep.section("5. Dropped ball: where and from how high (setpoint: center)")
+    rows = []
+    for d in DROP_DISTANCES:
+        for h in DROP_HEIGHTS:
+            rs = runs[drop_case(d, h)]
+            rows.append([f"{100 * d:.0f} cm", f"{100 * h:.1f} cm", fallen(rs),
+                         fmt([airborne(r) for r in rs], " %", 1, 100),
+                         fmt([settled_distance(r) for r in rs], " mm", scale=1000)])
+    rep.table(["Distance from the center", "Height", "Fallen", "Airborne",
+               f"Max distance from the center between {DROP_DURATION - 2:.0f} s and {DROP_DURATION:.0f} s"], rows)
+    rep.text(f"Ball released without speed above a point of the line from the center to the start point of the "
+             f"reference scenario, {DROP_DURATION:.0f} s per drop. The brain reacts to the ball as soon as the camera "
+             "sees it, also while it is in the air.")
+
+    rep.section("6. Camera latency: without and with compensation by prediction")
     rows = []
     for ms, without, with_ in ((20, "camera_uncompensated", "camera"),
                                (60, "latency_60ms_uncompensated", "latency_60ms"),
@@ -478,7 +516,7 @@ def write_report(data: dict, path: str = os.path.join("results", "report.md")) -
     rep.table(["Latency", "Compensation", "Fallen", "Max distance between 2 s and 4 s",
                "Δ (with - without)", "Circle error", "Δ circle error (with - without)"], rows)
 
-    rep.section("6. Integral action: error integrated everywhere or only near the setpoint")
+    rep.section("7. Integral action: error integrated everywhere or only near the setpoint")
     zone_mm = 1000 * BASE.integration_zone
     everywhere = runs["camera_integral_everywhere"]
     rows = []
@@ -502,7 +540,7 @@ def write_report(data: dict, path: str = os.path.join("results", "report.md")) -
              f"error only while it is below {zone_mm:.0f} mm: the integral no longer builds up during the "
              "approach, and only corrects the calibration error of the plate.")
 
-    rep.section("7. Square trajectory (10 cm sides, 5 cm/s), latency 20 ms")
+    rep.section("8. Square trajectory (10 cm sides, 5 cm/s), latency 20 ms")
     without = [square_error(r) for r in runs["square_uncompensated"]]
     with_ = [square_error(r) for r in runs["square"]]
     rep.table(["Compensation", "Fallen", "Error (2nd lap)", "Δ (with - without)"], [
@@ -510,7 +548,7 @@ def write_report(data: dict, path: str = os.path.join("results", "report.md")) -
         ["with", fallen(runs["square"]), fmt(with_, " mm", scale=1000),
          fmt_delta(without, with_, " mm", scale=1000)]])
 
-    rep.section("8. Simple physics → MuJoCo on the 3-arm robot: the gap, term by term "
+    rep.section("9. Simple physics → MuJoCo on the 3-arm robot: the gap, term by term "
                 "(synthetic sensor, reference controller)")
     base = [circle_error(r) for r in runs["simple_robot"]]
     gap = paired_delta(base, [circle_error(r) for r in runs["mujoco_robot"]])[0]

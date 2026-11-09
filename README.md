@@ -83,7 +83,7 @@ seed k (`Config.seed`) and a start position shifted by up to ±0.5 mm on each ax
 variation for the camera, which draws no random number. The report gives mean ± standard deviation;
 a difference between two cases, paired over the same draws, is significant by a paired t-test at the
 5 % level (|mean| > t × standard error, t = 2.26 for 10 draws). Maximum speeds are found by bisection,
-to 0.01 m/s. The report opens with the objectives of the brain (met or not); sections 0 and 8 validate
+to 0.01 m/s. The report opens with the objectives of the brain (met or not); sections 0 and 9 validate
 the simulator with a frozen reference controller (the PID without latency compensation, error
 integrated everywhere).
 

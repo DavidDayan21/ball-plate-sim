@@ -4,7 +4,7 @@ Simulated chain: MuJoCo (3-arm robot, motor ramps) + 160×120 camera + OpenCV + 
 
 Each case is simulated over 10 draw(s). Draw 0 is the nominal configuration; draw k ≥ 1 uses noise seed k and a start position shifted by up to ±0.5 mm on each axis (the only source of variation for the camera cases). Values: mean ± standard deviation over the draws; draws where the ball fell are counted in 'Fallen' and left out of the other columns. Δ: mean of the paired differences over the same draws ± standard error, in **bold** when significant (paired t-test at the 5 % level: |Δ| > t × standard error, t = 97.5 % quantile of Student's distribution, 2.26 for 10 draws).
 
-The brain is the PID with its latency compensation and its integration zone (default settings): it is judged by the objectives and sections 2 to 7. Sections 0 and 8 validate the simulator: they use a frozen reference controller (the PID without latency compensation, error integrated everywhere).
+The brain is the PID with its latency compensation and its integration zone (default settings): it is judged by the objectives and sections 2 to 8. Sections 0 and 9 validate the simulator: they use a frozen reference controller (the PID without latency compensation, error integrated everywhere).
 
 
 ## Objectives of the brain (full chain with the camera)
@@ -86,7 +86,24 @@ Maximum speeds found by bisection, to 0.01 m/s, between 0.1 and 1.5 m/s. Distanc
 Reference scenario. Dropped ball: released without speed above the start point, 30.5 cm above the plate. A ball in the air beyond the edge of the tilted plate counts as fallen only once it is level with the plate.
 
 
-## 5. Camera latency: without and with compensation by prediction
+## 5. Dropped ball: where and from how high (setpoint: center)
+
+| Distance from the center | Height | Fallen | Airborne | Max distance from the center between 4 s and 6 s |
+|---|---|---|---|---|
+| 0 cm | 10.0 cm | 0/10 | 31.5 ± 1.1 % | 0.49 ± 0.06 mm |
+| 0 cm | 20.0 cm | 0/10 | 46.6 ± 1.9 % | 0.83 ± 0.32 mm |
+| 0 cm | 30.5 cm | 0/10 | 53.0 ± 1.2 % | 3.52 ± 0.53 mm |
+| 5 cm | 10.0 cm | 0/10 | 29.0 ± 1.2 % | 0.46 ± 0.06 mm |
+| 5 cm | 20.0 cm | 0/10 | 40.7 ± 2.2 % | 1.75 ± 0.58 mm |
+| 5 cm | 30.5 cm | 10/10 | - | - |
+| 10 cm | 10.0 cm | 0/10 | 28.8 ± 1.4 % | 0.43 ± 0.07 mm |
+| 10 cm | 20.0 cm | 0/10 | 34.9 ± 1.5 % | 0.48 ± 0.08 mm |
+| 10 cm | 30.5 cm | 10/10 | - | - |
+
+Ball released without speed above a point of the line from the center to the start point of the reference scenario, 6 s per drop. The brain reacts to the ball as soon as the camera sees it, also while it is in the air.
+
+
+## 6. Camera latency: without and with compensation by prediction
 
 | Latency | Compensation | Fallen | Max distance between 2 s and 4 s | Δ (with - without) | Circle error | Δ circle error (with - without) |
 |---|---|---|---|---|---|---|
@@ -98,7 +115,7 @@ Reference scenario. Dropped ball: released without speed above the start point, 
 | 100 ms | with | 0/10 | 3.01 ± 0.05 mm | **+0.53 ± 0.03 mm** | 1.94 ± 0.03 mm | **-14.74 ± 0.02 mm** |
 
 
-## 6. Integral action: error integrated everywhere or only near the setpoint
+## 7. Integral action: error integrated everywhere or only near the setpoint
 
 | Error integrated | Fallen | Arrival (first time < 5 mm) | Overshoot after arrival | Max distance between 2 s and 4 s | Δ (zone - everywhere) | Circle error | Δ circle error (zone - everywhere) |
 |---|---|---|---|---|---|---|---|
@@ -108,7 +125,7 @@ Reference scenario. Dropped ball: released without speed above the start point, 
 Reference scenario, latency 20 ms with compensation. With the zone, each axis integrates its error only while it is below 20 mm: the integral no longer builds up during the approach, and only corrects the calibration error of the plate.
 
 
-## 7. Square trajectory (10 cm sides, 5 cm/s), latency 20 ms
+## 8. Square trajectory (10 cm sides, 5 cm/s), latency 20 ms
 
 | Compensation | Fallen | Error (2nd lap) | Δ (with - without) |
 |---|---|---|---|
@@ -116,7 +133,7 @@ Reference scenario, latency 20 ms with compensation. With the zone, each axis in
 | with | 0/10 | 9.34 ± 0.01 mm | **-0.49 ± 0.01 mm** |
 
 
-## 8. Simple physics → MuJoCo on the 3-arm robot: the gap, term by term (synthetic sensor, reference controller)
+## 9. Simple physics → MuJoCo on the 3-arm robot: the gap, term by term (synthetic sensor, reference controller)
 
 | Model | Fallen | Circle error | Δ vs basic model | Share of the MuJoCo gap |
 |---|---|---|---|---|
