@@ -248,3 +248,15 @@ def test_aimed_bounce():
     v_i = math.sqrt(2 * G * 0.20)
     expected = 0.5 * (0.0 - 0.05) / (2 * e * v_i / G) / ((1 + e) * v_i)
     assert theta[0] == pytest.approx(expected, rel=1e-6) and theta[0] < 0 and theta[1] == pytest.approx(0.0, abs=1e-9)
+
+
+def test_pid_waits_for_the_speed():
+    # First measurement: feedforward and integral term only; second: the derivative starts at the raw speed
+    pid = PID(kp=2.0, ki=1.0, kd=0.5, tau_d=0.05, wait_for_speed=True)
+    assert pid.compute(0.0, 0.10, 0.02, feedforward=0.01) == 0.01
+    pid.compute(0.0, 0.11, 0.02)
+    assert pid.derivative == pytest.approx(-0.5)                # (-0.11 + 0.10) / 0.02, no lag of the filter
+    plain = PID(kp=2.0, ki=1.0, kd=0.5, tau_d=0.05)
+    plain.compute(0.0, 0.10, 0.02)
+    plain.compute(0.0, 0.11, 0.02)
+    assert plain.derivative == pytest.approx(-0.5 * 0.02 / 0.07)   # filtered: (1 - a)·raw, a = 0.05 / 0.07

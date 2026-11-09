@@ -70,9 +70,10 @@ class PlateController:
     def __init__(self, kp: float, ki: float, kd: float, theta_max: float,
                  tau_d: float, model_gain: float, feedforward: bool = True,
                  latency_compensation: int = 0, period: float = 0.02, integration_zone: float = math.inf,
-                 flight: FlightEstimator = None, restitution: float = 0.87, bounce_gain: float = 0.5):
-        self.pid_x = PID(kp, ki, kd, -theta_max, theta_max, tau_d, integration_zone)
-        self.pid_y = PID(kp, ki, kd, -theta_max, theta_max, tau_d, integration_zone)
+                 flight: FlightEstimator = None, restitution: float = 0.87, bounce_gain: float = 0.5,
+                 wait_for_speed: bool = False):
+        self.pid_x = PID(kp, ki, kd, -theta_max, theta_max, tau_d, integration_zone, wait_for_speed)
+        self.pid_y = PID(kp, ki, kd, -theta_max, theta_max, tau_d, integration_zone, wait_for_speed)
         self.model_gain = model_gain
         self.feedforward = feedforward
         self.predictors = ([LatencyPredictor(latency_compensation, period, model_gain) for _ in range(2)]

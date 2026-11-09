@@ -59,10 +59,11 @@ SPEED_RANGE = (0.1, 1.5)            # (m/s) bisection bracket: caught at the low
 CHECK_SPAN = 5                      # draw 0: every speed within ±5 steps of the threshold is simulated
 
 # Sections 0 and 9 validate the simulator, not the brain: they use a frozen reference controller (the PID
-# without latency compensation, error integrated everywhere), so that their results do not change when
-# the brain improves.
+# without latency compensation, error integrated everywhere, ball never considered in the air, no wait for
+# the speed), so that their results do not change when the brain improves, and the motors of the first robot
+# (single ramp of 50 rad/s²: the ball never hops, which the simple physics does not model).
 REFERENCE_CONTROLLER = {"latency_compensation": False, "integration_zone": math.inf,
-                        "airborne_height": math.inf}
+                        "airborne_height": math.inf, "wait_for_speed": False, "fast_move": math.inf}
 
 def drop_case(distance: float, height: float, aimed: bool = True) -> str:
     return f"drop_{round(1000 * distance)}mm_{round(1000 * height)}mm" + ("" if aimed else "_reacting")
@@ -125,8 +126,10 @@ ROBUSTNESS = {"Nominal (ping-pong, μ = 1)": "camera", "Solid ball (k = 2/5)": "
               "Ball dropped from 30.5 cm (ITTF height)": "dropped"}
 # The return to the center must hold whatever the calibration error of the plate, from 0 to 1°
 CALIBRATION = {"none": "no_calibration_error", "nominal": "camera", "×2": "calibration_error_x2"}
-# Maximum speeds searched by bisection: name -> (kind, max tilt in degrees)
-LIMITS = {"throw_10deg": ("throw", 10), "throw_20deg": ("throw", 20), "push": ("push", 10)}
+# Maximum speeds searched by bisection: name -> (kind, max tilt in degrees, settings changed from BASE)
+LIMITS = {"throw_10deg": ("throw", 10, {}), "throw_20deg": ("throw", 20, {}), "push": ("push", 10, {}),
+          "throw_10deg_no_wait": ("throw", 10, {"wait_for_speed": False}),
+          "throw_10deg_slow_motors": ("throw", 10, {"fast_move": math.inf})}
 
 
 # --- Draws and statistics ------------------------------------------------------------------------
@@ -202,17 +205,18 @@ def max_caught(caught, low: float, high: float, step: float):
 
 def limit_config(name: str, v: float) -> Config:
     """Thrown ball at speed v, or push of v at t = 1 s on the ball at rest at the center."""
-    kind, tilt_deg = LIMITS[name]
+    kind, tilt_deg, settings = LIMITS[name]
+    cfg = replace(BASE, **settings)
     if kind == "throw":
-        return replace(BASE, theta_max=math.radians(tilt_deg), trajectory=center, duration=5.0,
+        return replace(cfg, theta_max=math.radians(tilt_deg), trajectory=center, duration=5.0,
                        start_position=(THROW_START, 0.0), start_velocity=(v, 0.0))
-    return replace(BASE, trajectory=center, duration=5.0, start_position=(0.0, 0.0),
+    return replace(cfg, trajectory=center, duration=5.0, start_position=(0.0, 0.0),
                    pushes=((1.0, 0.8 * v, 0.6 * v),))
 
 
 def physical_limit(name: str) -> float:
     """Maximum braking a = c·g·sin θmax over the available distance d: v = √(2·a·d)."""
-    kind, tilt_deg = LIMITS[name]
+    kind, tilt_deg, _ = LIMITS[name]
     distance = R_PLATE - THROW_START if kind == "throw" else R_PLATE
     return math.sqrt(2 * CG * math.sin(math.radians(tilt_deg)) * distance)
 
@@ -479,7 +483,13 @@ def write_report(data: dict, path: str = os.path.join("results", "report.md")) -
     headers = ["Physical limit √(2·c·g·sin θmax·d)", "Share of the limit", "Monotonic around the threshold (draw 0)"]
     rep.section("2. Ball thrown from x = -10 cm toward the opposite edge (setpoint: center)")
     rep.table(["Max tilt", "Max speed caught"] + headers,
-              [limit_row("throw_10deg", "±10°"), limit_row("throw_20deg", "±20°")])
+              [limit_row("throw_10deg", "±10°"), limit_row("throw_20deg", "±20°"),
+               limit_row("throw_10deg_no_wait", "±10°, without waiting for the speed"),
+               limit_row("throw_10deg_slow_motors", "±10°, single motor ramp of 50 rad/s² (before B4)")])
+    rep.text(f"The brain waits for the second measurement, which gives the speed of the ball, before tilting the "
+             f"plate: at the first one, the position alone would tilt it the wrong way. Motor ramps: "
+             f"{BASE.fast_acceleration:.0f} rad/s² for the large moves (gap above {BASE.fast_move} rad: the "
+             f"plate flips in about 0.1 s), {BASE.max_acceleration:.0f} rad/s² for the small corrections.")
     rep.section("3. Push on the ball at rest at the center (t = 1 s)")
     rep.table(["Max tilt", "Max impulse absorbed (Δv)"] + headers, [limit_row("push", "±10°")])
     rep.text(f"Maximum speeds found by bisection, to {SPEED_STEP:.2f} m/s, between {SPEED_RANGE[0]} and "

@@ -6,6 +6,9 @@ a bounded acceleration (trapezoidal profile, like stepper motor drivers).
 
     max_acceleration = inf: "square-wave" profile (max speed immediately)
     finite max_acceleration: acceleration and braking ramps
+    fast_move finite: two ramps. A large move (gap to the target above fast_move) uses fast_acceleration
+    until the motor has stopped on its target; the small corrections keep the gentle max_acceleration,
+    so that the plate does not follow the noise of the command (which would make the ball hop).
 
 Torque and inertia are not modeled here: in MuJoCo, this profile is the setpoint
 of the motor servo, which has a limited torque.
@@ -16,12 +19,15 @@ import math
 class Motor:
     def __init__(self, initial_angle: float, max_speed: float, resolution: float,
                  angle_min: float = math.radians(-60), angle_max: float = math.radians(60),
-                 max_acceleration: float = math.inf):
+                 max_acceleration: float = math.inf, fast_acceleration: float = math.inf,
+                 fast_move: float = math.inf):
         self.position = initial_angle      # angle (rad)
         self.velocity = 0.0                # velocity (rad/s), used with the ramps
         self.target = initial_angle        # requested angle, rounded to the step (rad)
         self.max_speed = max_speed         # rad/s
         self.max_acceleration = max_acceleration  # rad/s²
+        self.fast_acceleration, self.fast_move = fast_acceleration, fast_move
+        self.fast = False                  # a large move is in progress
         self.resolution = resolution       # rad per step
         self.angle_min, self.angle_max = angle_min, angle_max
 
@@ -37,11 +43,16 @@ class Motor:
             max_step = self.max_speed * dt
             self.position += max(-max_step, min(max_step, gap))
             return self.position
+        if abs(gap) > self.fast_move:
+            self.fast = True
+        elif self.fast and abs(gap) < self.fast_move / 4 and abs(self.velocity) < 0.5:
+            self.fast = False              # stopped near the target: the large move is over
+        a_max = self.fast_acceleration if self.fast else self.max_acceleration
         # Ramp: aim for the highest speed that still allows stopping on the target
         # when braking at a_max, i.e. v = √(2·a_max·|gap|), without exceeding max_speed;
         # and the velocity changes by at most a_max·dt per step.
-        v_target = math.copysign(min(self.max_speed, math.sqrt(2 * self.max_acceleration * abs(gap))), gap)
-        dv = self.max_acceleration * dt
+        v_target = math.copysign(min(self.max_speed, math.sqrt(2 * a_max * abs(gap))), gap)
+        dv = a_max * dt
         self.velocity += max(-dv, min(dv, v_target - self.velocity))
         self.position += self.velocity * dt
         return self.position

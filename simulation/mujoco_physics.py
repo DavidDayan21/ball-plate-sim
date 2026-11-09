@@ -155,7 +155,8 @@ class MujocoPhysics:
         self.cfg, self.p, self.g = cfg, cfg.plate, cfg.geometry
         self.mechanism = cfg.mechanism
         self.model, self.data = build(cfg)
-        self.motors = ([Motor(0.0, cfg.max_speed, cfg.resolution, max_acceleration=cfg.max_acceleration)
+        self.motors = ([Motor(0.0, cfg.max_speed, cfg.resolution, max_acceleration=cfg.max_acceleration,
+                               fast_acceleration=cfg.fast_acceleration, fast_move=cfg.fast_move)
                          for _ in range(3)] if self.mechanism else [])
         self.unreachable_poses = 0
         self.airborne_steps = 0                # steps with the ball airborne, in total

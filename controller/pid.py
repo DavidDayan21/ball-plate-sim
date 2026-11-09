@@ -18,6 +18,10 @@ class PID:
       the setpoint, the proportional and derivative terms bring the measurement back; an integral
       built up during that transient would only make it overshoot.
     - Feedforward: u_ff is added before saturation.
+    - Start with the speed (wait_for_speed): at the first measurement the speed of the measured object is
+      unknown, and acting on its position alone would push a moving ball the wrong way. The output is then
+      the feedforward and the integral term only; at the second measurement, the filtered derivative starts
+      at the raw speed of the first two measurements instead of 0 (no lag of the filter at the start).
 
     With the default values (no filter, no saturation, integration everywhere, u_ff = 0), this is exactly
     the plain textbook PID: proportional, rectangle-rule integral and unfiltered finite-difference derivative.
@@ -27,11 +31,12 @@ class PID:
 
     def __init__(self, kp: float, ki: float = 0.0, kd: float = 0.0,
                  output_min: float = -math.inf, output_max: float = math.inf,
-                 tau_d: float = 0.0, integration_zone: float = math.inf):
+                 tau_d: float = 0.0, integration_zone: float = math.inf, wait_for_speed: bool = False):
         self.kp, self.ki, self.kd = kp, ki, kd
         self.output_min, self.output_max = output_min, output_max
         self.tau_d = tau_d
         self.integration_zone = integration_zone
+        self.wait_for_speed = wait_for_speed
         self.reset()
 
     def reset(self) -> None:
@@ -39,6 +44,7 @@ class PID:
         self.integral = 0.0
         self.previous_error = None
         self.derivative = 0.0
+        self.speed_unknown = False       # wait_for_speed: between the first and the second measurement
         self.terms = (0.0, 0.0, 0.0)     # (P term, I term, D term) of the last computation
 
     def _saturate(self, u: float) -> float:
@@ -50,9 +56,15 @@ class PID:
         hold: the PID only follows the measurement (derivative), integrates nothing and returns its
         integral term alone (ball in the air: the plate is driven by the aimed bounce)."""
         e = setpoint - measurement
+        if self.wait_for_speed and self.previous_error is None:
+            self.previous_error, self.speed_unknown = e, True
+            self.terms = (0.0, self.ki * self.integral, 0.0)
+            return self._saturate(self.ki * self.integral + feedforward)
 
         # Filtered derivative: d <- a·d + (1 - a)·d_raw, with a = tau_d / (tau_d + dt)
         raw = 0.0 if self.previous_error is None else (e - self.previous_error) / dt
+        if self.speed_unknown:                      # second measurement: the filter starts at the raw speed
+            self.derivative, self.speed_unknown = raw, False
         a = self.tau_d / (self.tau_d + dt)
         self.derivative = a * self.derivative + (1 - a) * raw
         self.previous_error = e

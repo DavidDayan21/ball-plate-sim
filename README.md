@@ -18,7 +18,7 @@ Building the real robot remains a distant goal: the code will then be ready.
 | Realistic contact | Ping-pong ball bounce compliant with the ITTF rule (e = 0.874) | Done |
 | 3D sandbox | Throws, drops, bounces, pushes, setpoints, data of every attempt | Done |
 | A. Reliable measurements | Bit-exact regression check, spread over N draws, robust metrics, simple physics → MuJoCo gap | Done |
-| B. PID brain | Objectives in the report, integral limited to the neighborhood of the setpoint, aimed bounce of a dropped ball, thrown ball, gains tuned by LQR, adaptive control | **In progress** |
+| B. PID brain | Objectives in the report, integral limited to the neighborhood of the setpoint, aimed bounce of a dropped ball, thrown ball (start with the speed, fast motor ramps for the large moves), gains tuned by LQR, adaptive control | **In progress** |
 | C. Local AI brain | Training in MuJoCo, same rules as the PID (sensor, motors, ±10°) | To do |
 | D. Software for the general public | MuJoCo physics in our interface, choice of brain, comparison | To do |
 | E. Construction (distant) | Design, real-world defects, complete error budget | Later |
@@ -143,10 +143,10 @@ International CSV format: `,` separator, decimal point, UTF-8 encoding (no BOM).
 | Ball | Ping-pong: radius 2 cm, 2.7 g, hollow (J = 2/3·m·r²) |
 | Ball-plate contact | Target restitution 0.88 (ITTF rule: dropped from 30.5 cm, bounces back to 22-25 cm), stiffness 200 Hz, simulation step 0.5 ms |
 | Mechanism | 3 arms of 5 cm, rods of 12 cm, ball joints 10 cm from the center |
-| Motors | 10 rad/s, 1/16 microsteps, ramps at 50 rad/s², max torque 0.4 N·m; in MuJoCo, position servos (kp = 50 N·m/rad, kv = 0.5 N·m·s/rad) that lag their target by τ = kv/kp = 10 ms |
+| Motors | 10 rad/s, 1/16 microsteps, ramps at 50 rad/s² for the small corrections and 300 rad/s² for the large moves (gap above 0.1 rad, since B4; peak torque about 0.25 N·m, to check against a datasheet), max torque 0.4 N·m; in MuJoCo, position servos (kp = 50 N·m/rad, kv = 0.5 N·m·s/rad) that lag their target by τ = kv/kp = 10 ms |
 | Simple physics | Basic model ẍ = c·g·sin θ; optional additions (`Config`): rolling term r·θ̈, rotating-frame terms, exact gravity, servo lag. The full equation is derived in `simulation/simple_physics.py` and checked against MuJoCo |
 | Sensor | Camera 50 cm above the plate, 50 Hz, latency 20 ms; height of the ball from its apparent size (± 3 mm), a ball partly out of the image is not measured |
-| Controller (PID brain) | 50 Hz, Kp = 1 rad/m, Ki = 1 rad/(m·s), ζ = 0.7, max tilt ±10°, latency compensation by prediction, error integrated only within 2 cm of the setpoint on each axis; ball in the air (measured above 1.5 cm): its parabola is fitted and the plate is tilted so that the bounce sends it halfway back to the setpoint (restitution assumed 0.87). All on by default |
+| Controller (PID brain) | 50 Hz, Kp = 1 rad/m, Ki = 1 rad/(m·s), ζ = 0.7, max tilt ±10°, latency compensation by prediction, error integrated only within 2 cm of the setpoint on each axis; ball in the air (measured above 1.5 cm): its parabola is fitted and the plate is tilted so that the bounce sends it halfway back to the setpoint (restitution assumed 0.87); at the first measurement, the plate is kept until the speed of the ball is known. All on by default |
 
 ## Technologies
 

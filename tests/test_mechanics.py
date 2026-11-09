@@ -54,3 +54,22 @@ def test_motor_ramp_bounded_acceleration():
         speeds.append(m.velocity)
     assert max(abs(b - a) / 0.001 for a, b in zip(speeds, speeds[1:])) <= 50.0 + 1e-6
     assert abs(m.position - 1.0) < 1e-3
+
+
+def test_motor_two_ramps():
+    # Large move (gap > fast_move): fast ramp until the motor has stopped on its target; small corrections:
+    # gentle ramp. With fast_move = inf, a single gentle ramp
+    def max_acceleration(m, target, steps):
+        m.request(target)
+        speeds = [m.velocity]
+        for _ in range(steps):
+            m.advance(0.001)
+            speeds.append(m.velocity)
+        return max(abs(b - a) / 0.001 for a, b in zip(speeds, speeds[1:]))
+
+    m = Motor(0.0, max_speed=10.0, resolution=1e-4, max_acceleration=50.0, fast_acceleration=300.0, fast_move=0.1)
+    assert math.isclose(max_acceleration(m, 0.5, 500), 300.0, rel_tol=1e-6)
+    assert abs(m.position - 0.5) < 1e-3 and not m.fast       # stopped on its target: back to the gentle ramp
+    assert max_acceleration(m, 0.55, 500) <= 50.0 + 1e-6      # small correction (gap 0.05 rad)
+    single = Motor(0.0, max_speed=10.0, resolution=1e-4, max_acceleration=50.0, fast_acceleration=300.0)
+    assert max_acceleration(single, 0.5, 1000) <= 50.0 + 1e-6

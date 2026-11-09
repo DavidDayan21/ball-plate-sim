@@ -87,7 +87,8 @@ class SimplePhysics:
         self.omega = (0.0, 0.0, 0.0)
         if self.mechanism:
             self.alphas = inverse_kinematics(self.g, 0.0, 0.0)
-            self.motors = [Motor(a, cfg.max_speed, cfg.resolution, max_acceleration=cfg.max_acceleration)
+            self.motors = [Motor(a, cfg.max_speed, cfg.resolution, max_acceleration=cfg.max_acceleration,
+                                 fast_acceleration=cfg.fast_acceleration, fast_move=cfg.fast_move)
                             for a in self.alphas]
             self.pose = (0.0, 0.0, self.g.height)
 

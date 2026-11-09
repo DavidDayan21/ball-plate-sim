@@ -118,7 +118,13 @@ class Config:
     # Motors (if mechanism)
     max_speed: float = 10.0            # (rad/s)
     resolution: float = math.radians(1.8 / 16)   # 200 steps/turn in 1/16 microsteps
-    max_acceleration: float = 50.0     # ramps (rad/s²); math.inf: no ramp
+    max_acceleration: float = 50.0     # ramps (rad/s²); math.inf: no ramp. Gentle: the plate does not follow
+                                       # the noise of the command, which would make the ball hop
+    fast_acceleration: float = 300.0   # ramps of the large moves (since B4): the plate flips in about 0.1 s
+                                       # instead of 0.2 s; peak torque about 0.25 N·m in MuJoCo (max 0.4 N·m).
+                                       # To check against a motor datasheet
+    fast_move: float = 0.1             # (rad, motor angle) above this gap to its target, a move is large;
+                                       # math.inf: gentle ramps only
     # Sensor
     sensor: str = "synthetic"          # "synthetic" (Gaussian noise) or "camera" (MuJoCo only)
     sigma: float = 0.001               # synthetic sensor: standard deviation of the noise (m)
@@ -141,6 +147,7 @@ class Config:
     latency_compensation: bool = True   # predict the current position despite the latency (part of the PID brain)
     bounce_restitution: float = 0.87   # aimed bounce: restitution assumed (ITTF rule 0.85 to 0.91; MuJoCo 0.874)
     bounce_gain: float = 0.5           # aimed bounce: share of the distance to the setpoint covered by each bounce
+    wait_for_speed: bool = True        # first measurement: plate kept until the speed of the ball is known
     integration_zone: float = 0.02     # (m) each axis integrates its error only within this distance of the
                                        # setpoint (math.inf: everywhere). It must exceed the offset θb/Kp that
                                        # a calibration error θb leaves without integral: 2 cm corrects up to

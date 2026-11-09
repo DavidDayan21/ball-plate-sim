@@ -91,7 +91,8 @@ class Simulation:
                                       model_gain=cfg.plate.coefficient * G, feedforward=cfg.feedforward,
                                       latency_compensation=cfg.latency if cfg.latency_compensation else 0,
                                       period=cfg.control_period, integration_zone=cfg.integration_zone,
-                                      flight=flight, restitution=cfg.bounce_restitution, bounce_gain=cfg.bounce_gain)
+                                      flight=flight, restitution=cfg.bounce_restitution, bounce_gain=cfg.bounce_gain,
+                                      wait_for_speed=cfg.wait_for_speed)
 
     @property
     def t(self) -> float:
