@@ -80,6 +80,41 @@ def test_pd_steady_state_error_and_pid_removes_it():
     assert abs(X_pid[-1]) < 1e-4
 
 
+def test_integration_zone():
+    pid = PID(kp=1.0, ki=1.0, integration_zone=0.02)
+    pid.compute(0.0, 0.05, 0.1)                 # |e| = 5 cm, outside the zone: nothing is integrated
+    assert pid.integral == 0.0
+    pid.compute(0.0, 0.01, 0.1)                 # |e| = 1 cm, inside the zone
+    assert math.isclose(pid.integral, -0.001, rel_tol=1e-12)
+
+
+def test_integral_everywhere_must_be_paid_back_by_an_overshoot():
+    # At equilibrium, Ki·∫e = -θb (the integral cancels the calibration error), so ∫x·dt = θb/Ki whatever
+    # the transient: the area built up during the approach from 10 cm must be paid back by an overshoot
+    bias = math.radians(0.5)
+    T, X, _ = loop_1d(PID(kp=1.0, ki=1.0, kd=kd_for(0.7)), p=replace(P, bias_x=bias), duration=20)
+    dt = T[1] - T[0]
+    positive, negative = sum(x for x in X if x > 0) * dt, sum(x for x in X if x < 0) * dt
+    assert math.isclose(positive + negative, bias / 1.0, rel_tol=1e-4)
+    assert -negative > 0.5 * positive and -min(X) > 0.040
+
+
+def test_integration_zone_suppresses_the_overshoot_and_still_removes_the_bias():
+    # The integral only starts near the setpoint, where it still cancels the offset θb/Kp of the
+    # calibration error (8.7 mm for 0.5°, inside the 2 cm zone)
+    p = replace(P, bias_x=math.radians(0.5))
+    _, X, _ = loop_1d(PID(kp=1.0, ki=1.0, kd=kd_for(0.7), integration_zone=0.02), p=p, duration=20)
+    assert -min(X) < 0.001 and abs(X[-1]) < 1e-4
+
+
+def test_integration_zone_cannot_correct_a_larger_calibration_error():
+    # Offset θb/Kp = 26 mm > zone: the ball stops outside the zone, the integral never starts
+    bias = math.radians(1.5)
+    _, X, _ = loop_1d(PID(kp=1.0, ki=1.0, kd=kd_for(0.7), integration_zone=0.02), p=replace(P, bias_x=bias),
+                      duration=20)
+    assert math.isclose(X[-1], bias / 1.0, rel_tol=1e-3)
+
+
 def test_pid_unstable_beyond_routh():
     # Stable if and only if Ki < c·g·Kp·Kd
     kd = kd_for(0.7)

@@ -4,19 +4,19 @@ Simulated chain: MuJoCo (3-arm robot, motor ramps) + 160×120 camera + OpenCV + 
 
 Each case is simulated over 10 draw(s). Draw 0 is the nominal configuration; draw k ≥ 1 uses noise seed k and a start position shifted by up to ±0.5 mm on each axis (the only source of variation for the camera cases). Values: mean ± standard deviation over the draws; draws where the ball fell are counted in 'Fallen' and left out of the other columns. Δ: mean of the paired differences over the same draws ± standard error, in **bold** when significant (paired t-test at the 5 % level: |Δ| > t × standard error, t = 97.5 % quantile of Student's distribution, 2.26 for 10 draws).
 
-The brain is the PID with its latency compensation (default settings): it is judged by the objectives and sections 2 to 6. Sections 0 and 7 validate the simulator: they use a frozen reference controller (the PID without latency compensation).
+The brain is the PID with its latency compensation and its integration zone (default settings): it is judged by the objectives and sections 2 to 7. Sections 0 and 8 validate the simulator: they use a frozen reference controller (the PID without latency compensation, error integrated everywhere).
 
 
 ## Objectives of the brain (full chain with the camera)
 
 | Objective | Measured | Target | Met |
 |---|---|---|---|
-| Thrown ball caught (±10°) | 70 ± 0 % | ≥ 90 % of the physical limit | **no** |
-| Circle with 60 ms of latency | 1.66 ± 0.01 mm | < 2 mm | yes |
-| Back to the center in less than 2 s | 32.13 ± 0.11 mm | ≤ 5 mm between 2 s and 4 s | **no** |
-| No fall in the robustness variants | 0/60 falls | 0 | yes |
+| Thrown ball caught (±10°) | 71 ± 1 % | ≥ 90 % of the physical limit | **no** |
+| Circle with 60 ms of latency | 1.66 ± 0.02 mm | < 2 mm | yes |
+| Back to the center in less than 2 s | 12.93 ± 0.07 mm (calibration error: ×2) | ≤ 5 mm between 2 s and 4 s | **no** |
+| No fall in the robustness variants | 0/80 falls | 0 | yes |
 
-Judged on the mean over the draws. Thrown ball: maximum speed caught at ±10° divided by the physical limit (section 2). Return: start 10 cm away, setpoint at the center (section 0). Robustness: every variant and every draw of section 4.
+Judged on the mean over the draws. Thrown ball: maximum speed caught at ±10° divided by the physical limit (section 2). Return: start 10 cm away, setpoint at the center, worst of the three calibration errors of the plate of section 4 (none, nominal 0.5°/-0.3°, ×2), since the actual one is unknown. Robustness: every variant and every draw of section 4.
 
 
 ## 0. From the simple model to the full chain (reference scenario, reference controller)
@@ -56,7 +56,7 @@ Circle: 6 cm radius in 4 s, error = root-mean-square distance from 12 s to 20 s.
 
 | Max tilt | Max speed caught | Physical limit √(2·c·g·sin θmax·d) | Share of the limit | Monotonic around the threshold (draw 0) |
 |---|---|---|---|---|
-| ±10° | 0.50 ± 0.00 m/s | 0.71 m/s | 70 ± 0 % | yes |
+| ±10° | 0.51 ± 0.01 m/s | 0.71 m/s | 71 ± 1 % | yes |
 | ±20° | 0.62 ± 0.00 m/s | 1.00 m/s | 62 ± 0 % | yes |
 
 
@@ -73,27 +73,39 @@ Maximum speeds found by bisection, to 0.01 m/s, between 0.1 and 1.5 m/s. Distanc
 
 | Variant | Fallen | Max distance between 2 s and 4 s | Circle error | Δ circle error vs nominal | Airborne |
 |---|---|---|---|---|---|
-| Nominal (ping-pong, μ = 1) | 0/10 | 32.13 ± 0.11 mm | 1.46 ± 0.02 mm | - | 0.0 ± 0.0 % |
-| Solid ball (k = 2/5) | 0/10 | 27.65 ± 0.07 mm | 5.56 ± 0.01 mm | **+4.10 ± 0.01 mm** | 0.0 ± 0.0 % |
-| Ball 10× heavier (27 g) | 0/10 | 32.33 ± 0.05 mm | 1.45 ± 0.01 mm | -0.01 ± 0.01 mm | 0.0 ± 0.0 % |
-| Friction μ = 0.2 | 0/10 | 32.18 ± 0.10 mm | 1.40 ± 0.02 mm | **-0.06 ± 0.01 mm** | 0.0 ± 0.0 % |
-| Friction μ = 0.02 | 0/10 | 31.61 ± 0.08 mm | 1.40 ± 0.03 mm | **-0.07 ± 0.01 mm** | 0.0 ± 0.0 % |
-| Plate 2× heavier (0.5 kg) | 0/10 | 32.12 ± 0.08 mm | 1.48 ± 0.03 mm | +0.02 ± 0.01 mm | 0.0 ± 0.0 % |
+| Nominal (ping-pong, μ = 1) | 0/10 | 2.68 ± 0.02 mm | 1.49 ± 0.01 mm | - | 0.0 ± 0.0 % |
+| Solid ball (k = 2/5) | 0/10 | 2.80 ± 0.11 mm | 5.56 ± 0.01 mm | **+4.07 ± 0.00 mm** | 0.0 ± 0.0 % |
+| Ball 10× heavier (27 g) | 0/10 | 2.61 ± 0.04 mm | 1.47 ± 0.02 mm | **-0.02 ± 0.01 mm** | 0.0 ± 0.0 % |
+| Friction μ = 0.2 | 0/10 | 2.61 ± 0.05 mm | 1.42 ± 0.02 mm | **-0.07 ± 0.01 mm** | 0.0 ± 0.0 % |
+| Friction μ = 0.02 | 0/10 | 2.97 ± 0.03 mm | 1.40 ± 0.01 mm | **-0.10 ± 0.01 mm** | 0.0 ± 0.0 % |
+| Plate 2× heavier (0.5 kg) | 0/10 | 2.65 ± 0.03 mm | 1.50 ± 0.02 mm | +0.01 ± 0.01 mm | 0.0 ± 0.0 % |
+| No calibration error (0°, 0°) | 0/10 | 6.23 ± 0.20 mm | 1.51 ± 0.02 mm | +0.01 ± 0.01 mm | 0.0 ± 0.0 % |
+| Calibration error ×2 (1°, -0.6°) | 0/10 | 12.93 ± 0.07 mm | 1.48 ± 0.01 mm | **-0.02 ± 0.00 mm** | 0.0 ± 0.0 % |
 
 
 ## 5. Camera latency: without and with compensation by prediction
 
 | Latency | Compensation | Fallen | Max distance between 2 s and 4 s | Δ (with - without) | Circle error | Δ circle error (with - without) |
 |---|---|---|---|---|---|---|
-| 20 ms | without | 0/10 | 30.80 ± 0.12 mm | - | 4.61 ± 0.03 mm | - |
-| 20 ms | with | 0/10 | 32.13 ± 0.11 mm | **+1.32 ± 0.02 mm** | 1.46 ± 0.02 mm | **-3.14 ± 0.01 mm** |
-| 60 ms | without | 0/10 | 26.26 ± 0.09 mm | - | 10.59 ± 0.04 mm | - |
-| 60 ms | with | 0/10 | 31.47 ± 0.09 mm | **+5.21 ± 0.03 mm** | 1.66 ± 0.01 mm | **-8.93 ± 0.01 mm** |
-| 100 ms | without | 0/10 | 19.83 ± 0.06 mm | - | 16.67 ± 0.03 mm | - |
-| 100 ms | with | 0/10 | 30.89 ± 0.10 mm | **+11.05 ± 0.03 mm** | 1.96 ± 0.03 mm | **-14.70 ± 0.01 mm** |
+| 20 ms | without | 0/10 | 2.48 ± 0.06 mm | - | 4.59 ± 0.04 mm | - |
+| 20 ms | with | 0/10 | 2.68 ± 0.02 mm | **+0.20 ± 0.02 mm** | 1.49 ± 0.01 mm | **-3.10 ± 0.01 mm** |
+| 60 ms | without | 0/10 | 2.04 ± 0.07 mm | - | 10.59 ± 0.03 mm | - |
+| 60 ms | with | 0/10 | 2.81 ± 0.18 mm | **+0.77 ± 0.07 mm** | 1.66 ± 0.02 mm | **-8.93 ± 0.01 mm** |
+| 100 ms | without | 0/10 | 2.47 ± 0.06 mm | - | 16.68 ± 0.04 mm | - |
+| 100 ms | with | 0/10 | 3.01 ± 0.05 mm | **+0.53 ± 0.03 mm** | 1.94 ± 0.03 mm | **-14.74 ± 0.02 mm** |
 
 
-## 6. Square trajectory (10 cm sides, 5 cm/s), latency 20 ms
+## 6. Integral action: error integrated everywhere or only near the setpoint
+
+| Error integrated | Fallen | Arrival (first time < 5 mm) | Overshoot after arrival | Max distance between 2 s and 4 s | Δ (zone - everywhere) | Circle error | Δ circle error (zone - everywhere) |
+|---|---|---|---|---|---|---|---|
+| everywhere | 0/10 | 0.86 ± 0.00 s | 39.78 ± 0.09 mm | 32.13 ± 0.11 mm | - | 1.46 ± 0.02 mm | - |
+| within 20 mm | 0/10 | 1.70 ± 0.00 s | 4.84 ± 0.03 mm | 2.68 ± 0.02 mm | **-29.45 ± 0.04 mm** | 1.49 ± 0.01 mm | **+0.03 ± 0.01 mm** |
+
+Reference scenario, latency 20 ms with compensation. With the zone, each axis integrates its error only while it is below 20 mm: the integral no longer builds up during the approach, and only corrects the calibration error of the plate.
+
+
+## 7. Square trajectory (10 cm sides, 5 cm/s), latency 20 ms
 
 | Compensation | Fallen | Error (2nd lap) | Δ (with - without) |
 |---|---|---|---|
@@ -101,7 +113,7 @@ Maximum speeds found by bisection, to 0.01 m/s, between 0.1 and 1.5 m/s. Distanc
 | with | 0/10 | 9.34 ± 0.01 mm | **-0.49 ± 0.01 mm** |
 
 
-## 7. Simple physics → MuJoCo on the 3-arm robot: the gap, term by term (synthetic sensor, reference controller)
+## 8. Simple physics → MuJoCo on the 3-arm robot: the gap, term by term (synthetic sensor, reference controller)
 
 | Model | Fallen | Circle error | Δ vs basic model | Share of the MuJoCo gap |
 |---|---|---|---|---|

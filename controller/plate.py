@@ -1,10 +1,12 @@
 """2D plate controller: one PID per axis + feedforward
-+ compensation of the measurement latency by prediction (optional, disabled by default).
++ compensation of the measurement latency by prediction (optional, disabled by default)
++ conditional integration (optional, disabled by default).
 
 Independent of the simulator: it receives the setpoint, the measurement and the desired acceleration,
 and returns the two tilts (θx, θy) to apply to the plate.
 """
 from collections import deque
+import math
 
 from controller.pid import PID
 
@@ -57,13 +59,15 @@ class PlateController:
 
     latency_compensation = N > 0: the measurement is assumed to be N periods late, and the
     current position is reconstructed by LatencyPredictor before entering the PIDs.
+
+    integration_zone: each PID integrates its error only while it is smaller than this distance (m).
     """
 
     def __init__(self, kp: float, ki: float, kd: float, theta_max: float,
                  tau_d: float, model_gain: float, feedforward: bool = True,
-                 latency_compensation: int = 0, period: float = 0.02):
-        self.pid_x = PID(kp, ki, kd, -theta_max, theta_max, tau_d)
-        self.pid_y = PID(kp, ki, kd, -theta_max, theta_max, tau_d)
+                 latency_compensation: int = 0, period: float = 0.02, integration_zone: float = math.inf):
+        self.pid_x = PID(kp, ki, kd, -theta_max, theta_max, tau_d, integration_zone)
+        self.pid_y = PID(kp, ki, kd, -theta_max, theta_max, tau_d, integration_zone)
         self.model_gain = model_gain
         self.feedforward = feedforward
         self.predictors = ([LatencyPredictor(latency_compensation, period, model_gain) for _ in range(2)]

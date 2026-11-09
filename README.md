@@ -17,21 +17,22 @@ Building the real robot remains a distant goal: the code will then be ready.
 | Robustness | Thrown ball, pushes, physical parameters, latency (`campaign.py`) | Done |
 | Realistic contact | Ping-pong ball bounce compliant with the ITTF rule (e = 0.874) | Done |
 | 3D sandbox | Throws, drops, bounces, pushes, setpoints, data of every attempt | Done |
-| A. Reliable measurements | Bit-exact regression check, spread over N draws, robust metrics, simple physics → MuJoCo gap | **In progress** |
-| B. PID brain | Gains tuned by LQR, plate kept level during bounces, adaptive control | To do |
+| A. Reliable measurements | Bit-exact regression check, spread over N draws, robust metrics, simple physics → MuJoCo gap | Done |
+| B. PID brain | Objectives in the report, integral limited to the neighborhood of the setpoint, gains tuned by LQR, plate kept level during bounces, adaptive control | **In progress** |
 | C. Local AI brain | Training in MuJoCo, same rules as the PID (sensor, motors, ±10°) | To do |
 | D. Software for the general public | MuJoCo physics in our interface, choice of brain, comparison | To do |
 | E. Construction (distant) | Design, real-world defects, complete error budget | Later |
 
 Quantified goals for both brains: thrown ball caught up to at least 90 % of the physical limit,
 error on the circle < 2 mm with 60 ms of latency, return to the center < 2 s (from 10 cm away, the ball
-stays within 5 mm of the center from 2 s on), no fall in the robustness variants.
+stays within 5 mm of the center from 2 s on, whatever the calibration error of the plate from 0 to 1°),
+no fall in the robustness variants.
 
 ## Structure
 
 ```text
 controller/              What would run on the real robot (independent of the simulator)
-  pid.py                 PID: derivative filter, saturation, anti-windup, feedforward
+  pid.py                 PID: derivative filter, saturation, anti-windup, integration zone, feedforward
   plate.py               2 PIDs (x, y axes) + feedforward + latency predictor
   kinematics.py          Geometry, inverse (exact) and forward (Newton) kinematics
 simulation/
@@ -82,8 +83,9 @@ seed k (`Config.seed`) and a start position shifted by up to ±0.5 mm on each ax
 variation for the camera, which draws no random number. The report gives mean ± standard deviation;
 a difference between two cases, paired over the same draws, is significant by a paired t-test at the
 5 % level (|mean| > t × standard error, t = 2.26 for 10 draws). Maximum speeds are found by bisection,
-to 0.01 m/s. The report opens with the objectives of the brain (met or not); sections 0 and 7 validate
-the simulator with a frozen reference controller (the PID without latency compensation).
+to 0.01 m/s. The report opens with the objectives of the brain (met or not); sections 0 and 8 validate
+the simulator with a frozen reference controller (the PID without latency compensation, error
+integrated everywhere).
 
 Regression check: any refactoring must leave the results bit-identical. The reference
 (`results/reference/`, ignored by git) covers all the cases of the campaign, the physics validation
@@ -97,8 +99,8 @@ A simulation is described by a `Config`; everything that is not specified takes 
 from simulation.loop import simulate
 from simulation.config import Config, center
 
-r = simulate(Config(sensor="camera", latency=3))                  # the brain: PID + latency compensation
-r = simulate(Config(sensor="camera", latency=3, latency_compensation=False))   # PID alone
+r = simulate(Config(sensor="camera", latency=3))                  # the brain (default settings)
+r = simulate(Config(sensor="camera", latency=3, latency_compensation=False))   # the brain without latency compensation
 r = simulate(Config(physics="simple", mechanism=False))           # theoretical model
 r = simulate(Config(trajectory=center, start_position=(-0.1, 0.0), start_velocity=(0.4, 0.0)))  # thrown ball
 ```
@@ -135,14 +137,14 @@ International CSV format: `,` separator, decimal point, UTF-8 encoding (no BOM).
 
 | Element | Reference value |
 |---|---|
-| Plate | Disk of radius 15 cm, 0.25 kg |
+| Plate | Disk of radius 15 cm, 0.25 kg; calibration error of the tilt 0.5° on θx, -0.3° on θy, unknown to the controller |
 | Ball | Ping-pong: radius 2 cm, 2.7 g, hollow (J = 2/3·m·r²) |
 | Ball-plate contact | Target restitution 0.88 (ITTF rule: dropped from 30.5 cm, bounces back to 22-25 cm), stiffness 200 Hz, simulation step 0.5 ms |
 | Mechanism | 3 arms of 5 cm, rods of 12 cm, ball joints 10 cm from the center |
 | Motors | 10 rad/s, 1/16 microsteps, ramps at 50 rad/s², max torque 0.4 N·m; in MuJoCo, position servos (kp = 50 N·m/rad, kv = 0.5 N·m·s/rad) that lag their target by τ = kv/kp = 10 ms |
 | Simple physics | Basic model ẍ = c·g·sin θ; optional additions (`Config`): rolling term r·θ̈, rotating-frame terms, exact gravity, servo lag. The full equation is derived in `simulation/simple_physics.py` and checked against MuJoCo |
 | Sensor | Camera 50 cm above the plate, 50 Hz, latency 20 ms |
-| Controller (PID brain) | 50 Hz, Kp = 1 rad/m, Ki = 1 rad/(m·s), ζ = 0.7, max tilt ±10°, latency compensation by prediction (on by default) |
+| Controller (PID brain) | 50 Hz, Kp = 1 rad/m, Ki = 1 rad/(m·s), ζ = 0.7, max tilt ±10°, latency compensation by prediction, error integrated only within 2 cm of the setpoint on each axis (both on by default) |
 
 ## Technologies
 

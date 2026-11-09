@@ -45,9 +45,10 @@ INFO_KEY = "__info__"        # reserved key: date and environment of the referen
 
 # --- Reference cases ---------------------------------------------------------------------------
 # Every setting that a case relies on is written explicitly, so that changing a default value of Config
-# (as the brain improves) does not change the cases: latency compensation is off unless stated.
-NO_COMP = {"latency_compensation": False}
-CAMERA = Config(sensor="camera", camera=CameraParams(width=160, image_height=120), **NO_COMP)
+# (as the brain improves) does not change the cases: they use the reference controller of the campaign
+# (latency compensation off unless stated, error integrated everywhere).
+REFERENCE_CONTROLLER = {"latency_compensation": False, "integration_zone": math.inf}
+CAMERA = Config(sensor="camera", camera=CameraParams(width=160, image_height=120), **REFERENCE_CONTROLLER)
 PM = CAMERA.mujoco_params
 
 
@@ -64,10 +65,10 @@ def _push(dv: float) -> Config:
 
 
 SIMULATIONS = {
-    "simple_plate": Config(physics="simple", mechanism=False, **NO_COMP),
-    "simple_robot": Config(physics="simple", **NO_COMP),
-    "mujoco_plate": Config(mechanism=False, **NO_COMP),
-    "mujoco_robot": Config(**NO_COMP),
+    "simple_plate": Config(physics="simple", mechanism=False, **REFERENCE_CONTROLLER),
+    "simple_robot": Config(physics="simple", **REFERENCE_CONTROLLER),
+    "mujoco_plate": Config(mechanism=False, **REFERENCE_CONTROLLER),
+    "mujoco_robot": Config(**REFERENCE_CONTROLLER),
     "camera": CAMERA,
     "throw_10deg_0.5": _throw(10, 0.5),
     "throw_10deg_0.6": _throw(10, 0.6),
@@ -90,7 +91,7 @@ SIMULATIONS = {
                               latency_compensation=True),
     # Added after the first reference
     "simple_robot_full_equation": Config(physics="simple", rolling_term=True, frame_terms=True,
-                                         exact_gravity=True, servo_lag=True, **NO_COMP),
+                                         exact_gravity=True, servo_lag=True, **REFERENCE_CONTROLLER),
 }
 
 
@@ -119,7 +120,7 @@ def _physics() -> dict:
 
 def _session() -> dict:
     """Sandbox: drop from 30.5 cm at the center, throw caught, throw too fast (fall)."""
-    s = Session(replace(sandbox_config(), **NO_COMP), record=False)
+    s = Session(replace(sandbox_config(), **REFERENCE_CONTROLLER), record=False)
     snapshots = []
 
     def advance(duration: float) -> None:

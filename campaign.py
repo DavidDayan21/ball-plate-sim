@@ -9,8 +9,9 @@ The 160×120 camera is as accurate as 320×240, and faster to simulate.
     3. Push on a ball at rest at the center: maximum impulse absorbed
     4. Robustness to physical parameters
     5. Camera latency, with and without compensation by prediction
-    6. Square trajectory
-    7. Gap between the simple physics and MuJoCo on the robot, explained term by term
+    6. Integral action: error integrated everywhere or only near the setpoint
+    7. Square trajectory
+    8. Gap between the simple physics and MuJoCo on the robot, explained term by term
 
 Every case is simulated over N draws, so that each result comes with its spread:
     - draw 0 is the nominal configuration (noise seed 0, nominal start position);
@@ -51,13 +52,14 @@ SPEED_STEP = 0.01                   # (m/s) resolution of the maximum speeds
 SPEED_RANGE = (0.1, 1.5)            # (m/s) bisection bracket: caught at the low end, fallen at the high end
 CHECK_SPAN = 5                      # draw 0: every speed within ±5 steps of the threshold is simulated
 
-# Sections 0 and 7 validate the simulator, not the brain: they use a frozen reference controller (the PID
-# without latency compensation), so that their results do not change when the brain improves.
-REFERENCE_CONTROLLER = {"latency_compensation": False}
+# Sections 0 and 8 validate the simulator, not the brain: they use a frozen reference controller (the PID
+# without latency compensation, error integrated everywhere), so that their results do not change when
+# the brain improves.
+REFERENCE_CONTROLLER = {"latency_compensation": False, "integration_zone": math.inf}
 
 # Closed-loop cases (nominal configurations), each simulated over every draw
 CASES = {
-    # Simulator validation (sections 0 and 7), reference controller
+    # Simulator validation (sections 0 and 8), reference controller
     "simple_plate": Config(physics="simple", mechanism=False, **REFERENCE_CONTROLLER),
     "simple_robot": Config(physics="simple", **REFERENCE_CONTROLLER),
     "simple_robot_rolling": Config(physics="simple", rolling_term=True, **REFERENCE_CONTROLLER),
@@ -76,18 +78,27 @@ CASES = {
     "friction_0.2": replace(BASE, mujoco_params=replace(PM, friction=0.2)),
     "friction_0.02": replace(BASE, mujoco_params=replace(PM, friction=0.02)),
     "heavy_plate": replace(BASE, mujoco_params=replace(PM, plate_mass=0.5)),
+    "no_calibration_error": replace(BASE, plate=replace(BASE.plate, bias_x=0.0, bias_y=0.0)),
+    "calibration_error_x2": replace(BASE, plate=replace(BASE.plate, bias_x=2 * BASE.plate.bias_x,
+                                                         bias_y=2 * BASE.plate.bias_y)),
     "latency_60ms": replace(BASE, latency=3),
     "latency_100ms": replace(BASE, latency=5),
     "square": replace(BASE, trajectory=square, duration=16.0, start_position=(0.05, 0.05)),
-    # The brain without latency compensation (sections 5 and 6; at 20 ms: camera_reference)
+    # The brain without one of its parts: latency compensation (sections 5 and 7), integration zone (section 6)
+    "camera_uncompensated": replace(BASE, latency_compensation=False),
     "latency_60ms_uncompensated": replace(BASE, latency=3, latency_compensation=False),
     "latency_100ms_uncompensated": replace(BASE, latency=5, latency_compensation=False),
     "square_uncompensated": replace(BASE, trajectory=square, duration=16.0, start_position=(0.05, 0.05),
                                     latency_compensation=False),
+    "camera_integral_everywhere": replace(BASE, integration_zone=math.inf),
 }
 ROBUSTNESS = {"Nominal (ping-pong, μ = 1)": "camera", "Solid ball (k = 2/5)": "solid_ball",
               "Ball 10× heavier (27 g)": "heavy_ball", "Friction μ = 0.2": "friction_0.2",
-              "Friction μ = 0.02": "friction_0.02", "Plate 2× heavier (0.5 kg)": "heavy_plate"}
+              "Friction μ = 0.02": "friction_0.02", "Plate 2× heavier (0.5 kg)": "heavy_plate",
+              "No calibration error (0°, 0°)": "no_calibration_error",
+              "Calibration error ×2 (1°, -0.6°)": "calibration_error_x2"}
+# The return to the center must hold whatever the calibration error of the plate, from 0 to 1°
+CALIBRATION = {"none": "no_calibration_error", "nominal": "camera", "×2": "calibration_error_x2"}
 # Maximum speeds searched by bisection: name -> (kind, max tilt in degrees)
 LIMITS = {"throw_10deg": ("throw", 10), "throw_20deg": ("throw", 20), "push": ("push", 10)}
 
@@ -312,11 +323,14 @@ def run_campaign(draws: int, processes: int = None) -> dict:
 
 def objectives(data: dict) -> list:
     """Quantified objectives of the brain, judged on the mean over the draws: rows [objective, measured,
-    target, met]. Thrown ball at ±10°, circle at 60 ms of latency, return to the center, robustness."""
+    target, met]. Thrown ball at ±10°, circle at 60 ms of latency, return to the center (worst of the
+    calibration errors), robustness."""
     runs = data["runs"]
     shares = [math.nan if v is None else v / physical_limit("throw_10deg") for v, _, _ in data["limits"]["throw_10deg"]]
     circle = [circle_error(r) for r in runs["latency_60ms"]]
-    back = [return_distance(r) for r in runs["camera"]]
+    backs = {label: [return_distance(r) for r in runs[case]] for label, case in CALIBRATION.items()}
+    mean_back = {label: mean_std(values)[0] for label, values in backs.items()}
+    worst = max(backs, key=lambda label: math.inf if math.isnan(mean_back[label]) else mean_back[label])
     falls = sum(r.fallen for case in ROBUSTNESS.values() for r in runs[case])
     total = sum(len(runs[case]) for case in ROBUSTNESS.values())
     met = lambda ok: "yes" if ok else "**no**"
@@ -324,8 +338,8 @@ def objectives(data: dict) -> list:
         ["Thrown ball caught (±10°)", fmt(shares, " %", 0, 100), "≥ 90 % of the physical limit",
          met(mean_std(shares)[0] >= 0.90)],
         ["Circle with 60 ms of latency", fmt(circle, " mm", scale=1000), "< 2 mm", met(mean_std(circle)[0] < 0.002)],
-        ["Back to the center in less than 2 s", fmt(back, " mm", scale=1000), "≤ 5 mm between 2 s and 4 s",
-         met(mean_std(back)[0] <= 0.005)],
+        ["Back to the center in less than 2 s", f"{fmt(backs[worst], ' mm', scale=1000)} (calibration error: {worst})",
+         "≤ 5 mm between 2 s and 4 s", met(mean_back[worst] <= 0.005)],
         ["No fall in the robustness variants", f"{falls}/{total} falls", "0", met(falls == 0)],
     ]
 
@@ -351,15 +365,17 @@ def write_report(data: dict, path: str = os.path.join("results", "report.md")) -
              "other columns. Δ: mean of the paired differences over the same draws ± standard error, "
              "in **bold** when significant (paired t-test at the 5 % level: |Δ| > t × standard error, "
              "t = 97.5 % quantile of Student's distribution, 2.26 for 10 draws).")
-    rep.text("The brain is the PID with its latency compensation (default settings): it is judged by the "
-             "objectives and sections 2 to 6. Sections 0 and 7 validate the simulator: they use a frozen "
-             "reference controller (the PID without latency compensation).")
+    rep.text("The brain is the PID with its latency compensation and its integration zone (default settings): "
+             "it is judged by the objectives and sections 2 to 7. Sections 0 and 8 validate the simulator: "
+             "they use a frozen reference controller (the PID without latency compensation, error integrated "
+             "everywhere).")
 
     rep.section("Objectives of the brain (full chain with the camera)")
     rep.table(["Objective", "Measured", "Target", "Met"], objectives(data))
     rep.text("Judged on the mean over the draws. Thrown ball: maximum speed caught at ±10° divided by the "
-             "physical limit (section 2). Return: start 10 cm away, setpoint at the center (section 0). "
-             "Robustness: every variant and every draw of section 4.")
+             "physical limit (section 2). Return: start 10 cm away, setpoint at the center, worst of the three "
+             "calibration errors of the plate of section 4 (none, nominal 0.5°/-0.3°, ×2), since the actual one "
+             "is unknown. Robustness: every variant and every draw of section 4.")
 
     rep.section("0. From the simple model to the full chain (reference scenario, reference controller)")
     # Each level is compared with the level that differs from it by a single factor
@@ -437,7 +453,7 @@ def write_report(data: dict, path: str = os.path.join("results", "report.md")) -
 
     rep.section("5. Camera latency: without and with compensation by prediction")
     rows = []
-    for ms, without, with_ in ((20, "camera_reference", "camera"),
+    for ms, without, with_ in ((20, "camera_uncompensated", "camera"),
                                (60, "latency_60ms_uncompensated", "latency_60ms"),
                                (100, "latency_100ms_uncompensated", "latency_100ms")):
         for compensated, case in ((False, without), (True, with_)):
@@ -455,7 +471,31 @@ def write_report(data: dict, path: str = os.path.join("results", "report.md")) -
     rep.table(["Latency", "Compensation", "Fallen", "Max distance between 2 s and 4 s",
                "Δ (with - without)", "Circle error", "Δ circle error (with - without)"], rows)
 
-    rep.section("6. Square trajectory (10 cm sides, 5 cm/s), latency 20 ms")
+    rep.section("6. Integral action: error integrated everywhere or only near the setpoint")
+    zone_mm = 1000 * BASE.integration_zone
+    everywhere = runs["camera_integral_everywhere"]
+    rows = []
+    for label, case in (("everywhere", "camera_integral_everywhere"), (f"within {zone_mm:.0f} mm", "camera")):
+        rs = runs[case]
+        if case == "camera":
+            d_return = fmt_delta([return_distance(r) for r in everywhere], [return_distance(r) for r in rs],
+                                 " mm", scale=1000)
+            d_error = fmt_delta([circle_error(r) for r in everywhere], [circle_error(r) for r in rs],
+                                " mm", scale=1000)
+        else:
+            d_return = d_error = "-"
+        rows.append([label, fallen(rs), fmt([arrival(r) for r in rs], " s"),
+                     fmt([overshoot_after_arrival(r) for r in rs], " mm", scale=1000),
+                     fmt([return_distance(r) for r in rs], " mm", scale=1000), d_return,
+                     fmt([circle_error(r) for r in rs], " mm", scale=1000), d_error])
+    rep.table(["Error integrated", "Fallen", "Arrival (first time < 5 mm)", "Overshoot after arrival",
+               "Max distance between 2 s and 4 s", "Δ (zone - everywhere)", "Circle error",
+               "Δ circle error (zone - everywhere)"], rows)
+    rep.text(f"Reference scenario, latency 20 ms with compensation. With the zone, each axis integrates its "
+             f"error only while it is below {zone_mm:.0f} mm: the integral no longer builds up during the "
+             "approach, and only corrects the calibration error of the plate.")
+
+    rep.section("7. Square trajectory (10 cm sides, 5 cm/s), latency 20 ms")
     without = [square_error(r) for r in runs["square_uncompensated"]]
     with_ = [square_error(r) for r in runs["square"]]
     rep.table(["Compensation", "Fallen", "Error (2nd lap)", "Δ (with - without)"], [
@@ -463,7 +503,7 @@ def write_report(data: dict, path: str = os.path.join("results", "report.md")) -
         ["with", fallen(runs["square"]), fmt(with_, " mm", scale=1000),
          fmt_delta(without, with_, " mm", scale=1000)]])
 
-    rep.section("7. Simple physics → MuJoCo on the 3-arm robot: the gap, term by term "
+    rep.section("8. Simple physics → MuJoCo on the 3-arm robot: the gap, term by term "
                 "(synthetic sensor, reference controller)")
     base = [circle_error(r) for r in runs["simple_robot"]]
     gap = paired_delta(base, [circle_error(r) for r in runs["mujoco_robot"]])[0]

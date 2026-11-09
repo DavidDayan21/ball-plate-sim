@@ -134,6 +134,10 @@ class Config:
     tau_d: float = 0.05                # derivative filter (s); 0: no filter
     feedforward: bool = True
     latency_compensation: bool = True   # predict the current position despite the latency (part of the PID brain)
+    integration_zone: float = 0.02     # (m) each axis integrates its error only within this distance of the
+                                       # setpoint (math.inf: everywhere). It must exceed the offset θb/Kp that
+                                       # a calibration error θb leaves without integral: 2 cm corrects up to
+                                       # 0.02 rad = 1.1° with Kp = 1 rad/m (part of the PID brain)
 
     def kd(self) -> float:
         """Kd giving the target damping ζ: 2·ζ·ω0 = c·g·Kd, with ω0 = √(c·g·Kp)."""

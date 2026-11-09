@@ -86,7 +86,7 @@ class Simulation:
         self.ctrl = PlateController(cfg.kp, cfg.ki, cfg.kd(), cfg.theta_max, cfg.tau_d,
                                       model_gain=cfg.plate.coefficient * G, feedforward=cfg.feedforward,
                                       latency_compensation=cfg.latency if cfg.latency_compensation else 0,
-                                      period=cfg.control_period)
+                                      period=cfg.control_period, integration_zone=cfg.integration_zone)
 
     @property
     def t(self) -> float:

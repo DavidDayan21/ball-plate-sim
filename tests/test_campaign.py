@@ -66,7 +66,8 @@ def test_campaign_end_to_end(tmp_path, monkeypatch):
     report = tmp_path / "report.md"
     cp.write_report(data, str(report))
     text = report.read_text(encoding="utf-8")
-    assert all(f"## {i}." in text for i in range(8)) and "| 0/2 |" in text and " ± " in text
-    assert "## Objectives of the brain" in text and "| No fall in the robustness variants | 0/12 falls |" in text
+    assert all(f"## {i}." in text for i in range(9)) and "| 0/2 |" in text and " ± " in text
+    assert "## Objectives of the brain" in text and "| No fall in the robustness variants | 0/16 falls |" in text
+    assert "(calibration error: " in text
     cp.show_figures(data)
     cp.plt.close("all")
