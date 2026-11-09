@@ -157,7 +157,7 @@ class Session:
                                               deviation_deg=deviation_deg), reset=True)
         self.phys.place_ball(x, y, height, vx, vy, 0.0)
         self.phys.read_period_airborne_steps()          # resets the period counter
-        self.sim.last_measurement = (x, y)
+        self.sim.last_measurement = (x, y, height)
 
     def center_ball(self) -> None:
         """Ball placed motionless at the center."""

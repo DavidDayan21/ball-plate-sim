@@ -13,7 +13,7 @@ Building the real robot remains a distant goal: the code will then be ready.
 | Models | Simple physics (derived equations) and MuJoCo (3D, contacts, closed chain) | Done |
 | Control | Filtered PID, anti-windup, feedforward, latency compensation by prediction | Done |
 | Mechanism | 3 arms, exact inverse and forward kinematics, stepper motors with ramps | Done |
-| Sensor | Virtual camera, OpenCV detection, pinhole projection | Done |
+| Sensor | Virtual camera, OpenCV detection, pinhole projection, height of the ball from its apparent size | Done |
 | Robustness | Thrown ball, pushes, dropped ball, physical parameters, latency (`campaign.py`) | Done |
 | Realistic contact | Ping-pong ball bounce compliant with the ITTF rule (e = 0.874) | Done |
 | 3D sandbox | Throws, drops, bounces, pushes, setpoints, data of every attempt | Done |
@@ -42,7 +42,7 @@ simulation/
   mujoco_physics.py      MuJoCo physics: generation of the 3D models, contact, interface, validation
   motor.py               Stepper motor: max speed, microsteps, limits, ramps
   sensor.py              Synthetic sensor: noise + latency
-  camera.py              Virtual camera: rendering, OpenCV detection, projection
+  camera.py              Virtual camera: rendering, OpenCV detection, projection, height of the ball
   metrics.py             Metrics: tracking error, return to the center, command jitter
   session.py             Sandbox: series of attempts, automatic end, CSV recording
   parallel.py            Independent simulations spread over several processes
@@ -144,7 +144,7 @@ International CSV format: `,` separator, decimal point, UTF-8 encoding (no BOM).
 | Mechanism | 3 arms of 5 cm, rods of 12 cm, ball joints 10 cm from the center |
 | Motors | 10 rad/s, 1/16 microsteps, ramps at 50 rad/s², max torque 0.4 N·m; in MuJoCo, position servos (kp = 50 N·m/rad, kv = 0.5 N·m·s/rad) that lag their target by τ = kv/kp = 10 ms |
 | Simple physics | Basic model ẍ = c·g·sin θ; optional additions (`Config`): rolling term r·θ̈, rotating-frame terms, exact gravity, servo lag. The full equation is derived in `simulation/simple_physics.py` and checked against MuJoCo |
-| Sensor | Camera 50 cm above the plate, 50 Hz, latency 20 ms |
+| Sensor | Camera 50 cm above the plate, 50 Hz, latency 20 ms; height of the ball from its apparent size (± 3 mm), a ball partly out of the image is not measured |
 | Controller (PID brain) | 50 Hz, Kp = 1 rad/m, Ki = 1 rad/(m·s), ζ = 0.7, max tilt ±10°, latency compensation by prediction, error integrated only within 2 cm of the setpoint on each axis (both on by default) |
 
 ## Technologies

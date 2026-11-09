@@ -123,9 +123,14 @@ class Config:
     sensor: str = "synthetic"          # "synthetic" (Gaussian noise) or "camera" (MuJoCo only)
     sigma: float = 0.001               # synthetic sensor: standard deviation of the noise (m)
     seed: int = 0                      # synthetic sensor: seed of the noise (same seed, same results)
+    sigma_height: float = 0.003        # synthetic sensor: noise on the height of the ball (m), like the camera
     latency: int = 1                   # measurement latency, in control periods
     camera: CameraParams = field(default_factory=CameraParams)
     tilt_correction: bool = True
+    airborne_height: float = math.inf  # (m) above this measured height, the ball is in the air: the camera then
+                                       # takes its center on the light ray, at the distance given by its size.
+                                       # Off for now: the brain reacts worse to the corrected position of a ball
+                                       # in the air (campaign section 5); it will come with the aimed bounce (B5)
     # Controller
     control_period: float = 0.02       # 50 Hz
     kp: float = 1.0                    # (rad/m)

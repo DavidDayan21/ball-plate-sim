@@ -52,6 +52,7 @@ DROP_HEIGHT = 0.305                 # (m) ITTF rule: height of the bounce test
 DROP_DISTANCES = (0.0, 0.05, 0.10)  # (m) section 5: from the center, toward the start point of the reference scenario
 DROP_HEIGHTS = (0.10, 0.20, DROP_HEIGHT)
 DROP_DURATION = 6.0                 # (s)
+AIRBORNE = 0.015                    # (m) section 5: the ball counts as in the air above this height
 START_OFFSET = 0.0005               # (m) draws k ≥ 1: start position shifted by up to ±0.5 mm per axis
 SPEED_STEP = 0.01                   # (m/s) resolution of the maximum speeds
 SPEED_RANGE = (0.1, 1.5)            # (m/s) bisection bracket: caught at the low end, fallen at the high end
@@ -60,7 +61,8 @@ CHECK_SPAN = 5                      # draw 0: every speed within ±5 steps of th
 # Sections 0 and 9 validate the simulator, not the brain: they use a frozen reference controller (the PID
 # without latency compensation, error integrated everywhere), so that their results do not change when
 # the brain improves.
-REFERENCE_CONTROLLER = {"latency_compensation": False, "integration_zone": math.inf}
+REFERENCE_CONTROLLER = {"latency_compensation": False, "integration_zone": math.inf,
+                        "airborne_height": math.inf}
 
 def drop_case(distance: float, height: float) -> str:
     return f"drop_{round(1000 * distance)}mm_{round(1000 * height)}mm"
@@ -258,6 +260,22 @@ def jitter(r) -> float:
 
 def airborne(r) -> float:
     return math.nan if r.fallen else r.airborne_fraction
+
+
+def height_error(r) -> float:
+    """RMS error of the measured height while the ball is in the air (true height above AIRBORNE)."""
+    if r.fallen:
+        return math.nan
+    errors = [m - h for m, h in zip(r.measured_height, r.height) if h > AIRBORNE]
+    return math.sqrt(sum(e * e for e in errors) / len(errors)) if errors else math.nan
+
+
+def false_airborne(r) -> float:
+    """Share of the images where the ball is on the plate (true height < 5 mm) but measured in the air."""
+    if r.fallen:
+        return math.nan
+    on_plate = [m for m, h in zip(r.measured_height, r.height) if h < 0.005]
+    return sum(m > AIRBORNE for m in on_plate) / len(on_plate) if on_plate else math.nan
 
 
 def settled_distance(r) -> float:
@@ -489,12 +507,17 @@ def write_report(data: dict, path: str = os.path.join("results", "report.md")) -
             rs = runs[drop_case(d, h)]
             rows.append([f"{100 * d:.0f} cm", f"{100 * h:.1f} cm", fallen(rs),
                          fmt([airborne(r) for r in rs], " %", 1, 100),
-                         fmt([settled_distance(r) for r in rs], " mm", scale=1000)])
+                         fmt([settled_distance(r) for r in rs], " mm", scale=1000),
+                         fmt([height_error(r) for r in rs], " mm", scale=1000),
+                         fmt([false_airborne(r) for r in rs], " %", 1, 100)])
     rep.table(["Distance from the center", "Height", "Fallen", "Airborne",
-               f"Max distance from the center between {DROP_DURATION - 2:.0f} s and {DROP_DURATION:.0f} s"], rows)
+               f"Max distance from the center between {DROP_DURATION - 2:.0f} s and {DROP_DURATION:.0f} s",
+               "Height measured in the air: error (RMS)", "On the plate but measured in the air"], rows)
     rep.text(f"Ball released without speed above a point of the line from the center to the start point of the "
              f"reference scenario, {DROP_DURATION:.0f} s per drop. The brain reacts to the ball as soon as the camera "
-             "sees it, also while it is in the air.")
+             f"sees it, also while it is in the air. Height: measured by the camera from the apparent size of the "
+             f"ball; in the air above {1000 * AIRBORNE:.0f} mm (true height), on the plate below 5 mm. "
+             "A ball partly out of the image is not measured: the last measurement is kept.")
 
     rep.section("6. Camera latency: without and with compensation by prediction")
     rows = []

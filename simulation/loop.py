@@ -32,6 +32,7 @@ class Results:
     torques: list = field(default_factory=list)              # torques of the 3 motors (N·m), MuJoCo
     airborne: list = field(default_factory=list)             # fraction of the period with the ball airborne, MuJoCo
     measurement_error: list = field(default_factory=list)    # |measurement - true position| before latency (m)
+    measured_height: list = field(default_factory=list)      # measured height of the ball, before latency (m)
     fallen: bool = False
     unreachable_poses: int = 0
     airborne_fraction: float = 0.0
@@ -64,7 +65,7 @@ class Simulation:
         self.push_steps = {round(tp / cfg.dt_physics): (dvx, dvy) for tp, dvx, dvy in cfg.pushes}
         self.steps_per_control = round(cfg.control_period / cfg.dt_physics)
         self.theta = (0.0, 0.0)             # last command (known to the robot, used by the camera)
-        self.last_measurement = cfg.start_position
+        self.last_measurement = (*cfg.start_position, cfg.start_height)
         self.n = 0                          # index of the next step
         self.r = Results()
 
@@ -74,7 +75,7 @@ class Simulation:
         from simulation.camera import BallCamera
         cfg = self.cfg
         self.camera = BallCamera(self.phys.model, cfg.camera, cfg.geometry.height,
-                                  cfg.plate.ball_radius, cfg.tilt_correction)
+                                  cfg.plate.ball_radius, cfg.tilt_correction, cfg.airborne_height)
 
     def reset_control(self) -> None:
         """(Re)creates the sensor and the controller from self.cfg, with their memory reset."""
@@ -82,7 +83,7 @@ class Simulation:
         if self.camera is not None:
             self.sensor = Sensor(sigma=0.0, latency=cfg.latency)   # the noise comes from the image
         else:
-            self.sensor = Sensor(cfg.sigma, cfg.latency, cfg.seed)
+            self.sensor = Sensor(cfg.sigma, cfg.latency, cfg.seed, cfg.sigma_height)
         self.ctrl = PlateController(cfg.kp, cfg.ki, cfg.kd(), cfg.theta_max, cfg.tau_d,
                                       model_gain=cfg.plate.coefficient * G, feedforward=cfg.feedforward,
                                       latency_compensation=cfg.latency if cfg.latency_compensation else 0,
@@ -103,14 +104,15 @@ class Simulation:
         if n % self.steps_per_control == 0:
             bx, by = phys.ball()
             if self.camera is not None:
-                mx, my = self.camera.measure(phys.data, *self.theta, self.last_measurement)
-                self.last_measurement = (mx, my)
+                mx, my, mh = self.camera.measure(phys.data, *self.theta, self.last_measurement)
+                self.last_measurement = (mx, my, mh)
             else:
-                mx, my = bx, by
-            xm, ym = self.sensor.measure(mx, my)
+                mx, my, mh = bx, by, phys.ball_height()
+            xm, ym, _ = self.sensor.measure(mx, my, mh)
             if self.camera is None:         # synthetic sensor: noisy measurement of this instant (before latency)
-                mx, my = self.sensor.queue[-1] if self.sensor.queue else (xm, ym)
+                mx, my, mh = self.sensor.queue[-1] if self.sensor.queue else (xm, ym, mh)
             r.measurement_error.append(math.hypot(mx - bx, my - by))
+            r.measured_height.append(mh)
             xr, yr, axr, ayr = cfg.trajectory(t)
             self.theta = self.ctrl.compute((xr, yr), (xm, ym), (axr, ayr), cfg.control_period)
             phys.command(*self.theta)

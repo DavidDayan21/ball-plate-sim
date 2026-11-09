@@ -1,4 +1,4 @@
-"""Synthetic position sensor: Gaussian noise + delay (latency).
+"""Synthetic sensor of the position and height of the ball: Gaussian noise + delay (latency).
 
 Also serves as the queue that delays the camera measurements (simulation/camera.py).
 """
@@ -7,18 +7,20 @@ import random
 
 
 class Sensor:
-    """Returns the measured position with Gaussian noise of standard deviation sigma (m),
-    delayed by `latency` control periods."""
+    """Returns the measured position (x, y) and height of the ball above the plate, with Gaussian noise of
+    standard deviation sigma (position) and sigma_height (height), delayed by `latency` control periods."""
 
-    def __init__(self, sigma: float = 0.001, latency: int = 1, seed: int = 0):
-        self.sigma = sigma
+    def __init__(self, sigma: float = 0.001, latency: int = 1, seed: int = 0, sigma_height: float = 0.0):
+        self.sigma, self.sigma_height = sigma, sigma_height
         self.latency = latency
         self.rng = random.Random(seed)     # fixed seed: reproducible results
+        self.rng_height = random.Random(f"height {seed}")   # its own draws: the position noise does not change
         self.queue = deque()
 
-    def measure(self, x: float, y: float):
-        """To be called once per control period. Returns (x_measured, y_measured)."""
-        self.queue.append((x + self.rng.gauss(0, self.sigma), y + self.rng.gauss(0, self.sigma)))
+    def measure(self, x: float, y: float, height: float = 0.0):
+        """To be called once per control period. Returns (x_measured, y_measured, height_measured)."""
+        self.queue.append((x + self.rng.gauss(0, self.sigma), y + self.rng.gauss(0, self.sigma),
+                           height + self.rng_height.gauss(0, self.sigma_height)))
         if len(self.queue) > self.latency:
             return self.queue.popleft()
         return self.queue[0]                  # at the very beginning: no history yet

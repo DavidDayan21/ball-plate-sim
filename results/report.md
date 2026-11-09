@@ -88,19 +88,19 @@ Reference scenario. Dropped ball: released without speed above the start point, 
 
 ## 5. Dropped ball: where and from how high (setpoint: center)
 
-| Distance from the center | Height | Fallen | Airborne | Max distance from the center between 4 s and 6 s |
-|---|---|---|---|---|
-| 0 cm | 10.0 cm | 0/10 | 31.5 ± 1.1 % | 0.49 ± 0.06 mm |
-| 0 cm | 20.0 cm | 0/10 | 46.6 ± 1.9 % | 0.83 ± 0.32 mm |
-| 0 cm | 30.5 cm | 0/10 | 53.0 ± 1.2 % | 3.52 ± 0.53 mm |
-| 5 cm | 10.0 cm | 0/10 | 29.0 ± 1.2 % | 0.46 ± 0.06 mm |
-| 5 cm | 20.0 cm | 0/10 | 40.7 ± 2.2 % | 1.75 ± 0.58 mm |
-| 5 cm | 30.5 cm | 10/10 | - | - |
-| 10 cm | 10.0 cm | 0/10 | 28.8 ± 1.4 % | 0.43 ± 0.07 mm |
-| 10 cm | 20.0 cm | 0/10 | 34.9 ± 1.5 % | 0.48 ± 0.08 mm |
-| 10 cm | 30.5 cm | 10/10 | - | - |
+| Distance from the center | Height | Fallen | Airborne | Max distance from the center between 4 s and 6 s | Height measured in the air: error (RMS) | On the plate but measured in the air |
+|---|---|---|---|---|---|---|
+| 0 cm | 10.0 cm | 0/10 | 31.5 ± 1.1 % | 0.49 ± 0.06 mm | 2.07 ± 0.14 mm | 0.0 ± 0.0 % |
+| 0 cm | 20.0 cm | 0/10 | 46.6 ± 1.9 % | 0.83 ± 0.32 mm | 2.32 ± 0.25 mm | 0.0 ± 0.0 % |
+| 0 cm | 30.5 cm | 0/10 | 53.0 ± 1.2 % | 3.52 ± 0.53 mm | 2.23 ± 0.16 mm | 0.0 ± 0.0 % |
+| 5 cm | 10.0 cm | 0/10 | 29.0 ± 1.2 % | 0.46 ± 0.06 mm | 2.64 ± 0.31 mm | 0.0 ± 0.0 % |
+| 5 cm | 20.0 cm | 0/10 | 40.7 ± 2.2 % | 1.75 ± 0.58 mm | 5.71 ± 0.24 mm | 0.0 ± 0.0 % |
+| 5 cm | 30.5 cm | 10/10 | - | - | - | - |
+| 10 cm | 10.0 cm | 0/10 | 28.8 ± 1.4 % | 0.43 ± 0.07 mm | 4.88 ± 0.20 mm | 0.0 ± 0.0 % |
+| 10 cm | 20.0 cm | 0/10 | 34.9 ± 1.5 % | 0.48 ± 0.08 mm | 9.69 ± 0.30 mm | 0.4 ± 0.1 % |
+| 10 cm | 30.5 cm | 10/10 | - | - | - | - |
 
-Ball released without speed above a point of the line from the center to the start point of the reference scenario, 6 s per drop. The brain reacts to the ball as soon as the camera sees it, also while it is in the air.
+Ball released without speed above a point of the line from the center to the start point of the reference scenario, 6 s per drop. The brain reacts to the ball as soon as the camera sees it, also while it is in the air. Height: measured by the camera from the apparent size of the ball; in the air above 15 mm (true height), on the plate below 5 mm. A ball partly out of the image is not measured: the last measurement is kept.
 
 
 ## 6. Camera latency: without and with compensation by prediction

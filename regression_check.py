@@ -47,7 +47,8 @@ INFO_KEY = "__info__"        # reserved key: date and environment of the referen
 # Every setting that a case relies on is written explicitly, so that changing a default value of Config
 # (as the brain improves) does not change the cases: they use the reference controller of the campaign
 # (latency compensation off unless stated, error integrated everywhere).
-REFERENCE_CONTROLLER = {"latency_compensation": False, "integration_zone": math.inf}
+REFERENCE_CONTROLLER = {"latency_compensation": False, "integration_zone": math.inf,
+                        "airborne_height": math.inf}
 CAMERA = Config(sensor="camera", camera=CameraParams(width=160, image_height=120), **REFERENCE_CONTROLLER)
 PM = CAMERA.mujoco_params
 
