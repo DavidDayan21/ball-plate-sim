@@ -7,7 +7,7 @@ The 160×120 camera is as accurate as 320×240, and faster to simulate.
     1. Theoretical limits: no-slip condition; bounce compliant with the ITTF rule
     2. Thrown ball: maximum speed caught (max tilt 10°, then 20°)
     3. Push on a ball at rest at the center: maximum impulse absorbed
-    4. Robustness to physical parameters
+    4. Robustness to physical parameters and to a dropped ball
     5. Camera latency, with and without compensation by prediction
     6. Integral action: error integrated everywhere or only near the setpoint
     7. Square trajectory
@@ -47,6 +47,7 @@ K = BASE.plate.k_inertia
 CG = BASE.plate.coefficient * G
 R_PLATE = BASE.plate.plate_radius
 THROW_START = -0.10                 # the ball is thrown from x = -10 cm toward +x
+DROP_HEIGHT = 0.305                 # (m) ITTF rule: height of the bounce test
 START_OFFSET = 0.0005               # (m) draws k ≥ 1: start position shifted by up to ±0.5 mm per axis
 SPEED_STEP = 0.01                   # (m/s) resolution of the maximum speeds
 SPEED_RANGE = (0.1, 1.5)            # (m/s) bisection bracket: caught at the low end, fallen at the high end
@@ -78,6 +79,7 @@ CASES = {
     "friction_0.2": replace(BASE, mujoco_params=replace(PM, friction=0.2)),
     "friction_0.02": replace(BASE, mujoco_params=replace(PM, friction=0.02)),
     "heavy_plate": replace(BASE, mujoco_params=replace(PM, plate_mass=0.5)),
+    "dropped": replace(BASE, start_height=DROP_HEIGHT),
     "no_calibration_error": replace(BASE, plate=replace(BASE.plate, bias_x=0.0, bias_y=0.0)),
     "calibration_error_x2": replace(BASE, plate=replace(BASE.plate, bias_x=2 * BASE.plate.bias_x,
                                                          bias_y=2 * BASE.plate.bias_y)),
@@ -96,7 +98,8 @@ ROBUSTNESS = {"Nominal (ping-pong, μ = 1)": "camera", "Solid ball (k = 2/5)": "
               "Ball 10× heavier (27 g)": "heavy_ball", "Friction μ = 0.2": "friction_0.2",
               "Friction μ = 0.02": "friction_0.02", "Plate 2× heavier (0.5 kg)": "heavy_plate",
               "No calibration error (0°, 0°)": "no_calibration_error",
-              "Calibration error ×2 (1°, -0.6°)": "calibration_error_x2"}
+              "Calibration error ×2 (1°, -0.6°)": "calibration_error_x2",
+              "Ball dropped from 30.5 cm (ITTF height)": "dropped"}
 # The return to the center must hold whatever the calibration error of the plate, from 0 to 1°
 CALIBRATION = {"none": "no_calibration_error", "nominal": "camera", "×2": "calibration_error_x2"}
 # Maximum speeds searched by bisection: name -> (kind, max tilt in degrees)
@@ -438,7 +441,8 @@ def write_report(data: dict, path: str = os.path.join("results", "report.md")) -
     rep.text(f"Maximum speeds found by bisection, to {SPEED_STEP:.2f} m/s, between {SPEED_RANGE[0]} and "
              f"{SPEED_RANGE[1]} m/s. Distance d: from the start to the edge (throw), from the center to the edge (push).")
 
-    rep.section("4. Robustness to physical parameters (controller unchanged, tuned for the ping-pong ball)")
+    rep.section("4. Robustness to physical parameters and to a dropped ball (controller unchanged, tuned for "
+                "the ping-pong ball)")
     nominal = [circle_error(r) for r in runs["camera"]]
     rows = []
     for label, case in ROBUSTNESS.items():
@@ -450,6 +454,9 @@ def write_report(data: dict, path: str = os.path.join("results", "report.md")) -
                      fmt([airborne(r) for r in rs], " %", 1, 100)])
     rep.table(["Variant", "Fallen", "Max distance between 2 s and 4 s", "Circle error",
                "Δ circle error vs nominal", "Airborne"], rows)
+    rep.text(f"Reference scenario. Dropped ball: released without speed above the start point, "
+             f"{100 * DROP_HEIGHT:.1f} cm above the plate. A ball in the air beyond the edge of the tilted plate "
+             "counts as fallen only once it is level with the plate.")
 
     rep.section("5. Camera latency: without and with compensation by prediction")
     rows = []
@@ -573,7 +580,7 @@ def show_figures(data: dict) -> None:
     a4.set_yticklabels(list(ROBUSTNESS), fontsize=8)
     a4.invert_yaxis()
     a4.set_xlabel("Error on the circle (mm), mean ± std over the draws")
-    a4.set_title("Robustness to physical parameters")
+    a4.set_title("Robustness")
     a4.grid(True, axis="x")
     plt.tight_layout()
     plt.show()

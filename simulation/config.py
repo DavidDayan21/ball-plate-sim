@@ -112,6 +112,7 @@ class Config:
     # Scenario
     start_position: tuple = (0.08, -0.06)   # initial position of the ball (m)
     start_velocity: tuple = (0.0, 0.0)      # (m/s): thrown ball
+    start_height: float = 0.0               # (m) above the plate: dropped ball (MuJoCo physics only)
     pushes: tuple = ()                 # impulses (t, Δvx, Δvy)
     trajectory: object = reference     # function t -> (x_ref, y_ref, ax_ref, ay_ref)
     # Motors (if mechanism)

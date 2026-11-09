@@ -105,6 +105,24 @@ def test_no_slip_condition():
     assert abs(slides / (G * (math.sin(th) - 0.7 * mu_min * math.cos(th))) - 1) < 0.02
 
 
+def test_dropped_ball():
+    with pytest.raises(ValueError):                       # the simple physics keeps the ball on the plate
+        SimplePhysics(Config(physics="simple", start_height=0.1))
+    phys = MujocoPhysics(Config(start_height=0.305, start_position=(0.05, 0.0)))
+    assert phys.ball_height() == pytest.approx(0.305, abs=1e-9) and phys.ball() == pytest.approx((0.05, 0.0))
+
+
+def test_fall_detection():
+    phys = MujocoPhysics(Config())
+    R, r = phys.p.plate_radius, phys.p.ball_radius
+    phys.place_ball(R + 0.01, 0.0, 0.05)        # beyond the edge but 5 cm above the plate: may still come back
+    assert not phys.fallen()
+    phys.place_ball(R + 0.01, 0.0, 0.0)         # beyond the edge, level with the plate
+    assert phys.fallen()
+    phys.place_ball(0.0, 0.0, -r - 0.001)       # under the surface
+    assert phys.fallen()
+
+
 def test_bounce_complies_with_ittf_rule():
     # Dropped from 30.5 cm, a regulation ping-pong ball bounces back to 22-25 cm: e ∈ [0.85, 0.91]
     assert 0.85 <= measured_restitution(height=0.305) <= 0.91

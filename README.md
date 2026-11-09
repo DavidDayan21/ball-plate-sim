@@ -14,11 +14,11 @@ Building the real robot remains a distant goal: the code will then be ready.
 | Control | Filtered PID, anti-windup, feedforward, latency compensation by prediction | Done |
 | Mechanism | 3 arms, exact inverse and forward kinematics, stepper motors with ramps | Done |
 | Sensor | Virtual camera, OpenCV detection, pinhole projection | Done |
-| Robustness | Thrown ball, pushes, physical parameters, latency (`campaign.py`) | Done |
+| Robustness | Thrown ball, pushes, dropped ball, physical parameters, latency (`campaign.py`) | Done |
 | Realistic contact | Ping-pong ball bounce compliant with the ITTF rule (e = 0.874) | Done |
 | 3D sandbox | Throws, drops, bounces, pushes, setpoints, data of every attempt | Done |
 | A. Reliable measurements | Bit-exact regression check, spread over N draws, robust metrics, simple physics → MuJoCo gap | Done |
-| B. PID brain | Objectives in the report, integral limited to the neighborhood of the setpoint, gains tuned by LQR, plate kept level during bounces, adaptive control | **In progress** |
+| B. PID brain | Objectives in the report, integral limited to the neighborhood of the setpoint, plate kept level during bounces, thrown ball, gains tuned by LQR, adaptive control | **In progress** |
 | C. Local AI brain | Training in MuJoCo, same rules as the PID (sensor, motors, ±10°) | To do |
 | D. Software for the general public | MuJoCo physics in our interface, choice of brain, comparison | To do |
 | E. Construction (distant) | Design, real-world defects, complete error budget | Later |
@@ -103,6 +103,7 @@ r = simulate(Config(sensor="camera", latency=3))                  # the brain (d
 r = simulate(Config(sensor="camera", latency=3, latency_compensation=False))   # the brain without latency compensation
 r = simulate(Config(physics="simple", mechanism=False))           # theoretical model
 r = simulate(Config(trajectory=center, start_position=(-0.1, 0.0), start_velocity=(0.4, 0.0)))  # thrown ball
+r = simulate(Config(start_height=0.305))                           # ball dropped from 30.5 cm (MuJoCo only)
 ```
 
 ## 3D sandbox

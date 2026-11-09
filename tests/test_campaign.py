@@ -55,8 +55,9 @@ def test_max_caught_by_bisection():
 
 def test_campaign_end_to_end(tmp_path, monkeypatch):
     # Whole pipeline (simulations, bisections, report, figures) in simple physics, to stay fast
+    # (the ball stays on the plate: the dropped ball becomes the nominal case)
     simple = {"physics": "simple", "mechanism": False, "sensor": "synthetic", "rolling_term": False,
-              "frame_terms": False, "exact_gravity": False, "servo_lag": False}
+              "frame_terms": False, "exact_gravity": False, "servo_lag": False, "start_height": 0.0}
     monkeypatch.setattr(cp, "BASE", replace(cp.BASE, **simple))
     monkeypatch.setattr(cp, "CASES", {name: replace(cfg, **simple) for name, cfg in cp.CASES.items()})
     monkeypatch.setattr(cp.plt, "show", lambda: None)
@@ -67,7 +68,7 @@ def test_campaign_end_to_end(tmp_path, monkeypatch):
     cp.write_report(data, str(report))
     text = report.read_text(encoding="utf-8")
     assert all(f"## {i}." in text for i in range(9)) and "| 0/2 |" in text and " ± " in text
-    assert "## Objectives of the brain" in text and "| No fall in the robustness variants | 0/16 falls |" in text
+    assert "## Objectives of the brain" in text and "| No fall in the robustness variants | 0/18 falls |" in text
     assert "(calibration error: " in text
     cp.show_figures(data)
     cp.plt.close("all")

@@ -56,7 +56,7 @@ def _ball(cfg: Config) -> str:
     inertia = k * pm.ball_mass * r * r                 # J = k·m·r², given explicitly
     x0, y0 = cfg.start_position
     return f"""
-    <body name="ball" pos="{x0} {y0} {cfg.geometry.height + r}">
+    <body name="ball" pos="{x0} {y0} {cfg.geometry.height + r + cfg.start_height}">
       <freejoint/>
       <geom name="ball" type="sphere" size="{r}" contype="1" conaffinity="1"
             solref="{contact_solref(pm)}" friction="{pm.friction} 0.005 0.0001" rgba="1 0.5 0 1"/>
@@ -172,8 +172,10 @@ class MujocoPhysics:
         return float(bx), float(by)
 
     def fallen(self) -> bool:
+        """Below the plate surface, or beyond its edge while level with it (center less than one diameter
+        above the surface). A ball in the air beyond the edge of the tilted plate may still come back."""
         bx, by, bz = self.ball_3d()
-        return math.hypot(bx, by) > self.p.plate_radius or bz < 0
+        return bz < 0 or (math.hypot(bx, by) > self.p.plate_radius and bz < 2 * self.p.ball_radius)
 
     def command(self, theta_x: float, theta_y: float) -> None:
         # Calibration error: the angle actually targeted = commanded angle + bias (unknown to the PID)

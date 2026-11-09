@@ -80,6 +80,8 @@ class SimplePhysics:
         self.servo_tau = pm.kv_servo / pm.kp_servo if cfg.servo_lag else 0.0
         if (self.extended or self.servo_tau) and not self.mechanism:
             raise ValueError("The additions to the simple physics need mechanism=True (continuous tilt)")
+        if cfg.start_height:
+            raise ValueError("The simple physics keeps the ball on the plate: a dropped ball needs MuJoCo")
         self.k, self.r = cfg.plate.k_inertia, cfg.plate.ball_radius
         self.previous_tilt = (0.0, 0.0)
         self.omega = (0.0, 0.0, 0.0)

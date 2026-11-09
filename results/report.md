@@ -14,7 +14,7 @@ The brain is the PID with its latency compensation and its integration zone (def
 | Thrown ball caught (±10°) | 71 ± 1 % | ≥ 90 % of the physical limit | **no** |
 | Circle with 60 ms of latency | 1.66 ± 0.02 mm | < 2 mm | yes |
 | Back to the center in less than 2 s | 12.93 ± 0.07 mm (calibration error: ×2) | ≤ 5 mm between 2 s and 4 s | **no** |
-| No fall in the robustness variants | 0/80 falls | 0 | yes |
+| No fall in the robustness variants | 10/90 falls | 0 | **no** |
 
 Judged on the mean over the draws. Thrown ball: maximum speed caught at ±10° divided by the physical limit (section 2). Return: start 10 cm away, setpoint at the center, worst of the three calibration errors of the plate of section 4 (none, nominal 0.5°/-0.3°, ×2), since the actual one is unknown. Robustness: every variant and every draw of section 4.
 
@@ -69,7 +69,7 @@ Circle: 6 cm radius in 4 s, error = root-mean-square distance from 12 s to 20 s.
 Maximum speeds found by bisection, to 0.01 m/s, between 0.1 and 1.5 m/s. Distance d: from the start to the edge (throw), from the center to the edge (push).
 
 
-## 4. Robustness to physical parameters (controller unchanged, tuned for the ping-pong ball)
+## 4. Robustness to physical parameters and to a dropped ball (controller unchanged, tuned for the ping-pong ball)
 
 | Variant | Fallen | Max distance between 2 s and 4 s | Circle error | Δ circle error vs nominal | Airborne |
 |---|---|---|---|---|---|
@@ -81,6 +81,9 @@ Maximum speeds found by bisection, to 0.01 m/s, between 0.1 and 1.5 m/s. Distanc
 | Plate 2× heavier (0.5 kg) | 0/10 | 2.65 ± 0.03 mm | 1.50 ± 0.02 mm | +0.01 ± 0.01 mm | 0.0 ± 0.0 % |
 | No calibration error (0°, 0°) | 0/10 | 6.23 ± 0.20 mm | 1.51 ± 0.02 mm | +0.01 ± 0.01 mm | 0.0 ± 0.0 % |
 | Calibration error ×2 (1°, -0.6°) | 0/10 | 12.93 ± 0.07 mm | 1.48 ± 0.01 mm | **-0.02 ± 0.00 mm** | 0.0 ± 0.0 % |
+| Ball dropped from 30.5 cm (ITTF height) | 10/10 | - | - | - | - |
+
+Reference scenario. Dropped ball: released without speed above the start point, 30.5 cm above the plate. A ball in the air beyond the edge of the tilted plate counts as fallen only once it is level with the plate.
 
 
 ## 5. Camera latency: without and with compensation by prediction
