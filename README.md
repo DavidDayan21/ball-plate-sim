@@ -34,6 +34,7 @@ no fall in the robustness variants.
 controller/              What would run on the real robot (independent of the simulator)
   pid.py                 PID: derivative filter, saturation, anti-windup, integration zone, feedforward
   plate.py               2 PIDs (x, y axes) + feedforward + latency predictor
+  flight.py              Ball in the air: ballistic tracking, prediction of the impact
   kinematics.py          Geometry, inverse (exact) and forward (Newton) kinematics
 simulation/
   config.py              Single configuration, physical parameters, setpoint trajectories

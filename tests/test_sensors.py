@@ -123,3 +123,33 @@ def test_ball_partly_out_of_the_image_not_measured(scene):
     cam = scene[2]["airborne"]
     assert cam.detect(cam.image(scene[1]))[0] is None
     assert cam.measure(scene[1], 0.0, 0.0, last=(1.0, 2.0, 3.0)) == (1.0, 2.0, 3.0)
+
+
+def test_flight_seen_by_the_camera():
+    # Drop from 20 cm, 5.8 cm from the center, level plate: camera 160×120, 20 ms of latency, ballistic
+    # estimator (controller/flight.py). The impact predicted 40 ms before is right to a few ms and mm.
+    from controller.flight import FlightEstimator
+    from simulation.config import PlateParams
+    from simulation.mujoco_physics import MujocoPhysics
+    cfg = Config(mechanism=False, plate=PlateParams(), start_position=(0.05, -0.03), start_height=0.20)
+    phys = MujocoPhysics(cfg)
+    cam = BallCamera(phys.model, CameraParams(width=160, image_height=120), H, R, airborne_height=0.015)
+    sensor, est = Sensor(sigma=0.0, latency=1), FlightEstimator(H, R, 0.02, 1, 0.015)
+    est.command((0.0, 0.0))
+    last, predictions, n, dt = (0.05, -0.03, 0.20), [], 0, cfg.dt_physics
+    while phys.data.ncon == 0:
+        if n % 40 == 0:
+            last = cam.measure(phys.data, 0.0, 0.0, last)
+            est.observe(sensor.measure(*last))
+            est.command((0.0, 0.0))
+            if est.impact() is not None:
+                predictions.append((n * dt, est.impact()))
+        vz = phys.data.qvel[phys._ball_address()[1] + 2]       # vertical speed just before the contact
+        phys.command(0.0, 0.0)
+        phys.step(dt)
+        n += 1
+    cam.close()
+    t_impact = n * dt
+    now, (time_left, p, v) = [pr for pr in predictions if pr[0] <= t_impact - 0.04][-1]
+    assert abs(now + time_left - t_impact) < 0.003
+    assert math.hypot(p[0] - 0.05, p[1] + 0.03) < 0.002 and v[2] == pytest.approx(vz, rel=0.02)

@@ -6,8 +6,13 @@ physics, whose solution can be computed by hand.
 import math
 from dataclasses import replace
 
+import numpy as np
+import pytest
+
+from controller.flight import FlightEstimator
 from controller.pid import PID
 from controller.plate import LatencyPredictor
+from simulation.camera import inverse_rotation
 from simulation.config import G, PlateParams
 from simulation.simple_physics import acceleration
 
@@ -137,3 +142,84 @@ def test_predictor_exact_if_model_exact():
         v += g * u * T
         x += v * T
     assert abs(estimate - history[-1]) < 1e-9
+
+
+
+# --- Ball in the air: ballistic estimator (controller/flight.py) ------------------------------------
+PLATE_H, BALL_R, T_CTRL = 0.12, 0.02, 0.02
+LEVEL = PLATE_H + BALL_R                  # height of the center of a ball resting on the level plate
+
+
+def flight_images(p0, v0, theta, times, t_start=0.0, sigma=(0.0, 0.0, 0.0), seed=0):
+    """Plate-frame measurements (x, y, height) at the given times of a ball in free flight, at p0 with the
+    velocity v0 (world frame) at t_start, the plate held at the tilt theta."""
+    rng = np.random.default_rng(seed)
+    images = []
+    for t in times:
+        tau = t - t_start
+        p = np.array(p0) + np.array(v0) * tau + np.array([0.0, 0.0, -G * tau * tau / 2 - PLATE_H])
+        x, y, z = inverse_rotation(*theta, p)
+        images.append(tuple(np.array([x, y, z - BALL_R]) + rng.normal(0.0, sigma, 3)))
+    return images
+
+
+def level_impact(p0, v0):
+    """Time, position and velocity at which the free parabola reaches the level of a level plate."""
+    t = (v0[2] + math.sqrt(v0[2] ** 2 + 2 * G * (p0[2] - LEVEL))) / G
+    return t, (p0[0] + v0[0] * t, p0[1] + v0[1] * t), (v0[0], v0[1], v0[2] - G * t)
+
+
+def track(images, theta, latency):
+    """Estimator after one observation per image (image j delivered at the period j + latency, like the
+    sensor: the first ones arrive without delay), the plate held at the tilt theta since before the start."""
+    est = FlightEstimator(PLATE_H, BALL_R, T_CTRL, latency, airborne_height=0.015, g=G)
+    for _ in range(latency + 1):
+        est.command(theta)
+    for k in range(len(images) + latency):
+        est.observe(images[max(k - latency, 0)])
+        est.command(theta)
+    return est
+
+
+def test_flight_exact_parabola():
+    # Tilted plate, measurements 2 periods late: the fit finds the parabola again exactly
+    p0, v0, theta = (0.05, -0.03, 0.40), (0.10, 0.05, 0.5), (math.radians(5), math.radians(-3))
+    est = track(flight_images(p0, v0, theta, [j * T_CTRL for j in range(8)]), theta, latency=2)
+    t, (x, y), v = level_impact(p0, v0)
+    dt, p, vi = est.impact()
+    assert dt == pytest.approx(t - 9 * T_CTRL, abs=1e-9) and p[:2] == pytest.approx((x, y), abs=1e-9)
+    assert vi == pytest.approx(v, abs=1e-9)
+
+
+def test_flight_with_noise():
+    # Drop from 30 cm, noise like the camera (1 mm on x and y, 3 mm on the height), 6 images
+    p0, v0, theta = (0.05, -0.03, LEVEL + 0.30), (0.0, 0.0, 0.0), (0.0, 0.0)
+    images = flight_images(p0, v0, theta, [j * T_CTRL for j in range(6)], sigma=(0.001, 0.001, 0.003), seed=4)
+    dt, p, vi = track(images, theta, latency=1).impact()
+    t, (x, y), v = level_impact(p0, v0)
+    assert abs(dt - (t - 6 * T_CTRL)) < 0.01 and math.hypot(p[0] - x, p[1] - y) < 0.005
+    assert vi[2] == pytest.approx(v[2], rel=0.05)
+
+
+def test_flight_repeated_measurement_ignored():
+    # The camera repeats its last measurement when it does not see the ball (images 4 and 5 here):
+    # these are not points of the flight, and the next images keep their true times
+    p0, v0 = (0.03, 0.0, 0.40), (0.05, 0.0, 0.0)
+    images = flight_images(p0, v0, (0.0, 0.0), [j * T_CTRL for j in range(8)])
+    est = track(images[:4] + [images[3]] * 2 + images[6:], (0.0, 0.0), latency=1)
+    assert len(est.samples) == 6
+    t, (x, y), _ = level_impact(p0, v0)
+    assert est.impact()[0] == pytest.approx(t - 8 * T_CTRL, abs=1e-9) and est.impact()[1][0] == pytest.approx(x)
+
+
+def test_flight_on_the_plate_and_bounce():
+    est = FlightEstimator(PLATE_H, BALL_R, T_CTRL, 0, airborne_height=0.015, g=G)
+    est.observe((0.01, 0.0, 0.002))
+    assert est.impact() is None                               # ball on the plate
+    # Drop of 16 cm, bounce at 1.6 m/s; no image near the plate (the one at 0.18 s is missed: repeated)
+    t1, _, _ = level_impact((0.0, 0.0, LEVEL + 0.16), (0.0, 0.0, 0.0))
+    first = flight_images((0.0, 0.0, LEVEL + 0.16), (0.0, 0.0, 0.0), (0.0, 0.0), [j * T_CTRL for j in range(9)])
+    second = flight_images((0.0, 0.0, LEVEL), (0.0, 0.0, 1.6), (0.0, 0.0), [j * T_CTRL for j in range(10, 14)],
+                           t_start=t1)
+    est = track(first + [first[-1]] + second, (0.0, 0.0), latency=0)
+    assert est.impact()[0] == pytest.approx(t1 + 2 * 1.6 / G - 13 * T_CTRL, abs=1e-9)
