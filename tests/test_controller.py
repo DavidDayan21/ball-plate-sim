@@ -223,3 +223,28 @@ def test_flight_on_the_plate_and_bounce():
                            t_start=t1)
     est = track(first + [first[-1]] + second, (0.0, 0.0), latency=0)
     assert est.impact()[0] == pytest.approx(t1 + 2 * 1.6 / G - 13 * T_CTRL, abs=1e-9)
+
+
+def test_pid_hold_follows_without_acting():
+    pid = PID(kp=2.0, ki=1.0, kd=0.5)
+    pid.compute(0.0, 0.01, 0.02)
+    integral = pid.integral
+    u = pid.compute(0.0, 0.03, 0.02, hold=True)             # in the air: nothing integrated, integral term only
+    assert pid.integral == integral and u == pytest.approx(1.0 * integral)
+    assert pid.previous_error == -0.03 and pid.derivative == pytest.approx(-1.0)   # (-0.03 + 0.01) / 0.02
+
+
+def test_aimed_bounce():
+    # Ball dropped 5 cm from the center: level plate as long as the impact is not estimated, then the tilt
+    # that sends it back halfway to the center: θ = (0.5·(0 - x) / (2·e·v_i/g) - 0) / ((1 + e)·v_i)
+    from controller.plate import PlateController
+    e = 0.87
+    flight = FlightEstimator(PLATE_H, BALL_R, T_CTRL, 0, airborne_height=0.015, g=G)
+    ctrl = PlateController(1.0, 1.0, 0.5, math.radians(10), 0.05, CG, flight=flight, restitution=e, bounce_gain=0.5)
+    p0, v0 = (0.05, 0.0, LEVEL + 0.20), (0.0, 0.0, 0.0)
+    images = flight_images(p0, v0, (0.0, 0.0), [0.0, T_CTRL])
+    assert ctrl.compute((0.0, 0.0), images[0], (0.0, 0.0), T_CTRL) == (0.0, 0.0)
+    theta = ctrl.compute((0.0, 0.0), images[1], (0.0, 0.0), T_CTRL)
+    v_i = math.sqrt(2 * G * 0.20)
+    expected = 0.5 * (0.0 - 0.05) / (2 * e * v_i / G) / ((1 + e) * v_i)
+    assert theta[0] == pytest.approx(expected, rel=1e-6) and theta[0] < 0 and theta[1] == pytest.approx(0.0, abs=1e-9)

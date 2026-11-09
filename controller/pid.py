@@ -44,8 +44,11 @@ class PID:
     def _saturate(self, u: float) -> float:
         return min(max(u, self.output_min), self.output_max)
 
-    def compute(self, setpoint: float, measurement: float, dt: float, feedforward: float = 0.0) -> float:
-        """Computes the command for one control step of duration dt."""
+    def compute(self, setpoint: float, measurement: float, dt: float, feedforward: float = 0.0,
+                hold: bool = False) -> float:
+        """Computes the command for one control step of duration dt.
+        hold: the PID only follows the measurement (derivative), integrates nothing and returns its
+        integral term alone (ball in the air: the plate is driven by the aimed bounce)."""
         e = setpoint - measurement
 
         # Filtered derivative: d <- a·d + (1 - a)·d_raw, with a = tau_d / (tau_d + dt)
@@ -53,6 +56,9 @@ class PID:
         a = self.tau_d / (self.tau_d + dt)
         self.derivative = a * self.derivative + (1 - a) * raw
         self.previous_error = e
+        if hold:
+            self.terms = (0.0, self.ki * self.integral, 0.0)
+            return self._saturate(self.ki * self.integral)
 
         up = self.kp * e
         ud = self.kd * self.derivative

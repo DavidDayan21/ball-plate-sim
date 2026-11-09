@@ -127,10 +127,9 @@ class Config:
     latency: int = 1                   # measurement latency, in control periods
     camera: CameraParams = field(default_factory=CameraParams)
     tilt_correction: bool = True
-    airborne_height: float = math.inf  # (m) above this measured height, the ball is in the air: the camera then
-                                       # takes its center on the light ray, at the distance given by its size.
-                                       # Off for now: the brain reacts worse to the corrected position of a ball
-                                       # in the air (campaign section 5); it will come with the aimed bounce (B5)
+    airborne_height: float = 0.015     # (m) above this measured height, the ball is in the air: the camera takes
+                                       # its center on the light ray, at the distance given by its size, and the
+                                       # brain aims the bounce (controller/flight.py). math.inf: never in the air
     # Controller
     control_period: float = 0.02       # 50 Hz
     kp: float = 1.0                    # (rad/m)
@@ -140,6 +139,8 @@ class Config:
     tau_d: float = 0.05                # derivative filter (s); 0: no filter
     feedforward: bool = True
     latency_compensation: bool = True   # predict the current position despite the latency (part of the PID brain)
+    bounce_restitution: float = 0.87   # aimed bounce: restitution assumed (ITTF rule 0.85 to 0.91; MuJoCo 0.874)
+    bounce_gain: float = 0.5           # aimed bounce: share of the distance to the setpoint covered by each bounce
     integration_zone: float = 0.02     # (m) each axis integrates its error only within this distance of the
                                        # setpoint (math.inf: everywhere). It must exceed the offset θb/Kp that
                                        # a calibration error θb leaves without integral: 2 cm corrects up to

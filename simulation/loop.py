@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 import math
 import time
 
+from controller.flight import FlightEstimator
 from controller.plate import PlateController
 from simulation.sensor import Sensor
 from simulation.config import G, Config
@@ -84,10 +85,13 @@ class Simulation:
             self.sensor = Sensor(sigma=0.0, latency=cfg.latency)   # the noise comes from the image
         else:
             self.sensor = Sensor(cfg.sigma, cfg.latency, cfg.seed, cfg.sigma_height)
+        flight = (FlightEstimator(cfg.geometry.height, cfg.plate.ball_radius, cfg.control_period, cfg.latency,
+                                  cfg.airborne_height, G) if cfg.airborne_height < math.inf else None)
         self.ctrl = PlateController(cfg.kp, cfg.ki, cfg.kd(), cfg.theta_max, cfg.tau_d,
                                       model_gain=cfg.plate.coefficient * G, feedforward=cfg.feedforward,
                                       latency_compensation=cfg.latency if cfg.latency_compensation else 0,
-                                      period=cfg.control_period, integration_zone=cfg.integration_zone)
+                                      period=cfg.control_period, integration_zone=cfg.integration_zone,
+                                      flight=flight, restitution=cfg.bounce_restitution, bounce_gain=cfg.bounce_gain)
 
     @property
     def t(self) -> float:
@@ -108,13 +112,13 @@ class Simulation:
                 self.last_measurement = (mx, my, mh)
             else:
                 mx, my, mh = bx, by, phys.ball_height()
-            xm, ym, _ = self.sensor.measure(mx, my, mh)
+            xm, ym, hm = self.sensor.measure(mx, my, mh)
             if self.camera is None:         # synthetic sensor: noisy measurement of this instant (before latency)
                 mx, my, mh = self.sensor.queue[-1] if self.sensor.queue else (xm, ym, mh)
             r.measurement_error.append(math.hypot(mx - bx, my - by))
             r.measured_height.append(mh)
             xr, yr, axr, ayr = cfg.trajectory(t)
-            self.theta = self.ctrl.compute((xr, yr), (xm, ym), (axr, ayr), cfg.control_period)
+            self.theta = self.ctrl.compute((xr, yr), (xm, ym, hm), (axr, ayr), cfg.control_period)
             phys.command(*self.theta)
             for series, val in ((r.t, t), (r.x, bx), (r.y, by), (r.x_ref, xr), (r.y_ref, yr),
                                (r.theta_x, self.theta[0]), (r.theta_y, self.theta[1]),

@@ -64,8 +64,8 @@ CHECK_SPAN = 5                      # draw 0: every speed within ±5 steps of th
 REFERENCE_CONTROLLER = {"latency_compensation": False, "integration_zone": math.inf,
                         "airborne_height": math.inf}
 
-def drop_case(distance: float, height: float) -> str:
-    return f"drop_{round(1000 * distance)}mm_{round(1000 * height)}mm"
+def drop_case(distance: float, height: float, aimed: bool = True) -> str:
+    return f"drop_{round(1000 * distance)}mm_{round(1000 * height)}mm" + ("" if aimed else "_reacting")
 
 
 def drop_config(distance: float, height: float) -> Config:
@@ -105,8 +105,10 @@ CASES = {
     "latency_60ms": replace(BASE, latency=3),
     "latency_100ms": replace(BASE, latency=5),
     "square": replace(BASE, trajectory=square, duration=16.0, start_position=(0.05, 0.05)),
-    # Dropped ball (section 5)
+    # Dropped ball (section 5): the brain, and the brain reacting in the air as on the plate (before B5)
     **{drop_case(d, h): drop_config(d, h) for d in DROP_DISTANCES for h in DROP_HEIGHTS},
+    **{drop_case(d, h, aimed=False): replace(drop_config(d, h), airborne_height=math.inf)
+       for d in DROP_DISTANCES for h in DROP_HEIGHTS},
     # The brain without one of its parts: latency compensation (sections 6 and 8), integration zone (section 7)
     "camera_uncompensated": replace(BASE, latency_compensation=False),
     "latency_60ms_uncompensated": replace(BASE, latency=3, latency_compensation=False),
@@ -410,10 +412,10 @@ def write_report(data: dict, path: str = os.path.join("results", "report.md")) -
              "other columns. Δ: mean of the paired differences over the same draws ± standard error, "
              "in **bold** when significant (paired t-test at the 5 % level: |Δ| > t × standard error, "
              "t = 97.5 % quantile of Student's distribution, 2.26 for 10 draws).")
-    rep.text("The brain is the PID with its latency compensation and its integration zone (default settings): "
-             "it is judged by the objectives and sections 2 to 8. Sections 0 and 9 validate the simulator: "
-             "they use a frozen reference controller (the PID without latency compensation, error integrated "
-             "everywhere).")
+    rep.text("The brain is the PID with its latency compensation, its integration zone and its aimed bounce "
+             "(default settings): it is judged by the objectives and sections 2 to 8. Sections 0 and 9 validate the "
+             "simulator: they use a frozen reference controller (the PID without latency compensation, error "
+             "integrated everywhere, ball never considered in the air).")
 
     rep.section("Objectives of the brain (full chain with the camera)")
     rep.table(["Objective", "Measured", "Target", "Met"], objectives(data))
@@ -505,17 +507,22 @@ def write_report(data: dict, path: str = os.path.join("results", "report.md")) -
     for d in DROP_DISTANCES:
         for h in DROP_HEIGHTS:
             rs = runs[drop_case(d, h)]
-            rows.append([f"{100 * d:.0f} cm", f"{100 * h:.1f} cm", fallen(rs),
+            rows.append([f"{100 * d:.0f} cm", f"{100 * h:.1f} cm", fallen(runs[drop_case(d, h, aimed=False)]),
+                         fallen(rs),
                          fmt([airborne(r) for r in rs], " %", 1, 100),
                          fmt([settled_distance(r) for r in rs], " mm", scale=1000),
                          fmt([height_error(r) for r in rs], " mm", scale=1000),
                          fmt([false_airborne(r) for r in rs], " %", 1, 100)])
-    rep.table(["Distance from the center", "Height", "Fallen", "Airborne",
+    rep.table(["Distance from the center", "Height", "Fallen, reacting in the air", "Fallen, aimed bounce",
+               "Airborne",
                f"Max distance from the center between {DROP_DURATION - 2:.0f} s and {DROP_DURATION:.0f} s",
                "Height measured in the air: error (RMS)", "On the plate but measured in the air"], rows)
     rep.text(f"Ball released without speed above a point of the line from the center to the start point of the "
-             f"reference scenario, {DROP_DURATION:.0f} s per drop. The brain reacts to the ball as soon as the camera "
-             f"sees it, also while it is in the air. Height: measured by the camera from the apparent size of the "
+             f"reference scenario, {DROP_DURATION:.0f} s per drop. Reacting in the air: the brain before B5, which "
+             f"drives the plate from the measured position of the ball also while it is in the air. Aimed bounce "
+             f"(the brain): in the air, the plate is tilted so that the next bounce sends the ball toward the "
+             f"setpoint (controller/flight.py, controller/plate.py); the other columns are those of the brain. "
+             f"Height: measured by the camera from the apparent size of the "
              f"ball; in the air above {1000 * AIRBORNE:.0f} mm (true height), on the plate below 5 mm. "
              "A ball partly out of the image is not measured: the last measurement is kept.")
 

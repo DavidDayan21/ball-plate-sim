@@ -8,6 +8,7 @@ and returns the two tilts (θx, θy) to apply to the plate.
 from collections import deque
 import math
 
+from controller.flight import FlightEstimator
 from controller.pid import PID
 
 
@@ -61,27 +62,60 @@ class PlateController:
     current position is reconstructed by LatencyPredictor before entering the PIDs.
 
     integration_zone: each PID integrates its error only while it is smaller than this distance (m).
+
+    flight: estimator of the ball in the air (controller/flight.py). While the measured height is above its
+    airborne_height, the PIDs only follow the ball and the plate is tilted for the bounce (aimed_tilt).
     """
 
     def __init__(self, kp: float, ki: float, kd: float, theta_max: float,
                  tau_d: float, model_gain: float, feedforward: bool = True,
-                 latency_compensation: int = 0, period: float = 0.02, integration_zone: float = math.inf):
+                 latency_compensation: int = 0, period: float = 0.02, integration_zone: float = math.inf,
+                 flight: FlightEstimator = None, restitution: float = 0.87, bounce_gain: float = 0.5):
         self.pid_x = PID(kp, ki, kd, -theta_max, theta_max, tau_d, integration_zone)
         self.pid_y = PID(kp, ki, kd, -theta_max, theta_max, tau_d, integration_zone)
         self.model_gain = model_gain
         self.feedforward = feedforward
         self.predictors = ([LatencyPredictor(latency_compensation, period, model_gain) for _ in range(2)]
                             if latency_compensation > 0 else None)
+        self.flight = flight
+        self.restitution, self.bounce_gain = restitution, bounce_gain
 
     def compute(self, setpoint, measurement, setpoint_acc, dt: float):
-        """setpoint, measurement, setpoint_acc: (x, y) pairs. Returns (θx, θy) in rad."""
+        """setpoint, setpoint_acc: (x, y) pairs; measurement: (x, y) or (x, y, height of the ball).
+        Returns (θx, θy) in rad."""
+        airborne = False
+        if self.flight is not None:
+            self.flight.observe(tuple(measurement) if len(measurement) == 3 else (*measurement, 0.0))
+            airborne = len(measurement) == 3 and measurement[2] > self.flight.airborne_height
         if self.predictors is not None:
             measurement = (self.predictors[0].predict(measurement[0]), self.predictors[1].predict(measurement[1]))
         ffx = setpoint_acc[0] / self.model_gain if self.feedforward else 0.0
         ffy = setpoint_acc[1] / self.model_gain if self.feedforward else 0.0
-        theta_x = self.pid_x.compute(setpoint[0], measurement[0], dt, ffx)
-        theta_y = self.pid_y.compute(setpoint[1], measurement[1], dt, ffy)
+        theta_x = self.pid_x.compute(setpoint[0], measurement[0], dt, ffx, hold=airborne)
+        theta_y = self.pid_y.compute(setpoint[1], measurement[1], dt, ffy, hold=airborne)
+        # In the air, θx and θy are the integral terms alone (they compensate the calibration error of the plate):
+        # the plate stays level until the impact is estimated (2 measurements of the flight), then it is aimed
+        if airborne and self.flight.impact() is not None:
+            aim_x, aim_y = self.aimed_tilt(self.flight.impact(), setpoint)
+            theta_x, theta_y = self.pid_x._saturate(theta_x + aim_x), self.pid_y._saturate(theta_y + aim_y)
         if self.predictors is not None:
             self.predictors[0].store(theta_x)
             self.predictors[1].store(theta_y)
+        if self.flight is not None:
+            self.flight.command((theta_x, theta_y))
         return theta_x, theta_y
+
+    def aimed_tilt(self, impact, setpoint):
+        """Tilt of the plate at the impact so that the bounce sends the ball back toward the setpoint.
+
+        A plate tilted by θ (small) changes the horizontal velocity of a ball hitting it at the vertical
+        speed v_i by Δv = (1 + e)·v_i·θ (the normal component is reversed and multiplied by e). After the
+        bounce, the next impact comes 2·e·v_i/g later: to cover the share bounce_gain of the distance d to the
+        setpoint during that flight, the ball needs v = bounce_gain·d / (2·e·v_i/g), hence θ = (v - v_h) / ((1 + e)·v_i)."""
+        _, p, v = impact
+        v_i = -v[2]
+        if v_i <= 0:
+            return 0.0, 0.0
+        flight_time = 2 * self.restitution * v_i / self.flight.g
+        return tuple((self.bounce_gain * (setpoint[k] - p[k]) / flight_time - v[k]) / ((1 + self.restitution) * v_i)
+                     for k in range(2))

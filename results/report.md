@@ -4,7 +4,7 @@ Simulated chain: MuJoCo (3-arm robot, motor ramps) + 160×120 camera + OpenCV + 
 
 Each case is simulated over 10 draw(s). Draw 0 is the nominal configuration; draw k ≥ 1 uses noise seed k and a start position shifted by up to ±0.5 mm on each axis (the only source of variation for the camera cases). Values: mean ± standard deviation over the draws; draws where the ball fell are counted in 'Fallen' and left out of the other columns. Δ: mean of the paired differences over the same draws ± standard error, in **bold** when significant (paired t-test at the 5 % level: |Δ| > t × standard error, t = 97.5 % quantile of Student's distribution, 2.26 for 10 draws).
 
-The brain is the PID with its latency compensation and its integration zone (default settings): it is judged by the objectives and sections 2 to 8. Sections 0 and 9 validate the simulator: they use a frozen reference controller (the PID without latency compensation, error integrated everywhere).
+The brain is the PID with its latency compensation, its integration zone and its aimed bounce (default settings): it is judged by the objectives and sections 2 to 8. Sections 0 and 9 validate the simulator: they use a frozen reference controller (the PID without latency compensation, error integrated everywhere, ball never considered in the air).
 
 
 ## Objectives of the brain (full chain with the camera)
@@ -14,7 +14,7 @@ The brain is the PID with its latency compensation and its integration zone (def
 | Thrown ball caught (±10°) | 71 ± 1 % | ≥ 90 % of the physical limit | **no** |
 | Circle with 60 ms of latency | 1.66 ± 0.02 mm | < 2 mm | yes |
 | Back to the center in less than 2 s | 12.93 ± 0.07 mm (calibration error: ×2) | ≤ 5 mm between 2 s and 4 s | **no** |
-| No fall in the robustness variants | 10/90 falls | 0 | **no** |
+| No fall in the robustness variants | 0/90 falls | 0 | yes |
 
 Judged on the mean over the draws. Thrown ball: maximum speed caught at ±10° divided by the physical limit (section 2). Return: start 10 cm away, setpoint at the center, worst of the three calibration errors of the plate of section 4 (none, nominal 0.5°/-0.3°, ×2), since the actual one is unknown. Robustness: every variant and every draw of section 4.
 
@@ -81,26 +81,26 @@ Maximum speeds found by bisection, to 0.01 m/s, between 0.1 and 1.5 m/s. Distanc
 | Plate 2× heavier (0.5 kg) | 0/10 | 2.65 ± 0.03 mm | 1.50 ± 0.02 mm | +0.01 ± 0.01 mm | 0.0 ± 0.0 % |
 | No calibration error (0°, 0°) | 0/10 | 6.23 ± 0.20 mm | 1.51 ± 0.02 mm | +0.01 ± 0.01 mm | 0.0 ± 0.0 % |
 | Calibration error ×2 (1°, -0.6°) | 0/10 | 12.93 ± 0.07 mm | 1.48 ± 0.01 mm | **-0.02 ± 0.00 mm** | 0.0 ± 0.0 % |
-| Ball dropped from 30.5 cm (ITTF height) | 10/10 | - | - | - | - |
+| Ball dropped from 30.5 cm (ITTF height) | 0/10 | 15.87 ± 1.13 mm | 1.49 ± 0.01 mm | -0.01 ± 0.01 mm | 16.8 ± 0.5 % |
 
 Reference scenario. Dropped ball: released without speed above the start point, 30.5 cm above the plate. A ball in the air beyond the edge of the tilted plate counts as fallen only once it is level with the plate.
 
 
 ## 5. Dropped ball: where and from how high (setpoint: center)
 
-| Distance from the center | Height | Fallen | Airborne | Max distance from the center between 4 s and 6 s | Height measured in the air: error (RMS) | On the plate but measured in the air |
-|---|---|---|---|---|---|---|
-| 0 cm | 10.0 cm | 0/10 | 31.5 ± 1.1 % | 0.49 ± 0.06 mm | 2.07 ± 0.14 mm | 0.0 ± 0.0 % |
-| 0 cm | 20.0 cm | 0/10 | 46.6 ± 1.9 % | 0.83 ± 0.32 mm | 2.32 ± 0.25 mm | 0.0 ± 0.0 % |
-| 0 cm | 30.5 cm | 0/10 | 53.0 ± 1.2 % | 3.52 ± 0.53 mm | 2.23 ± 0.16 mm | 0.0 ± 0.0 % |
-| 5 cm | 10.0 cm | 0/10 | 29.0 ± 1.2 % | 0.46 ± 0.06 mm | 2.64 ± 0.31 mm | 0.0 ± 0.0 % |
-| 5 cm | 20.0 cm | 0/10 | 40.7 ± 2.2 % | 1.75 ± 0.58 mm | 5.71 ± 0.24 mm | 0.0 ± 0.0 % |
-| 5 cm | 30.5 cm | 10/10 | - | - | - | - |
-| 10 cm | 10.0 cm | 0/10 | 28.8 ± 1.4 % | 0.43 ± 0.07 mm | 4.88 ± 0.20 mm | 0.0 ± 0.0 % |
-| 10 cm | 20.0 cm | 0/10 | 34.9 ± 1.5 % | 0.48 ± 0.08 mm | 9.69 ± 0.30 mm | 0.4 ± 0.1 % |
-| 10 cm | 30.5 cm | 10/10 | - | - | - | - |
+| Distance from the center | Height | Fallen, reacting in the air | Fallen, aimed bounce | Airborne | Max distance from the center between 4 s and 6 s | Height measured in the air: error (RMS) | On the plate but measured in the air |
+|---|---|---|---|---|---|---|---|
+| 0 cm | 10.0 cm | 0/10 | 0/10 | 32.4 ± 0.5 % | 0.55 ± 0.06 mm | 2.77 ± 0.47 mm | 0.0 ± 0.0 % |
+| 0 cm | 20.0 cm | 0/10 | 0/10 | 46.7 ± 1.9 % | 2.32 ± 0.36 mm | 2.17 ± 0.12 mm | 0.0 ± 0.0 % |
+| 0 cm | 30.5 cm | 0/10 | 0/10 | 56.7 ± 2.1 % | 3.49 ± 0.40 mm | 2.19 ± 0.13 mm | 0.0 ± 0.0 % |
+| 5 cm | 10.0 cm | 0/10 | 0/10 | 32.3 ± 1.0 % | 0.59 ± 0.17 mm | 2.30 ± 0.19 mm | 0.0 ± 0.0 % |
+| 5 cm | 20.0 cm | 0/10 | 0/10 | 49.5 ± 2.2 % | 3.08 ± 0.53 mm | 2.09 ± 0.12 mm | 0.0 ± 0.0 % |
+| 5 cm | 30.5 cm | 10/10 | 0/10 | 55.4 ± 1.6 % | 3.61 ± 0.79 mm | 2.06 ± 0.18 mm | 0.0 ± 0.0 % |
+| 10 cm | 10.0 cm | 0/10 | 0/10 | 33.1 ± 1.2 % | 1.19 ± 0.30 mm | 3.65 ± 0.22 mm | 0.0 ± 0.0 % |
+| 10 cm | 20.0 cm | 0/10 | 0/10 | 46.2 ± 2.2 % | 3.01 ± 0.42 mm | 2.78 ± 0.16 mm | 0.0 ± 0.0 % |
+| 10 cm | 30.5 cm | 10/10 | 0/10 | 56.0 ± 1.6 % | 4.23 ± 0.73 mm | 6.05 ± 0.11 mm | 0.0 ± 0.0 % |
 
-Ball released without speed above a point of the line from the center to the start point of the reference scenario, 6 s per drop. The brain reacts to the ball as soon as the camera sees it, also while it is in the air. Height: measured by the camera from the apparent size of the ball; in the air above 15 mm (true height), on the plate below 5 mm. A ball partly out of the image is not measured: the last measurement is kept.
+Ball released without speed above a point of the line from the center to the start point of the reference scenario, 6 s per drop. Reacting in the air: the brain before B5, which drives the plate from the measured position of the ball also while it is in the air. Aimed bounce (the brain): in the air, the plate is tilted so that the next bounce sends the ball toward the setpoint (controller/flight.py, controller/plate.py); the other columns are those of the brain. Height: measured by the camera from the apparent size of the ball; in the air above 15 mm (true height), on the plate below 5 mm. A ball partly out of the image is not measured: the last measurement is kept.
 
 
 ## 6. Camera latency: without and with compensation by prediction

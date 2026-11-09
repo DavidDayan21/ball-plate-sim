@@ -84,3 +84,11 @@ def test_ball_mass_has_no_effect():
     pm = Config().mujoco_params
     heavy = circle_error(Config(mujoco_params=replace(pm, ball_mass=0.027)))
     assert abs(heavy / circle_error(Config()) - 1) < 0.15
+
+
+def test_dropped_ball_caught_by_the_aimed_bounce():
+    # Dropped from 30.5 cm, 10 cm from the center (MuJoCo, synthetic sensor): caught when the brain aims
+    # each bounce; reacting to the ball in the air like on the plate, the brain loses it
+    cfg = Config(trajectory=center, start_position=(0.08, -0.06), start_height=0.305, duration=4.0)
+    assert not simulate(cfg).fallen
+    assert simulate(replace(cfg, airborne_height=math.inf)).fallen
