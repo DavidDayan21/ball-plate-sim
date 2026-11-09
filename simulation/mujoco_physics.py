@@ -23,6 +23,8 @@ from simulation.motor import Motor
 # --- Ball-plate contact ---------------------------------------------------------------------------
 AIRBORNE_HEIGHT = 1e-4      # (m) "airborne" ball: more than 0.1 mm above the plate. Below that, the
                             # micro-separations (a few µm) come from the numerical softness of the contact
+SETTLING_TIME = 0.2         # (s) before the ball is placed, the robot reaches its command 0 and comes to rest
+                            # (measured: within 0.01° in 0.15 s for the 3 arms, 0.1 s for the angle-driven plate)
 
 
 def contact_solref(pm: MujocoParams) -> str:
@@ -131,14 +133,9 @@ def model_xml(cfg: Config) -> str:
 
 
 def build(cfg: Config):
-    """MuJoCo model + data, with the ball placed with its initial velocity."""
+    """MuJoCo model + data: level plate, ball at rest at its start position."""
     model = mujoco.MjModel.from_xml_string(model_xml(cfg))
     data = mujoco.MjData(model)
-    # Initial velocity with the rotation of rolling without slipping: v + ω × (-r·ez) = 0
-    vx, vy = cfg.start_velocity
-    r = cfg.plate.ball_radius
-    adr = model.jnt_dofadr[model.body("ball").jntadr[0]]
-    data.qvel[adr:adr + 6] = (vx, vy, 0.0, -vy / r, vx / r, 0.0)
     mujoco.mj_forward(model, data)        # computes the initial positions (otherwise xpos is 0)
     return model, data
 
@@ -161,6 +158,27 @@ class MujocoPhysics:
         self.unreachable_poses = 0
         self.airborne_steps = 0                # steps with the ball airborne, in total
         self.airborne_steps_period = 0         # since the last read
+        self.switch_on()
+
+    def switch_on(self) -> None:
+        """Start like a robot that is already on when the ball is placed: the plate first reaches the command 0,
+        i.e. its calibration error, and comes to rest under its weight, with the ball held away; then the ball
+        is placed at its start position, height and velocity, in the plate frame, and the time starts at 0.
+        (Built level, the plate would otherwise move to its calibration error and sag under its weight during
+        the first period, under the ball.)"""
+        cfg = self.cfg
+        qadr, dof = self._ball_address()
+        held = (0.0, 0.0, cfg.geometry.height + 0.3, 1.0, 0.0, 0.0, 0.0)    # 30 cm above the plate: no contact
+        self.command(0.0, 0.0)
+        for _ in range(round(SETTLING_TIME / cfg.dt_physics)):
+            self.data.qpos[qadr:qadr + 7] = held
+            self.data.qvel[dof:dof + 6] = 0.0
+            self.step(cfg.dt_physics)
+        self.data.time = 0.0
+        self.airborne_steps = self.airborne_steps_period = 0
+        mujoco.mj_forward(self.model, self.data)
+        (x0, y0), (vx, vy) = cfg.start_position, cfg.start_velocity
+        self.place_ball(x0, y0, cfg.start_height, vx, vy)
 
     def ball_3d(self):
         """Center of the ball in the plate frame (x, y, z)."""

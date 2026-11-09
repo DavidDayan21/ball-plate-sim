@@ -128,6 +128,21 @@ def test_bounce_complies_with_ittf_rule():
     assert 0.85 <= measured_restitution(height=0.305) <= 0.91
 
 
+@pytest.mark.parametrize("mechanism", [True, False])
+def test_mujoco_start_like_a_robot_already_on(mechanism):
+    # The plate already holds the command 0 (its calibration error) and is at rest; the ball is placed at its
+    # start position and velocity in the plate frame, on the surface; the time starts at 0
+    cfg = Config(mechanism=mechanism, start_position=(0.05, -0.02), start_velocity=(0.3, 0.1))
+    phys = MujocoPhysics(cfg)
+    tx, ty = phys.actual_tilt()                       # tilt minus the calibration error
+    assert abs(math.degrees(tx)) < 0.02 and abs(math.degrees(ty)) < 0.02
+    assert abs(math.degrees(plate_tilt(phys.data)[0]) - 0.5) < 0.02     # the calibration error of θx
+    assert np.linalg.norm(phys.data.body("plate").cvel[:3]) < 1e-3        # at rest (rad/s)
+    assert phys.ball() == pytest.approx((0.05, -0.02), abs=1e-12)
+    assert phys.ball_velocity() == pytest.approx((0.3, 0.1), abs=1e-12)
+    assert abs(phys.ball_height()) < 1e-12 and phys.data.time == 0.0 and phys.airborne_steps == 0
+
+
 def test_mujoco_robot_at_rest_plate_level():
     model, data = build(Config())
     for _ in range(1000):

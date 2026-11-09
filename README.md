@@ -139,7 +139,7 @@ International CSV format: `,` separator, decimal point, UTF-8 encoding (no BOM).
 
 | Element | Reference value |
 |---|---|
-| Plate | Disk of radius 15 cm, 0.25 kg; calibration error of the tilt 0.5° on θx, -0.3° on θy, unknown to the controller |
+| Plate | Disk of radius 15 cm, 0.25 kg; calibration error of the tilt 0.5° on θx, -0.3° on θy, unknown to the controller. At the start, the robot is already on: the plate holds the command 0 (hence the calibration error) and is at rest when the ball is placed |
 | Ball | Ping-pong: radius 2 cm, 2.7 g, hollow (J = 2/3·m·r²) |
 | Ball-plate contact | Target restitution 0.88 (ITTF rule: dropped from 30.5 cm, bounces back to 22-25 cm), stiffness 200 Hz, simulation step 0.5 ms |
 | Mechanism | 3 arms of 5 cm, rods of 12 cm, ball joints 10 cm from the center |
