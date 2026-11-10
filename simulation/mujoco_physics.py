@@ -28,6 +28,11 @@ SETTLING_TIME = 0.2         # (s) before the ball is placed, the robot reaches i
                             # (measured: within 0.01° in 0.15 s for the 3 arms, 0.1 s for the angle-driven plate)
 
 
+def cone_option(pm: MujocoParams) -> str:
+    """Attribute of <option> for the friction cone (none for the pyramid, MuJoCo's default)."""
+    return "" if pm.cone == "pyramidal" else f' cone="{pm.cone}"'
+
+
 def contact_solref(pm: MujocoParams) -> str:
     """Spring-damper contact set directly (negative solref values: -k and -b).
 
@@ -81,7 +86,7 @@ def model_xml(cfg: Config) -> str:
     h = g.height
     header = HEADER.format(name="balancing robot" if cfg.mechanism else "angle-driven plate",
                            dt=cfg.dt_physics, z_camera=h + cfg.camera.height, fovy=cfg.camera.fovy,
-                           cone="" if pm.cone == "pyramidal" else f' cone="{pm.cone}"')
+                           cone=cone_option(pm))
     if not cfg.mechanism:
         # Joints: θx (y axis), then θy (-x axis): rotation R = Ry(θx)·Rx(-θy)
         return header + f"""
@@ -280,7 +285,7 @@ def _plane_and_ball(theta: float, k: float, pm: MujocoParams, friction: float, d
     r, m = 0.02, pm.ball_mass
     inertia = k * m * r * r
     contact = f'solref="{contact_solref(pm)}" friction="{friction} 0.005 0.0001"'
-    xml = f"""<mujoco><option timestep="{dt}" integrator="implicitfast"/><worldbody>
+    xml = f"""<mujoco><option timestep="{dt}" integrator="implicitfast"{cone_option(pm)}/><worldbody>
       <body euler="0 {math.degrees(theta)} 0"><geom type="box" size="0.5 0.5 0.005" pos="0 0 -0.005" {contact}/></body>
       <body name="ball"><freejoint/><geom type="sphere" size="{r}" {contact}/>
         <inertial pos="0 0 0" mass="{m}" diaginertia="{inertia} {inertia} {inertia}"/></body>

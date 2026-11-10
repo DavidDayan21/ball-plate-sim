@@ -34,7 +34,7 @@ import time
 import numpy as np
 
 from simulation.loop import Results, simulate
-from simulation.config import REFERENCE_CONTROLLER, Config, CameraParams, square, center
+from simulation.config import REFERENCE_CONTROLLER, Config, CameraParams, MujocoParams, square, center
 from simulation.parallel import execute
 from simulation.mujoco_physics import rolling_acceleration, measured_restitution
 from simulation.session import Session, sandbox_config
@@ -46,8 +46,11 @@ INFO_KEY = "__info__"        # reserved key: date and environment of the referen
 # --- Reference cases ---------------------------------------------------------------------------
 # Every setting that a case relies on is written explicitly, so that changing a default value of Config
 # (as the brain or the robot improves) does not change the cases: they use the frozen reference controller
-# and motors (simulation/config.py), with latency compensation only where stated.
-CAMERA = Config(sensor="camera", camera=CameraParams(width=160, image_height=120), **REFERENCE_CONTROLLER)
+# and motors (simulation/config.py), with latency compensation only where stated, and the pyramidal friction
+# cone of MuJoCo (the default when the reference was first recorded).
+PYRAMID = MujocoParams(cone="pyramidal")
+CAMERA = Config(sensor="camera", camera=CameraParams(width=160, image_height=120), mujoco_params=PYRAMID,
+                **REFERENCE_CONTROLLER)
 PM = CAMERA.mujoco_params
 
 
@@ -66,8 +69,8 @@ def _push(dv: float) -> Config:
 SIMULATIONS = {
     "simple_plate": Config(physics="simple", mechanism=False, **REFERENCE_CONTROLLER),
     "simple_robot": Config(physics="simple", **REFERENCE_CONTROLLER),
-    "mujoco_plate": Config(mechanism=False, **REFERENCE_CONTROLLER),
-    "mujoco_robot": Config(**REFERENCE_CONTROLLER),
+    "mujoco_plate": Config(mechanism=False, mujoco_params=PYRAMID, **REFERENCE_CONTROLLER),
+    "mujoco_robot": Config(mujoco_params=PYRAMID, **REFERENCE_CONTROLLER),
     "camera": CAMERA,
     "throw_10deg_0.5": _throw(10, 0.5),
     "throw_10deg_0.6": _throw(10, 0.6),
@@ -114,14 +117,14 @@ def _physics() -> dict:
     k = CAMERA.plate.k_inertia
     theta = math.radians(10)
     mu_min = k * math.tan(theta) / (1 + k)
-    return {"rolling": np.asarray(rolling_acceleration(k, theta, friction=1.3 * mu_min)),
-            "sliding": np.asarray(rolling_acceleration(k, theta, friction=0.7 * mu_min)),
-            "restitution": np.asarray(measured_restitution())}
+    return {"rolling": np.asarray(rolling_acceleration(k, theta, friction=1.3 * mu_min, pm=PYRAMID)),
+            "sliding": np.asarray(rolling_acceleration(k, theta, friction=0.7 * mu_min, pm=PYRAMID)),
+            "restitution": np.asarray(measured_restitution(PYRAMID))}
 
 
 def _session() -> dict:
     """Sandbox: drop from 30.5 cm at the center, throw caught, throw too fast (fall)."""
-    s = Session(replace(sandbox_config(), **REFERENCE_CONTROLLER), record=False)
+    s = Session(replace(sandbox_config(), mujoco_params=PYRAMID, **REFERENCE_CONTROLLER), record=False)
     snapshots = []
 
     def advance(duration: float) -> None:

@@ -127,6 +127,8 @@ CASES = {
     "simple_robot_servo": Config(physics="simple", servo_lag=True, **REFERENCE_CONTROLLER),
     "simple_robot_full": Config(physics="simple", rolling_term=True, frame_terms=True, exact_gravity=True,
                                 servo_lag=True, **REFERENCE_CONTROLLER),
+    "simple_robot_full_noise_free": Config(physics="simple", rolling_term=True, frame_terms=True, exact_gravity=True,
+                                           servo_lag=True, sigma=0.0, sigma_height=0.0, **REFERENCE_CONTROLLER),
     "mujoco_plate": Config(mechanism=False, **REFERENCE_CONTROLLER),
     "mujoco_robot": Config(**REFERENCE_CONTROLLER),
     "mujoco_robot_noise_free": Config(sigma=0.0, sigma_height=0.0, **REFERENCE_CONTROLLER),
@@ -166,20 +168,15 @@ CASES = {
     "camera_fixed_gain": replace(BASE, adapt_model_gain=False),
     "latency_60ms_fixed_gain": replace(BASE, latency=3, adapt_model_gain=False),
     "solid_ball_fixed_gain": replace(BASE, mujoco_params=replace(PM, k_actual=2 / 5), adapt_model_gain=False),
-    # Section 12: the robustness variants without noise, in MuJoCo (also with Coulomb's friction cone) and in
+    # Section 12: the robustness variants without noise, in MuJoCo (also with its pyramidal friction cone) and in
     # our equations
     "mujoco_noise_free": MUJOCO_NOISE_FREE,
     **{f"mujoco_noise_free_{name}": variant(MUJOCO_NOISE_FREE, name) for name in VARIANTS},
-    "mujoco_noise_free_elliptic": replace(MUJOCO_NOISE_FREE, mujoco_params=replace(PM, cone="elliptic")),
-    "mujoco_noise_free_elliptic_friction_0.02": replace(MUJOCO_NOISE_FREE,
-                                                        mujoco_params=replace(PM, cone="elliptic", friction=0.02)),
+    "mujoco_noise_free_pyramidal": replace(MUJOCO_NOISE_FREE, mujoco_params=replace(PM, cone="pyramidal")),
+    "mujoco_noise_free_pyramidal_friction_0.02": replace(MUJOCO_NOISE_FREE,
+                                                         mujoco_params=replace(PM, cone="pyramidal", friction=0.02)),
     "equations": EQUATIONS,
     **{f"equations_{name}": variant(EQUATIONS, name) for name in VARIANTS},
-    # ... the effect of the noise (section 0) over more draws (DRAWS_FACTOR), in MuJoCo and in our equations
-    "noise_mujoco_robot": Config(**REFERENCE_CONTROLLER),
-    "noise_mujoco_robot_free": Config(**NOISE_FREE, **REFERENCE_CONTROLLER),
-    "noise_equations": Config(physics="simple", **FULL_EQUATION, **REFERENCE_CONTROLLER),
-    "noise_equations_free": Config(physics="simple", **FULL_EQUATION, **NOISE_FREE, **REFERENCE_CONTROLLER),
     # ... the effect of the mechanism (section 0), without noise: the arms halve the ramps of the plate
     "mechanism_plate": Config(physics="simple", mechanism=False, **NOISE_FREE, **REFERENCE_CONTROLLER),
     "mechanism_robot": Config(physics="simple", **NOISE_FREE, **REFERENCE_CONTROLLER),
@@ -194,7 +191,11 @@ CASES = {
     "throw_0.55_wait": throw_config(BASE, 0.55),
     "throw_0.55_no_wait": throw_config(replace(BASE, wait_for_speed=False), 0.55),
 }
-DRAWS_FACTOR = {"noise_mujoco_robot": 4, "noise_mujoco_robot_free": 4, "noise_equations": 4, "noise_equations_free": 4}
+# The validation of the simulator (sections 0 and 10, and the effect of the noise in section 12) is simulated over
+# 4 times more draws: with the reference controller, the noise of the synthetic sensor makes the return vary by
+# more than 1 mm from one draw to the next, and a share of 80 % would be uncertain by ±15 % over 10 draws
+DRAWS_FACTOR = {name: 4 for name in CASES if name.startswith(("simple_plate", "simple_robot"))
+                or name in ("mujoco_plate", "mujoco_robot", "mujoco_robot_noise_free", "camera_reference")}
 ROBUSTNESS = {"Nominal (ping-pong, μ = 1)": "camera", "Solid ball (k = 2/5)": "solid_ball",
               "Ball 10× heavier (27 g)": "heavy_ball", "Friction μ = 0.2": "friction_0.2",
               "Friction μ = 0.02": "friction_0.02", "Plate 2× heavier (0.5 kg)": "heavy_plate",
@@ -234,10 +235,11 @@ def mean_std(values):
     return statistics.fmean(v), statistics.stdev(v) if len(v) > 1 else math.nan
 
 
-# 97.5 % quantiles of Student's t distribution, for 1 to 30 degrees of freedom (1.96 beyond)
+# 97.5 % quantiles of Student's t distribution, for 1 to 39 degrees of freedom (1.96 beyond)
 T_975 = (12.706, 4.303, 3.182, 2.776, 2.571, 2.447, 2.365, 2.306, 2.262, 2.228,
          2.201, 2.179, 2.160, 2.145, 2.131, 2.120, 2.110, 2.101, 2.093, 2.086,
-         2.080, 2.074, 2.069, 2.064, 2.060, 2.056, 2.052, 2.048, 2.045, 2.042)
+         2.080, 2.074, 2.069, 2.064, 2.060, 2.056, 2.052, 2.048, 2.045, 2.042,
+         2.040, 2.037, 2.035, 2.032, 2.030, 2.028, 2.026, 2.024, 2.023)
 
 
 def paired_delta(a, b):
@@ -528,7 +530,8 @@ def write_report(data: dict, path: str = os.path.join("results", "report.md")) -
              "over the draws; draws where the ball fell are counted in 'Fallen' and left out of the "
              "other columns. Δ: mean of the paired differences over the same draws ± standard error, "
              "in **bold** when significant (paired t-test at the 5 % level: |Δ| > t × standard error, "
-             "t = 97.5 % quantile of Student's distribution, 2.26 for 10 draws).")
+             "t = 97.5 % quantile of Student's distribution, 2.26 for 10 draws). Sections 0 and 10, which validate "
+             f"the simulator: {DRAWS_FACTOR['mujoco_robot'] * n} draws.")
     kp, ki, kd = BASE.pid_gains()
     rep.text(f"The brain is the PID with its LQR gains (Kp = {kp:.2f}, Ki = {ki:.2f}, Kd = {kd:.2f}), its latency "
              "compensation, its integration zone and its aimed bounce (default settings): it is judged by the "
@@ -846,9 +849,10 @@ def write_gaps(rep: Report, runs: dict, data: dict) -> None:
         text_eq, eq = gap("equations", f"equations_{name}")
         text_cam, cam = gap("camera", name)
         rows.append([label, text_mj, text_eq, share(eq, mj), text_cam, f"{1000 * (cam - mj):+.2f} mm"])
-    text_el, el = gap("mujoco_noise_free_elliptic", "mujoco_noise_free_elliptic_friction_0.02")
+    text_py, py = gap("mujoco_noise_free_pyramidal", "mujoco_noise_free_pyramidal_friction_0.02")
     text_eq, eq = gap("equations", "equations_friction_0.02")
-    rows.append(["Friction μ = 0.02, MuJoCo with Coulomb's friction cone (elliptic)", text_el, text_eq, share(eq, el), "-", "-"])
+    rows.append(["Friction μ = 0.02, MuJoCo with its own friction cone (pyramidal, used until phase B)", text_py,
+                 text_eq, share(eq, py), "-", "-"])
     rep.table(["Robustness variant (section 4): gap of the return to the center to the nominal case",
                "MuJoCo, sensor without noise", "Our equations, sensor without noise", "Share reproduced",
                "MuJoCo + camera (section 4)", "Effect of the camera"], rows)
@@ -857,19 +861,20 @@ def write_gaps(rep: Report, runs: dict, data: dict) -> None:
              "(c·g 19 % higher than the gains of the PID assume) and a plate without calibration error leave the "
              "integral in excess; a calibration error ×2 leaves it short, and the ball arrives later. With μ = 0.02, "
              "the ball slides while the plate brakes it (rolling at 10° needs μ ≥ 0.071, section 1): its path to the "
-             "center changes, and the integral of one axis builds up more over the last 2 cm. By default, MuJoCo approximates the friction cone by a pyramid: between its axes, it "
-             "allows up to 29 % less friction than μ·N (1 - 1/√2); with Coulomb's round cone, our equations "
-             "reproduce MuJoCo. Last column: the effect of the camera on each gap (MuJoCo + camera minus MuJoCo "
+             "center changes, and the integral of one axis builds up more over the last 2 cm. The simulator uses "
+             "Coulomb's round friction cone; MuJoCo's own default, a pyramid, allows up to 29 % less friction than "
+             "μ·N between its axes (1 - 1/√2): with it, the ball slides more and the gap is larger (last row). "
+             "Last column: the effect of the camera on each gap (MuJoCo + camera minus MuJoCo "
              "without noise).")
 
     rows = []
     for label, indicator in (("Max distance between 2 s and 4 s", return_distance), ("Circle error", circle_error)):
-        text_mj, mj = gap("noise_mujoco_robot", "noise_mujoco_robot_free", indicator)
-        text_eq, eq = gap("noise_equations", "noise_equations_free", indicator)
+        text_mj, mj = gap("mujoco_robot", "mujoco_robot_noise_free", indicator)
+        text_eq, eq = gap("simple_robot_full", "simple_robot_full_noise_free", indicator)
         rows.append([label, text_mj, text_eq, share(eq, mj)])
     rep.table(["Effect of the noise of the synthetic sensor (section 0): noise removed", "MuJoCo", "Our equations",
                "Share reproduced"], rows)
-    rep.text(f"Reference controller of section 0, over {DRAWS_FACTOR['noise_mujoco_robot']} times more draws: the "
+    rep.text(f"Reference controller of section 0, over {DRAWS_FACTOR['mujoco_robot']} times more draws: the "
              "noise makes the return vary by more than 1 mm from one draw to the next. Our equations reproduce the "
              "effect: it does not come from MuJoCo. The motors cannot follow the noisy command with their gentle "
              "ramp, and lag it.")
@@ -881,10 +886,10 @@ def write_gaps(rep: Report, runs: dict, data: dict) -> None:
               [["3-arm robot", text_robot, "-"],
                ["3-arm robot, ramps and speed of its motors ×2", text_double,
                 share(robot - double, robot)]])
-    rep.text("Simple physics, reference controller. With the noise of section 0, this effect is not significant. The "
-             "motors turn about twice as much as the plate (the lever of the arms, section 0): with the same ramps, "
-             "the plate of the robot tilts more slowly. Motors twice as fast remove most of the gap; the rest comes "
-             "from the kinematics.")
+    rep.text("Simple physics, reference controller, without noise to measure the effect precisely (with the noise of "
+             f"section 0: {gap('simple_plate', 'simple_robot')[0]}). The motors turn about twice as much as the plate "
+             "(the lever of the arms, section 0): with the same ramps, the plate of the robot tilts more slowly. Motors "
+             "twice as fast remove most of the gap; the rest comes from the kinematics.")
 
     rows = []
     camera_return = [return_distance(r) for r in runs["latency_100ms_uncompensated"]]

@@ -87,8 +87,9 @@ a difference between two cases, paired over the same draws, is significant by a 
 5 % level (|mean| > t × standard error, t = 2.26 for 10 draws). Maximum speeds are found by bisection,
 to 0.01 m/s. The report opens with the objectives of the brain (met or not); sections 0 and 10 validate
 the simulator with a frozen reference controller (`simulation/config.py`: the hand-tuned PID without
-latency compensation, error integrated everywhere, with the motors of the first robot); section 12 explains
-every other gap of more than 0.5 mm, a few cases being simulated over 4 times more draws.
+latency compensation, error integrated everywhere, with the motors of the first robot), over 4 times more
+draws (the noise of the synthetic sensor makes their return vary by more than 1 mm); section 12 explains
+every other gap of more than 0.5 mm.
 
 Regression check: any refactoring must leave the results bit-identical. The reference
 (`results/reference/`, ignored by git) covers the main cases of the campaign, the physics validation
@@ -143,7 +144,7 @@ International CSV format: `,` separator, decimal point, UTF-8 encoding (no BOM).
 |---|---|
 | Plate | Disk of radius 15 cm, 0.25 kg; calibration error of the tilt 0.5° on θx, -0.3° on θy, unknown to the controller. At the start, the robot is already on: the plate holds the command 0 (hence the calibration error) and is at rest when the ball is placed |
 | Ball | Ping-pong: radius 2 cm, 2.7 g, hollow (J = 2/3·m·r²) |
-| Ball-plate contact | Target restitution 0.88 (ITTF rule: dropped from 30.5 cm, bounces back to 22-25 cm), stiffness 200 Hz, simulation step 0.5 ms; friction μ = 1 with the pyramidal friction cone of MuJoCo (its default; `cone="elliptic"`: Coulomb's round cone, which differs only when the ball slides) |
+| Ball-plate contact | Target restitution 0.88 (ITTF rule: dropped from 30.5 cm, bounces back to 22-25 cm), stiffness 200 Hz, simulation step 0.5 ms; friction μ = 1, Coulomb's round friction cone (`cone="elliptic"`, since the end of phase B; MuJoCo's own default, a pyramid, allows up to 29 % less friction between its axes when the ball slides) |
 | Mechanism | 3 arms of 5 cm, rods of 12 cm, ball joints 10 cm from the center. Without the arms (`mechanism=False`, angle-driven plate used to validate the simulator), the two angles of the plate follow the command with the profile of the motors, without steps |
 | Motors | 10 rad/s, 1/16 microsteps, ramps at 50 rad/s² for the small corrections and 400 rad/s² for the large moves (gap above 0.1 rad, since B4; peak torque about 0.31 N·m, to check on the torque curve of the chosen motor before construction: a 17HS4401S holds 0.40 N·m at rest, less at 10 rad/s), the latter only when the brain allows it: for a ball faster than 0.3 m/s (a slow ball would be thrown off the plate), max torque 0.4 N·m; in MuJoCo, position servos (kp = 50 N·m/rad, kv = 0.5 N·m·s/rad) that lag their target by τ = kv/kp = 10 ms |
 | Simple physics | Basic model ẍ = c·g·sin θ; optional additions (`Config`): rolling term r·θ̈, rotating-frame terms, exact gravity, servo lag, sliding (Coulomb friction). The full equation is derived in `simulation/simple_physics.py` and checked against MuJoCo; it explains the gap to MuJoCo on the angle-driven plate and on the robot (campaign, section 10), and with sliding, the remaining gaps (section 12) |

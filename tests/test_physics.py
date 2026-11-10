@@ -164,12 +164,11 @@ def test_sliding_ball_rolls_again():
 
 
 def test_friction_cone_option():
-    # Pyramidal: MuJoCo's default, the model is unchanged; elliptic: Coulomb's round cone
-    pm = Config().mujoco_params
-    assert "cone=" not in model_xml(Config())
-    elliptic = Config(mujoco_params=replace(pm, cone="elliptic"))
-    assert 'cone="elliptic"' in model_xml(elliptic)
-    assert mujoco.MjModel.from_xml_string(model_xml(elliptic)).opt.cone == mujoco.mjtCone.mjCONE_ELLIPTIC
+    # Elliptic (Coulomb's round cone) by default; pyramidal: MuJoCo's own default, no attribute in the model
+    assert mujoco.MjModel.from_xml_string(model_xml(Config())).opt.cone == mujoco.mjtCone.mjCONE_ELLIPTIC
+    pyramid = Config(mujoco_params=replace(Config().mujoco_params, cone="pyramidal"))
+    assert "cone=" not in model_xml(pyramid)
+    assert mujoco.MjModel.from_xml_string(model_xml(pyramid)).opt.cone == mujoco.mjtCone.mjCONE_PYRAMIDAL
 
 
 def test_dropped_ball():

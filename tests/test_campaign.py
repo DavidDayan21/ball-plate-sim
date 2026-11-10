@@ -76,7 +76,7 @@ def test_campaign_end_to_end(tmp_path, monkeypatch):
     assert "| Share of the MuJoCo gap | Max distance between 2 s and 4 s | Δ vs basic model | Share of the MuJoCo gap |" in text
     assert "| 10 cm | 30.5 cm | 0/2 |" in text                     # drop grid (section 5)
     assert "| solid (k = 2/5), 20 ms | estimated | 0/2 | 7.01 |" in text   # model gain (section 11)
-    assert "| Friction μ = 0.02, MuJoCo with Coulomb's friction cone (elliptic) |" in text   # gaps (section 12)
+    assert "| Friction μ = 0.02, MuJoCo with its own friction cone (pyramidal, used until phase B) |" in text
     assert "| 3-arm robot, ramps and speed of its motors ×2 |" in text and "below the 5 mm of the arrival" in text
     assert "## Objectives of the brain" in text and "| No fall in the robustness variants | 0/18 falls |" in text
     assert "(calibration error: " in text

@@ -48,8 +48,9 @@ class MujocoParams:
                                        # so it is set on both
     k_actual: float | None = None      # actual inertia of the ball; None: the one the controller assumes.
                                        # Also used by the simple physics
-    cone: str = "pyramidal"            # friction cone of the contacts: "pyramidal" (MuJoCo's default: 4 facets,
-                                       # up to 29 % less friction between its axes) or "elliptic" (Coulomb's law)
+    cone: str = "elliptic"             # friction cone of the contacts: "elliptic" (Coulomb's law, since the end of
+                                       # phase B) or "pyramidal" (MuJoCo's own default: 4 facets, up to 29 % less
+                                       # friction between its axes when the ball slides)
 
 
 @dataclass(frozen=True)
