@@ -128,7 +128,7 @@ Ball released without speed above a point of the line from the center to the sta
 | everywhere | 0/10 | 0.74 ± 0.02 s | 25.61 ± 0.63 mm | 14.20 ± 0.40 mm | - | 0.80 ± 0.01 mm | - |
 | within 20 mm | 0/10 | 1.19 ± 0.03 s | 4.77 ± 0.13 mm | 1.48 ± 0.09 mm | **-12.71 ± 0.13 mm** | 0.80 ± 0.01 mm | +0.00 ± 0.00 mm |
 
-Reference scenario, latency 20 ms with compensation. With the zone, each axis integrates its error only while it is below 20 mm: the integral no longer builds up during the approach, and only corrects the calibration error of the plate.
+Reference scenario, latency 20 ms with compensation. With the zone, each axis integrates its error only while it is below 20 mm: the integral no longer builds up during the approach, and only corrects the calibration error of the plate. What it still builds up over the last 20 mm of the approach (a few tenths of a degree) is about what the nominal calibration error requires; without calibration error, it is in excess: the ball overshoots the center and comes back as the integral empties, which makes this case the worst return to the center (section 4).
 
 
 ## 8. Gains of the PID: hand-tuned or by LQR

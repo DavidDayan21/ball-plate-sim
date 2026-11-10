@@ -615,7 +615,11 @@ def write_report(data: dict, path: str = os.path.join("results", "report.md")) -
                "Δ circle error (zone - everywhere)"], rows)
     rep.text(f"Reference scenario, latency 20 ms with compensation. With the zone, each axis integrates its "
              f"error only while it is below {zone_mm:.0f} mm: the integral no longer builds up during the "
-             "approach, and only corrects the calibration error of the plate.")
+             "approach, and only corrects the calibration error of the plate. What it still builds up over the "
+             f"last {zone_mm:.0f} mm of the approach (a few tenths of a degree) is about what the nominal "
+             "calibration error requires; without calibration error, it is in excess: the ball overshoots the "
+             "center and comes back as the integral empties, which makes this case the worst return to the center "
+             "(section 4).")
 
     rep.section("8. Gains of the PID: hand-tuned or by LQR")
     hand = {key: [circle_error(r) for r in runs[case]] for key, case in (("20", "camera_hand_gains"),
