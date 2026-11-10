@@ -127,6 +127,15 @@ def test_dropped_ball_caught_by_the_aimed_bounce():
     assert simulate(replace(cfg, airborne_height=math.inf)).fallen
 
 
+def test_slow_ball_not_thrown_off_by_the_fast_ramps():
+    # 100 ms of latency (synthetic sensor): with the fast ramps whatever the speed, the ball bounces most of
+    # the time; kept for a fast ball, it hardly ever leaves the plate
+    cfg = Config(latency=5)
+    assert simulate(replace(cfg, fast_speed=0.0)).airborne_fraction > 0.5
+    r = simulate(cfg)
+    assert r.airborne_fraction < 0.02 and tracking_error_rms(r, 12, 20) < 0.01
+
+
 def test_thrown_ball_needs_fast_motors():
     # 0.6 m/s from -10 cm (MuJoCo, synthetic sensor): caught with ramps of 300 rad/s² for the large moves,
     # lost with a single ramp of 50: the plate then needs 0.2 s to flip from the push toward the center to

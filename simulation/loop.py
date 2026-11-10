@@ -93,7 +93,7 @@ class Simulation:
                                       latency_compensation=cfg.latency if cfg.latency_compensation else 0,
                                       period=cfg.control_period, integration_zone=cfg.integration_zone,
                                       flight=flight, restitution=cfg.bounce_restitution, bounce_gain=cfg.bounce_gain,
-                                      wait_for_speed=cfg.wait_for_speed)
+                                      wait_for_speed=cfg.wait_for_speed, fast_speed=cfg.fast_speed)
 
     @property
     def t(self) -> float:
@@ -122,7 +122,7 @@ class Simulation:
             xr, yr, axr, ayr = cfg.trajectory(t)
             if measured is not None:        # before the first image arrives, the plate keeps its command
                 self.theta = self.ctrl.compute((xr, yr), measured, (axr, ayr), cfg.control_period)
-            phys.command(*self.theta)
+            phys.command(*self.theta, fast=self.ctrl.fast_ramps)
             for series, val in ((r.t, t), (r.x, bx), (r.y, by), (r.x_ref, xr), (r.y_ref, yr),
                                (r.theta_x, self.theta[0]), (r.theta_y, self.theta[1]),
                                (r.actual_tilt, phys.actual_tilt()),

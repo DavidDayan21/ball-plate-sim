@@ -196,7 +196,10 @@ class MujocoPhysics:
         bx, by, bz = self.ball_3d()
         return bz < 0 or (math.hypot(bx, by) > self.p.plate_radius and bz < 2 * self.p.ball_radius)
 
-    def command(self, theta_x: float, theta_y: float) -> None:
+    def command(self, theta_x: float, theta_y: float, fast: bool = True) -> None:
+        """fast: the motors may use their fast ramp for the large moves (simulation/motor.py)."""
+        for m in self.motors:
+            m.fast_allowed = fast
         # Calibration error: the angle actually targeted = commanded angle + bias (unknown to the PID)
         target_x, target_y = theta_x + self.p.bias_x, theta_y + self.p.bias_y
         if self.mechanism:

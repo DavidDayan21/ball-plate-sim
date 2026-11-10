@@ -97,7 +97,10 @@ class SimplePhysics:
     def fallen(self) -> bool:
         return math.hypot(self.x, self.y) > self.p.plate_radius
 
-    def command(self, theta_x: float, theta_y: float) -> None:
+    def command(self, theta_x: float, theta_y: float, fast: bool = True) -> None:
+        """fast: the motors may use their fast ramp for the large moves (simulation/motor.py)."""
+        for m in self.motors:
+            m.fast_allowed = fast
         if not self.mechanism:
             for m, a in zip(self.motors, (theta_x, theta_y)):
                 m.request(a)

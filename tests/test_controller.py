@@ -121,6 +121,19 @@ def test_integration_zone_cannot_correct_a_larger_calibration_error():
     assert math.isclose(X[-1], bias / 1.0, rel_tol=1e-3)
 
 
+def test_fast_ramps_only_for_a_fast_ball():
+    # The brain allows the fast ramps of the motors only for a ball faster than fast_speed (relative speed
+    # estimated by the derivative of the PIDs): never before the first speed is known
+    from controller.plate import PlateController
+    ctrl = PlateController(1.0, 1.0, 0.5, math.radians(10), 0.0, CG, fast_speed=0.3)
+    assert not ctrl.fast_ramps
+    for speed, allowed in ((0.1, False), (0.5, True)):
+        ctrl = PlateController(1.0, 1.0, 0.5, math.radians(10), 0.0, CG, fast_speed=0.3)
+        for k in range(3):
+            ctrl.compute((0.0, 0.0), (-0.1 + speed * 0.02 * k, 0.0), (0.0, 0.0), 0.02)
+        assert ctrl.fast_ramps == allowed
+
+
 def test_lqr_double_integrator():
     # ẍ = u with the cost ∫(q·x² + u²)·dt: known solution K = (√q, √(2·√q))
     q = 4.0

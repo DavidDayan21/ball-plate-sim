@@ -121,14 +121,16 @@ CASES = {
     **{drop_case(d, h): drop_config(d, h) for d in DROP_DISTANCES for h in DROP_HEIGHTS},
     **{drop_case(d, h, aimed=False): replace(drop_config(d, h), airborne_height=math.inf)
        for d in DROP_DISTANCES for h in DROP_HEIGHTS},
-    # The brain without one of its parts: latency compensation (sections 6 and 9), integration zone (section 7),
-    # LQR gains (section 8)
+    # The brain without one of its parts: latency compensation (sections 6 and 9), fast ramps kept for a fast
+    # ball (section 6), integration zone (section 7), LQR gains (section 8)
     "camera_uncompensated": replace(BASE, latency_compensation=False),
     "latency_60ms_uncompensated": replace(BASE, latency=3, latency_compensation=False),
     "latency_100ms_uncompensated": replace(BASE, latency=5, latency_compensation=False),
     "square_uncompensated": replace(BASE, trajectory=square, duration=16.0, start_position=(0.05, 0.05),
                                     latency_compensation=False),
     "camera_integral_everywhere": replace(BASE, integration_zone=math.inf),
+    "camera_fast_always": replace(BASE, fast_speed=0.0),
+    "latency_100ms_fast_always": replace(BASE, latency=5, fast_speed=0.0),
     "camera_hand_gains": HAND_GAINS,
     "no_calibration_error_hand_gains": with_calibration_error(HAND_GAINS, 0.0),
     "calibration_error_x2_hand_gains": with_calibration_error(HAND_GAINS, 2.0),
@@ -525,8 +527,8 @@ def write_report(data: dict, path: str = os.path.join("results", "report.md")) -
     rep.text(f"The first image arrives one latency ({1000 * BASE.latency * BASE.control_period:.0f} ms) after the "
              f"throw; the brain waits for the second one, which gives the speed of the ball, before tilting the "
              f"plate: at the first one, the position alone would tilt it the wrong way. Motor ramps: "
-             f"{BASE.fast_acceleration:.0f} rad/s² for the large moves (gap above {BASE.fast_move} rad), "
-             f"{BASE.max_acceleration:.0f} rad/s² for the small corrections.")
+             f"{BASE.fast_acceleration:.0f} rad/s² for the large moves (gap above {BASE.fast_move} rad) of a ball "
+             f"faster than {BASE.fast_speed} m/s, {BASE.max_acceleration:.0f} rad/s² otherwise.")
     rep.section("3. Push on the ball at rest at the center (t = 1 s)")
     rep.table(["Max tilt", "Max impulse absorbed (Δv)"] + headers, [limit_row("push", "±10°")])
     rep.text(f"Maximum speeds found by bisection, to {SPEED_STEP:.2f} m/s, between {SPEED_RANGE[0]} and "
@@ -592,6 +594,21 @@ def write_report(data: dict, path: str = os.path.join("results", "report.md")) -
                          fmt([circle_error(r) for r in rs], " mm", scale=1000), d_error])
     rep.table(["Latency", "Compensation", "Fallen", "Max distance between 2 s and 4 s",
                "Δ (with - without)", "Circle error", "Δ circle error (with - without)"], rows)
+    rows = []
+    for ms, always, brain in ((20, "camera_fast_always", "camera"), (100, "latency_100ms_fast_always", "latency_100ms")):
+        for label, case in (("whatever the speed of the ball", always),
+                            (f"only above {BASE.fast_speed} m/s (the brain)", brain)):
+            rs = runs[case]
+            delta = "-" if case == always else fmt_delta([return_distance(r) for r in runs[always]],
+                                                         [return_distance(r) for r in rs], " mm", scale=1000)
+            rows.append([f"{ms} ms", label, fallen(rs), fmt([return_distance(r) for r in rs], " mm", scale=1000), delta,
+                         fmt([circle_error(r) for r in rs], " mm", scale=1000), fmt([airborne(r) for r in rs], " %", 1, 100)])
+    rep.table(["Latency", "Fast ramps of the motors", "Fallen", "Max distance between 2 s and 4 s", "Δ (brain - always)",
+               "Circle error", "Airborne"], rows)
+    rep.text("With compensation. The fast ramp of the motors throws a slow ball off the plate: 10 cm from the "
+             "center, the plate under the ball accelerates downward faster than g beyond about 100 rad/s² of plate "
+             "(r·θ̈ > g), about 200 rad/s² of motor. With a large latency, the ball then keeps bouncing; the brain "
+             "keeps the fast ramps for a fast ball (thrown, pushed), which needs them.")
 
     rep.section("7. Integral action: error integrated everywhere or only near the setpoint")
     zone_mm = 1000 * BASE.integration_zone

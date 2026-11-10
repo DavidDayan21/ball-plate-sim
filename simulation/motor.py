@@ -9,6 +9,8 @@ a bounded acceleration (trapezoidal profile, like stepper motor drivers).
     fast_move finite: two ramps. A large move (gap to the target above fast_move) uses fast_acceleration
     until the motor has stopped on its target; the small corrections keep the gentle max_acceleration,
     so that the plate does not follow the noise of the command (which would make the ball hop).
+    fast_allowed (set with each command by the brain): False, no large move starts with the fast ramp, and
+    one already started ends as soon as the motor has slowed down.
 
 Torque and inertia are not modeled here: in MuJoCo, this profile is the setpoint
 of the motor servo, which has a limited torque.
@@ -37,6 +39,7 @@ class Motor:
         self.max_acceleration = max_acceleration  # rad/s²
         self.fast_acceleration, self.fast_move = fast_acceleration, fast_move
         self.fast = False                  # a large move is in progress
+        self.fast_allowed = True           # the fast ramp may be used by the next large moves
         self.resolution = resolution       # rad per step
         self.angle_min, self.angle_max = angle_min, angle_max
 
@@ -52,9 +55,10 @@ class Motor:
             max_step = self.max_speed * dt
             self.position += max(-max_step, min(max_step, gap))
             return self.position
-        if abs(gap) > self.fast_move:
+        fast_move = self.fast_move if self.fast_allowed else math.inf
+        if abs(gap) > fast_move:
             self.fast = True
-        elif self.fast and abs(gap) < self.fast_move / 4 and abs(self.velocity) < 0.5:
+        elif self.fast and abs(gap) < fast_move / 4 and abs(self.velocity) < 0.5:
             self.fast = False              # stopped near the target: the large move is over
         a_max = self.fast_acceleration if self.fast else self.max_acceleration
         # Ramp: aim for the highest speed that still allows stopping on the target

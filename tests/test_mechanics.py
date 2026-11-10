@@ -71,5 +71,7 @@ def test_motor_two_ramps():
     assert math.isclose(max_acceleration(m, 0.5, 500), 300.0, rel_tol=1e-6)
     assert abs(m.position - 0.5) < 1e-3 and not m.fast       # stopped on its target: back to the gentle ramp
     assert max_acceleration(m, 0.55, 500) <= 50.0 + 1e-6      # small correction (gap 0.05 rad)
+    m.fast_allowed = False                                   # refused by the brain: gentle ramp for a large move
+    assert max_acceleration(m, 0.05, 500) <= 50.0 + 1e-6
     single = Motor(0.0, max_speed=10.0, resolution=1e-4, max_acceleration=50.0, fast_acceleration=300.0)
     assert max_acceleration(single, 0.5, 1000) <= 50.0 + 1e-6

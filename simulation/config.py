@@ -155,6 +155,8 @@ class Config:
     bounce_restitution: float = 0.87   # aimed bounce: restitution assumed (ITTF rule 0.85 to 0.91; MuJoCo 0.874)
     bounce_gain: float = 0.5           # aimed bounce: share of the distance to the setpoint covered by each bounce
     wait_for_speed: bool = True        # first measurement: plate kept until the speed of the ball is known
+    fast_speed: float = 0.3            # (m/s) the fast ramps of the motors only for a ball faster than this: a slow
+                                       # ball would be thrown off the plate (0: whatever the speed)
     integration_zone: float = 0.02     # (m) each axis integrates its error only within this distance of the
                                        # setpoint (math.inf: everywhere). It must exceed the offset θb/Kp that
                                        # a calibration error θb leaves without integral: 2 cm corrects up to
