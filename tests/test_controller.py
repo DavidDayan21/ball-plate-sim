@@ -9,12 +9,13 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
+from controller.adaptation import ModelGainEstimator
 from controller.flight import FlightEstimator
 from controller.lqr import lqr, pid_gains
 from controller.pid import PID
 from controller.plate import LatencyPredictor
 from simulation.camera import inverse_rotation
-from simulation.config import G, REFERENCE_GAINS, Config, PlateParams
+from simulation.config import G, REFERENCE_GAINS, Config, PlateParams, circle
 from simulation.simple_physics import acceleration
 
 P = PlateParams()
@@ -300,3 +301,50 @@ def test_pid_waits_for_the_speed():
     plain.compute(0.0, 0.10, 0.02)
     plain.compute(0.0, 0.11, 0.02)
     assert plain.derivative == pytest.approx(-0.5 * 0.02 / 0.07)   # filtered: (1 - a)·raw, a = 0.05 / 0.07
+
+
+# --- Adaptive control: estimation of the model gain c·g (B6) ------------------------------------
+def circle_with_estimator(true_gain, nominal_gain=CG, latency=1, duration=12.0, offset=(0.0, 0.0),
+                          airborne_every=0, bias=(0.0087, -0.0052)):
+    """Ball on the circle of the reference scenario, model of the estimator exact: on each axis
+    x(j+1) - 2·x(j) + x(j-1) = T²·G·((u(j-1) + u(j))/2 + θb). PD on the true position error, feedforward with the
+    nominal gain; the estimator receives the positions N periods late. Returns the estimator."""
+    T = 0.02
+    previous_setpoint = np.array(circle(-T)[:2])
+    est = ModelGainEstimator(nominal_gain, T, latency, math.radians(10))
+    x = [np.array([0.06 * math.cos(math.pi / 4), 0.06 * math.sin(math.pi / 4)])] * 2   # x(j-1), x(j)
+    u_prev = np.zeros(2)
+    history = [x[1]] * (latency + 1)
+    for j in range(round(duration / T)):
+        xr, yr, axr, ayr = circle(j * T)
+        setpoint = np.array([xr, yr])
+        est.update(tuple(history[-(latency + 1)]), tuple(setpoint + offset),
+                   airborne=airborne_every > 0 and j % airborne_every == 0)
+        error_speed = (setpoint - previous_setpoint - x[1] + x[0]) / T
+        previous_setpoint = setpoint
+        u = np.array([axr, ayr]) / nominal_gain + 1.89 * (setpoint - x[1]) + 0.8 * error_speed
+        est.command(tuple(u))
+        x = [x[1], 2 * x[1] - x[0] + T ** 2 * true_gain * ((u_prev + u) / 2 + np.array(bias))]
+        u_prev = u
+        history.append(x[1])
+    return est
+
+
+def test_estimator_finds_the_gain_of_the_ball():
+    solid = G / (1 + 2 / 5)                          # c·g of a solid ball, 19 % above the nominal (hollow) one
+    for latency in (1, 3):
+        assert circle_with_estimator(solid, latency=latency).gain == pytest.approx(solid, rel=0.005)
+    assert circle_with_estimator(CG).gain == pytest.approx(CG, rel=0.005)
+
+
+def test_estimator_waits_for_a_calm_rolling_ball():
+    solid = G / (1 + 2 / 5)
+    # Ball 2 cm away from its setpoint, or in the air every 0.5 s: the gain keeps its nominal value
+    assert circle_with_estimator(solid, offset=(0.02, 0.0)).gain == CG
+    assert circle_with_estimator(solid, airborne_every=25).gain == CG
+    # Ball at rest on its setpoint: nothing to learn either
+    est = ModelGainEstimator(CG, 0.02, 1, math.radians(10))
+    for _ in range(500):
+        est.update((0.01, 0.0), (0.01, 0.0), airborne=False)
+        est.command((0.0, 0.0))
+    assert est.gain == CG

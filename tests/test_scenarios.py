@@ -2,8 +2,10 @@
 import math
 from dataclasses import replace
 
+import pytest
+
 from simulation.loop import simulate
-from simulation.config import Config, center
+from simulation.config import G, Config, center
 from simulation.metrics import max_distance, theta_std, tracking_error_rms
 
 SIMPLE_PLATE = Config(physics="simple", mechanism=False)
@@ -152,3 +154,15 @@ def test_thrown_ball_needs_fast_motors():
     cfg = Config(trajectory=center, start_position=(-0.1, 0.0), start_velocity=(0.6, 0.0), duration=5.0)
     assert not simulate(cfg).fallen
     assert simulate(replace(cfg, fast_move=math.inf)).fallen
+
+
+def test_adaptation_learns_the_solid_ball():
+    # Solid ball (k = 2/5): its c·g is 19 % above the nominal one (hollow ball). Nothing is learned before the
+    # circle (8 s: return to the center, then a still point); on the circle, the estimate reaches it and the
+    # feedforward no longer overshoots (with the gain fixed: 2.8 mm)
+    cfg = Config(mujoco_params=replace(Config().mujoco_params, k_actual=2 / 5))
+    r = simulate(cfg)
+    nominal = cfg.plate.coefficient * G
+    assert not r.fallen and all(g == nominal for t, g in zip(r.t, r.model_gain) if t < 8)
+    assert r.model_gain[-1] == pytest.approx(G / (1 + 2 / 5), rel=0.02)
+    assert tracking_error_rms(r, 12, 20) < 0.002

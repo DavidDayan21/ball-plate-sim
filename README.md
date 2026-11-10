@@ -18,7 +18,7 @@ Building the real robot remains a distant goal: the code will then be ready.
 | Realistic contact | Ping-pong ball bounce compliant with the ITTF rule (e = 0.874) | Done |
 | 3D sandbox | Throws, drops, bounces, pushes, setpoints, data of every attempt | Done |
 | A. Reliable measurements | Bit-exact regression check, spread over N draws, robust metrics, simple physics → MuJoCo gap | Done |
-| B. PID brain | Objectives in the report, integral limited to the neighborhood of the setpoint, aimed bounce of a dropped ball, thrown ball (start with the speed, fast motor ramps for the large moves), gains tuned by LQR, adaptive control | **In progress** |
+| B. PID brain | Objectives in the report, integral limited to the neighborhood of the setpoint, aimed bounce of a dropped ball, thrown ball (start with the speed, fast motor ramps for the large moves), gains tuned by LQR, adaptive control (model gain c·g estimated online) | **In progress** |
 | C. Local AI brain | Training in MuJoCo, same rules as the PID (sensor, motors, ±10°) | To do |
 | D. Software for the general public | MuJoCo physics in our interface, choice of brain, comparison | To do |
 | E. Construction (distant) | Design, real-world defects, complete error budget | Later |
@@ -34,6 +34,7 @@ no fall in the robustness variants.
 controller/              What would run on the real robot (independent of the simulator)
   pid.py                 PID: derivative filter, saturation, anti-windup, integration zone, feedforward
   plate.py               2 PIDs (x, y axes) + feedforward + latency predictor + aimed bounce
+  adaptation.py          Adaptive control: online estimation of the model gain c·g (inertia of the ball)
   flight.py              Ball in the air: ballistic tracking, prediction of the impact
   kinematics.py          Geometry, inverse (exact) and forward (Newton) kinematics
 simulation/
@@ -146,7 +147,7 @@ International CSV format: `,` separator, decimal point, UTF-8 encoding (no BOM).
 | Motors | 10 rad/s, 1/16 microsteps, ramps at 50 rad/s² for the small corrections and 400 rad/s² for the large moves (gap above 0.1 rad, since B4; peak torque about 0.31 N·m, to check against a datasheet), the latter only when the brain allows it: for a ball faster than 0.3 m/s (a slow ball would be thrown off the plate), max torque 0.4 N·m; in MuJoCo, position servos (kp = 50 N·m/rad, kv = 0.5 N·m·s/rad) that lag their target by τ = kv/kp = 10 ms |
 | Simple physics | Basic model ẍ = c·g·sin θ; optional additions (`Config`): rolling term r·θ̈, rotating-frame terms, exact gravity, servo lag. The full equation is derived in `simulation/simple_physics.py` and checked against MuJoCo; it explains the gap to MuJoCo on the angle-driven plate and on the robot (campaign, section 10) |
 | Sensor | Camera 50 cm above the plate, 50 Hz, latency 20 ms (the first image arrives 20 ms after the start); height of the ball from its apparent size (± 3 mm), a ball partly out of the image is not measured |
-| Controller (PID brain) | 50 Hz, gains by LQR (since B3: Kp = 1.89 rad/m, Ki = 1.75 rad/(m·s), Kd = 0.80 rad·s/m, from a position error of 20 cm, an integral over 0.5 s and a tilt of 10° of equal cost; before: Kp = 1, Ki = 1, ζ = 0.7), max tilt ±10°, latency compensation by prediction, error integrated only within 2 cm of the setpoint on each axis; ball in the air (measured above 1.5 cm): its parabola is fitted and the plate is tilted so that the bounce sends it halfway back to the setpoint (restitution assumed 0.87); at the first measurement, the plate is kept until the speed of the ball is known. All on by default |
+| Controller (PID brain) | 50 Hz, gains by LQR (since B3: Kp = 1.89 rad/m, Ki = 1.75 rad/(m·s), Kd = 0.80 rad·s/m, from a position error of 20 cm, an integral over 0.5 s and a tilt of 10° of equal cost; before: Kp = 1, Ki = 1, ζ = 0.7), max tilt ±10°, latency compensation by prediction, error integrated only within 2 cm of the setpoint on each axis; ball in the air (measured above 1.5 cm): its parabola is fitted and the plate is tilted so that the bounce sends it halfway back to the setpoint (restitution assumed 0.87); at the first measurement, the plate is kept until the speed of the ball is known; model gain c·g of the feedforward and of the latency predictor estimated online (since B6: recursive least squares on the measured accelerations and the commands, only while the ball rolls within 1 cm of its setpoint; from the hollow ball at every attempt). All on by default |
 
 ## Technologies
 

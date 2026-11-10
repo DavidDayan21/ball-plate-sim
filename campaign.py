@@ -15,6 +15,7 @@ The 160×120 camera is as accurate as 320×240, and faster to simulate.
     9. Square trajectory
     10. Gap between the simple physics and MuJoCo, explained term by term (circle and return), on the
         angle-driven plate and on the robot
+    11. Adaptive control: the model gain c·g estimated online, for a hollow and a solid ball
 
 Every case is simulated over N draws, so that each result comes with its spread:
     - draw 0 is the nominal configuration (noise seed 0, nominal start position);
@@ -135,6 +136,10 @@ CASES = {
     "no_calibration_error_hand_gains": with_calibration_error(HAND_GAINS, 0.0),
     "calibration_error_x2_hand_gains": with_calibration_error(HAND_GAINS, 2.0),
     "latency_60ms_hand_gains": replace(HAND_GAINS, latency=3),
+    # The brain with the model gain fixed (section 11)
+    "camera_fixed_gain": replace(BASE, adapt_model_gain=False),
+    "latency_60ms_fixed_gain": replace(BASE, latency=3, adapt_model_gain=False),
+    "solid_ball_fixed_gain": replace(BASE, mujoco_params=replace(PM, k_actual=2 / 5), adapt_model_gain=False),
 }
 ROBUSTNESS = {"Nominal (ping-pong, μ = 1)": "camera", "Solid ball (k = 2/5)": "solid_ball",
               "Ball 10× heavier (27 g)": "heavy_ball", "Friction μ = 0.2": "friction_0.2",
@@ -279,6 +284,11 @@ def arrival(r) -> float:
 
 def overshoot_after_arrival(r) -> float:
     return math.nan if r.fallen else overshoot(r, 4)
+
+
+def final_model_gain(r) -> float:
+    """Model gain c·g used by the controller at the end of the scenario."""
+    return math.nan if r.fallen else r.model_gain[-1]
 
 
 def jitter(r) -> float:
@@ -701,6 +711,37 @@ def write_report(data: dict, path: str = os.path.join("results", "report.md")) -
              "A gap is explained when the share predicted by a model is within 80 to 120 %. The additions do not "
              "add up: on the return to the center, the rotating-frame terms and the servo lag act in opposite "
              "directions.")
+
+    rep.section("11. Adaptive control: the model gain c·g estimated online (latency compensation, camera)")
+    rows = []
+    for ball, k, latency_ms, fixed, adaptive in (
+            ("hollow (k = 2/3)", K, 20, "camera_fixed_gain", "camera"),
+            ("hollow (k = 2/3)", K, 60, "latency_60ms_fixed_gain", "latency_60ms"),
+            ("solid (k = 2/5)", 2 / 5, 20, "solid_ball_fixed_gain", "solid_ball")):
+        for estimated, case in ((False, fixed), (True, adaptive)):
+            rs = runs[case]
+            if estimated:
+                d_error = fmt_delta([circle_error(r) for r in runs[fixed]], [circle_error(r) for r in rs],
+                                    " mm", scale=1000)
+                d_return = fmt_delta([return_distance(r) for r in runs[fixed]], [return_distance(r) for r in rs],
+                                     " mm", scale=1000)
+            else:
+                d_error = d_return = "-"
+            rows.append([f"{ball}, {latency_ms} ms", "estimated" if estimated else "fixed",
+                         fallen(rs), f"{G / (1 + k):.2f}", fmt([final_model_gain(r) for r in rs]),
+                         fmt([circle_error(r) for r in rs], " mm", scale=1000), d_error,
+                         fmt([return_distance(r) for r in rs], " mm", scale=1000), d_return])
+    rep.table(["Ball, latency", "Model gain", "Fallen", "g/(1 + k)", f"c·g used at {BASE.duration:.0f} s",
+               "Circle error", "Δ (estimated - fixed)", "Max distance between 2 s and 4 s",
+               "Δ (estimated - fixed)"], rows)
+    rep.text("c·g in (m/s²)/rad; fixed: the value of the hollow ball (nominal). The controller estimates c·g from "
+             "the measured accelerations of the ball and the commands it sent (controller/adaptation.py): least "
+             "squares, recursive, on low-pass filtered signals, from the nominal value at every attempt. It uses "
+             "them only while the ball rolls (at least 3 cm/s) within 1 cm of its setpoint for at least 1 s: "
+             "elsewhere the linear model does not hold (near rest; during a transient, the plate lags its "
+             "command). In the reference scenario, only the circle (from 8 s) excites it: the return to the center "
+             "(before 4 s) does not depend on it. The estimate replaces the nominal c·g in the feedforward and in "
+             "the latency predictor; the gains of the PID stay those of the nominal model.")
 
     rep.save(path)
     print(f"\nReport written to {path}")

@@ -161,6 +161,9 @@ class Config:
                                        # setpoint (math.inf: everywhere). It must exceed the offset θb/Kp that
                                        # a calibration error θb leaves without integral: 2 cm corrects up to
                                        # 0.02·Kp rad (2.2° with the LQR gains)
+    adapt_model_gain: bool = True      # the model gain c·g of the feedforward and of the latency predictor is
+                                       # estimated online (controller/adaptation.py, since B6), from the nominal
+                                       # value at every attempt; False: c·g of the hollow ball, fixed
 
     def pid_gains(self) -> tuple:
         """(Kp, Ki, Kd) of each axis, in rad/m, rad/(m·s) and rad·s/m."""
@@ -171,11 +174,12 @@ class Config:
 
 # The frozen reference controller: the PID before the brain was improved (hand-tuned gains Kp = 1 rad/m,
 # Ki = 1 rad/(m·s) and the Kd giving a damping ζ = 0.7 to the PD, 2·ζ·√(c·g·Kp) = c·g·Kd; no latency compensation;
-# error integrated everywhere; ball never considered in the air; no wait for the speed), with the motors of the
-# first robot (single ramp of 50 rad/s²: the ball never hops, which the simple physics does not model).
+# error integrated everywhere; ball never considered in the air; no wait for the speed; model gain fixed), with the
+# motors of the first robot (single ramp of 50 rad/s²: the ball never hops, which the simple physics does not model).
 # The validation of the simulator (campaign sections 0 and 10) and the regression check use it, so that their
 # results do not change when the brain or the robot improves.
 _CG = PlateParams().coefficient * G
 REFERENCE_GAINS = (1.0, 1.0, 2 * 0.7 * math.sqrt(_CG * 1.0) / _CG)
 REFERENCE_CONTROLLER = {"gains": REFERENCE_GAINS, "latency_compensation": False, "integration_zone": math.inf,
-                        "airborne_height": math.inf, "wait_for_speed": False, "fast_move": math.inf}
+                        "airborne_height": math.inf, "wait_for_speed": False, "fast_move": math.inf,
+                        "adapt_model_gain": False}

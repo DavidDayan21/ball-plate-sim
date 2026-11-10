@@ -1,6 +1,7 @@
 """2D plate controller: one PID per axis + feedforward
 + compensation of the measurement latency by prediction (optional, disabled by default)
-+ conditional integration (optional, disabled by default).
++ conditional integration (optional, disabled by default)
++ online estimation of the model gain c·g (optional, disabled by default).
 
 Independent of the simulator: it receives the setpoint, the measurement and the desired acceleration,
 and returns the two tilts (θx, θy) to apply to the plate.
@@ -8,6 +9,7 @@ and returns the two tilts (θx, θy) to apply to the plate.
 from collections import deque
 import math
 
+from controller.adaptation import ModelGainEstimator
 from controller.flight import FlightEstimator
 from controller.pid import PID
 
@@ -72,13 +74,17 @@ class PlateController:
     of the noise by the prediction. A slow ball has no need of the fast ramp, which would throw it off the
     plate: the plate under it would accelerate downward faster than g (r·θ̈ > g, beyond about 100 rad/s² of
     plate 10 cm from the center).
+
+    estimator: estimator of the model gain (controller/adaptation.py). Given, it replaces model_gain, for the
+    feedforward and the latency predictor, by its estimate of each period (the gains of the PID stay those of
+    the nominal model).
     """
 
     def __init__(self, kp: float, ki: float, kd: float, theta_max: float,
                  tau_d: float, model_gain: float, feedforward: bool = True,
                  latency_compensation: int = 0, period: float = 0.02, integration_zone: float = math.inf,
                  flight: FlightEstimator = None, restitution: float = 0.87, bounce_gain: float = 0.5,
-                 wait_for_speed: bool = False, fast_speed: float = 0.0):
+                 wait_for_speed: bool = False, fast_speed: float = 0.0, estimator: ModelGainEstimator = None):
         self.pid_x = PID(kp, ki, kd, -theta_max, theta_max, tau_d, integration_zone, wait_for_speed)
         self.pid_y = PID(kp, ki, kd, -theta_max, theta_max, tau_d, integration_zone, wait_for_speed)
         self.model_gain = model_gain
@@ -90,6 +96,7 @@ class PlateController:
         self.fast_speed = fast_speed
         self.fast_ramps = False                # no speed estimated yet
         self.previous_position = None          # last measured (x, y)
+        self.estimator = estimator
 
     def compute(self, setpoint, measurement, setpoint_acc, dt: float):
         """setpoint, setpoint_acc: (x, y) pairs; measurement: (x, y) or (x, y, height of the ball).
@@ -102,6 +109,11 @@ class PlateController:
         if self.flight is not None:
             self.flight.observe(tuple(measurement) if len(measurement) == 3 else (*measurement, 0.0))
             airborne = len(measurement) == 3 and measurement[2] > self.flight.airborne_height
+        if self.estimator is not None:
+            self.estimator.update(position, setpoint, airborne)
+            self.model_gain = self.estimator.gain
+            for predictor in self.predictors or ():
+                predictor.g = self.model_gain
         if self.predictors is not None:
             measurement = (self.predictors[0].predict(measurement[0]), self.predictors[1].predict(measurement[1]))
         ffx = setpoint_acc[0] / self.model_gain if self.feedforward else 0.0
@@ -119,6 +131,8 @@ class PlateController:
             self.predictors[1].store(theta_y)
         if self.flight is not None:
             self.flight.command((theta_x, theta_y))
+        if self.estimator is not None:
+            self.estimator.command((theta_x, theta_y))
         return theta_x, theta_y
 
     def aimed_tilt(self, impact, setpoint):

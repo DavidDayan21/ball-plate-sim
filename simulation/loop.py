@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 import math
 import time
 
+from controller.adaptation import ModelGainEstimator
 from controller.flight import FlightEstimator
 from controller.plate import PlateController
 from simulation.sensor import Sensor
@@ -27,6 +28,8 @@ class Results:
     y_ref: list = field(default_factory=list)
     theta_x: list = field(default_factory=list)              # controller commands (rad)
     theta_y: list = field(default_factory=list)
+    model_gain: list = field(default_factory=list)           # c·g used by the controller ((m/s²)/rad): nominal,
+                                                             # or estimated online (adapt_model_gain)
     actual_tilt: list = field(default_factory=list)          # actual (θx, θy) of the plate (rad)
     alphas: list = field(default_factory=list)               # angles of the 3 motors (rad)
     velocity: list = field(default_factory=list)             # (vx, vy) of the ball, plate frame (m/s)
@@ -88,12 +91,16 @@ class Simulation:
             self.sensor = Sensor(cfg.sigma, cfg.latency, cfg.seed, cfg.sigma_height)
         flight = (FlightEstimator(cfg.geometry.height, cfg.plate.ball_radius, cfg.control_period, cfg.latency,
                                   cfg.airborne_height, G) if cfg.airborne_height < math.inf else None)
+        model_gain = cfg.plate.coefficient * G
+        estimator = (ModelGainEstimator(model_gain, cfg.control_period, cfg.latency, cfg.theta_max)
+                     if cfg.adapt_model_gain else None)
         self.ctrl = PlateController(*cfg.pid_gains(), cfg.theta_max, cfg.tau_d,
-                                      model_gain=cfg.plate.coefficient * G, feedforward=cfg.feedforward,
+                                      model_gain=model_gain, feedforward=cfg.feedforward,
                                       latency_compensation=cfg.latency if cfg.latency_compensation else 0,
                                       period=cfg.control_period, integration_zone=cfg.integration_zone,
                                       flight=flight, restitution=cfg.bounce_restitution, bounce_gain=cfg.bounce_gain,
-                                      wait_for_speed=cfg.wait_for_speed, fast_speed=cfg.fast_speed)
+                                      wait_for_speed=cfg.wait_for_speed, fast_speed=cfg.fast_speed,
+                                      estimator=estimator)
 
     @property
     def t(self) -> float:
@@ -125,6 +132,7 @@ class Simulation:
             phys.command(*self.theta, fast=self.ctrl.fast_ramps)
             for series, val in ((r.t, t), (r.x, bx), (r.y, by), (r.x_ref, xr), (r.y_ref, yr),
                                (r.theta_x, self.theta[0]), (r.theta_y, self.theta[1]),
+                               (r.model_gain, self.ctrl.model_gain),
                                (r.actual_tilt, phys.actual_tilt()),
                                (r.alphas, phys.motor_angles()),
                                (r.velocity, phys.ball_velocity()), (r.height, phys.ball_height())):

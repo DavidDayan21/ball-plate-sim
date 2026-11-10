@@ -12,7 +12,7 @@ The brain is the PID with its LQR gains (Kp = 1.89, Ki = 1.75, Kd = 0.80), its l
 | Objective | Measured | Target | Met |
 |---|---|---|---|
 | Thrown ball caught (±10°) | 93 ± 1 % | ≥ 90 % of the physical limit | yes |
-| Circle with 60 ms of latency | 0.89 ± 0.02 mm | < 2 mm | yes |
+| Circle with 60 ms of latency | 0.87 ± 0.02 mm | < 2 mm | yes |
 | Back to the center in less than 2 s | 3.40 ± 0.02 mm (calibration error: none) | ≤ 5 mm between 2 s and 4 s | yes |
 | No fall in the robustness variants | 0/90 falls | 0 | yes |
 
@@ -79,15 +79,15 @@ Maximum speeds found by bisection, to 0.01 m/s, between 0.1 and 1.5 m/s. Distanc
 
 | Variant | Fallen | Max distance between 2 s and 4 s | Circle error | Δ circle error vs nominal | Airborne |
 |---|---|---|---|---|---|
-| Nominal (ping-pong, μ = 1) | 0/10 | 1.28 ± 0.04 mm | 0.81 ± 0.01 mm | - | 1.1 ± 0.5 % |
-| Solid ball (k = 2/5) | 0/10 | 2.65 ± 0.07 mm | 2.70 ± 0.01 mm | **+1.89 ± 0.01 mm** | 1.8 ± 0.7 % |
-| Ball 10× heavier (27 g) | 0/10 | 1.27 ± 0.04 mm | 0.77 ± 0.01 mm | **-0.04 ± 0.00 mm** | 0.3 ± 0.1 % |
-| Friction μ = 0.2 | 0/10 | 1.25 ± 0.03 mm | 0.77 ± 0.01 mm | **-0.04 ± 0.00 mm** | 1.1 ± 0.7 % |
-| Friction μ = 0.02 | 0/10 | 3.96 ± 0.31 mm | 0.77 ± 0.01 mm | **-0.04 ± 0.00 mm** | 1.1 ± 0.6 % |
-| Plate 2× heavier (0.5 kg) | 0/10 | 1.25 ± 0.05 mm | 0.80 ± 0.01 mm | -0.01 ± 0.00 mm | 0.0 ± 0.0 % |
-| No calibration error (0°, 0°) | 0/10 | 3.40 ± 0.02 mm | 0.81 ± 0.01 mm | +0.00 ± 0.00 mm | 0.2 ± 0.5 % |
-| Calibration error ×2 (1°, -0.6°) | 0/10 | 1.80 ± 0.02 mm | 0.80 ± 0.01 mm | -0.01 ± 0.00 mm | 1.9 ± 1.0 % |
-| Ball dropped from 30.5 cm (ITTF height) | 0/10 | 14.13 ± 0.69 mm | 0.81 ± 0.01 mm | +0.00 ± 0.00 mm | 17.6 ± 1.4 % |
+| Nominal (ping-pong, μ = 1) | 0/10 | 1.28 ± 0.04 mm | 0.77 ± 0.01 mm | - | 1.1 ± 0.5 % |
+| Solid ball (k = 2/5) | 0/10 | 2.65 ± 0.07 mm | 0.68 ± 0.01 mm | **-0.09 ± 0.00 mm** | 1.8 ± 0.7 % |
+| Ball 10× heavier (27 g) | 0/10 | 1.27 ± 0.04 mm | 0.77 ± 0.01 mm | +0.00 ± 0.01 mm | 0.3 ± 0.1 % |
+| Friction μ = 0.2 | 0/10 | 1.25 ± 0.03 mm | 0.73 ± 0.01 mm | **-0.03 ± 0.00 mm** | 1.1 ± 0.7 % |
+| Friction μ = 0.02 | 0/10 | 3.96 ± 0.31 mm | 0.73 ± 0.01 mm | **-0.04 ± 0.00 mm** | 1.1 ± 0.6 % |
+| Plate 2× heavier (0.5 kg) | 0/10 | 1.25 ± 0.05 mm | 0.77 ± 0.01 mm | +0.01 ± 0.00 mm | 0.0 ± 0.0 % |
+| No calibration error (0°, 0°) | 0/10 | 3.40 ± 0.02 mm | 0.78 ± 0.01 mm | +0.01 ± 0.01 mm | 0.2 ± 0.5 % |
+| Calibration error ×2 (1°, -0.6°) | 0/10 | 1.80 ± 0.02 mm | 0.77 ± 0.01 mm | +0.00 ± 0.01 mm | 1.9 ± 1.0 % |
+| Ball dropped from 30.5 cm (ITTF height) | 0/10 | 14.13 ± 0.69 mm | 0.77 ± 0.01 mm | +0.01 ± 0.01 mm | 17.6 ± 1.4 % |
 
 Reference scenario. Dropped ball: released without speed above the start point, 30.5 cm above the plate. A ball in the air beyond the edge of the tilted plate counts as fallen only once it is level with the plate.
 
@@ -113,19 +113,19 @@ Ball released without speed above a point of the line from the center to the sta
 
 | Latency | Compensation | Fallen | Max distance between 2 s and 4 s | Δ (with - without) | Circle error | Δ circle error (with - without) |
 |---|---|---|---|---|---|---|
-| 20 ms | without | 0/10 | 1.38 ± 0.08 mm | - | 3.16 ± 0.03 mm | - |
-| 20 ms | with | 0/10 | 1.28 ± 0.04 mm | **-0.11 ± 0.03 mm** | 0.81 ± 0.01 mm | **-2.35 ± 0.01 mm** |
+| 20 ms | without | 0/10 | 1.38 ± 0.08 mm | - | 3.16 ± 0.01 mm | - |
+| 20 ms | with | 0/10 | 1.28 ± 0.04 mm | **-0.11 ± 0.03 mm** | 0.77 ± 0.01 mm | **-2.39 ± 0.00 mm** |
 | 60 ms | without | 0/10 | 1.47 ± 0.07 mm | - | 7.89 ± 0.02 mm | - |
-| 60 ms | with | 0/10 | 1.40 ± 0.04 mm | **-0.07 ± 0.03 mm** | 0.89 ± 0.02 mm | **-7.00 ± 0.01 mm** |
+| 60 ms | with | 0/10 | 1.40 ± 0.04 mm | **-0.07 ± 0.03 mm** | 0.87 ± 0.02 mm | **-7.03 ± 0.01 mm** |
 | 100 ms | without | 0/10 | 34.79 ± 0.55 mm | - | 12.83 ± 0.05 mm | - |
-| 100 ms | with | 0/10 | 1.09 ± 0.09 mm | **-33.70 ± 0.18 mm** | 1.17 ± 0.04 mm | **-11.67 ± 0.02 mm** |
+| 100 ms | with | 0/10 | 1.09 ± 0.09 mm | **-33.70 ± 0.18 mm** | 1.13 ± 0.03 mm | **-11.70 ± 0.02 mm** |
 
 | Latency | Fast ramps of the motors | Fallen | Max distance between 2 s and 4 s | Δ (brain - always) | Circle error | Airborne |
 |---|---|---|---|---|---|---|
-| 20 ms | whatever the speed of the ball | 0/10 | 1.48 ± 0.09 mm | - | 0.80 ± 0.01 mm | 4.1 ± 1.3 % |
-| 20 ms | only above 0.3 m/s (the brain) | 0/10 | 1.28 ± 0.04 mm | **-0.21 ± 0.03 mm** | 0.81 ± 0.01 mm | 1.1 ± 0.5 % |
-| 100 ms | whatever the speed of the ball | 0/10 | 5.34 ± 5.13 mm | - | 1.14 ± 0.03 mm | 8.3 ± 2.4 % |
-| 100 ms | only above 0.3 m/s (the brain) | 0/10 | 1.09 ± 0.09 mm | **-4.25 ± 1.62 mm** | 1.17 ± 0.04 mm | 0.0 ± 0.0 % |
+| 20 ms | whatever the speed of the ball | 0/10 | 1.48 ± 0.09 mm | - | 0.77 ± 0.01 mm | 4.1 ± 1.3 % |
+| 20 ms | only above 0.3 m/s (the brain) | 0/10 | 1.28 ± 0.04 mm | **-0.21 ± 0.03 mm** | 0.77 ± 0.01 mm | 1.1 ± 0.5 % |
+| 100 ms | whatever the speed of the ball | 0/10 | 5.34 ± 5.13 mm | - | 1.17 ± 0.05 mm | 8.3 ± 2.4 % |
+| 100 ms | only above 0.3 m/s (the brain) | 0/10 | 1.09 ± 0.09 mm | **-4.25 ± 1.62 mm** | 1.13 ± 0.03 mm | 0.0 ± 0.0 % |
 
 With compensation. The fast ramp of the motors throws a slow ball off the plate: 10 cm from the center, the plate under the ball accelerates downward faster than g beyond about 100 rad/s² of plate (r·θ̈ > g), about 200 rad/s² of motor. With a large latency, the ball then keeps bouncing; the brain keeps the fast ramps for a fast ball (thrown, pushed), which needs them.
 
@@ -134,8 +134,8 @@ With compensation. The fast ramp of the motors throws a slow ball off the plate:
 
 | Error integrated | Fallen | Arrival (first time < 5 mm) | Overshoot after arrival | Max distance between 2 s and 4 s | Δ (zone - everywhere) | Circle error | Δ circle error (zone - everywhere) |
 |---|---|---|---|---|---|---|---|
-| everywhere | 0/10 | 1.51 ± 0.99 s | 18.23 ± 11.50 mm | 14.76 ± 0.09 mm | - | 0.80 ± 0.01 mm | - |
-| within 20 mm | 0/10 | 1.16 ± 0.00 s | 4.87 ± 0.03 mm | 1.28 ± 0.04 mm | **-13.48 ± 0.03 mm** | 0.81 ± 0.01 mm | **+0.01 ± 0.00 mm** |
+| everywhere | 0/10 | 1.51 ± 0.99 s | 18.23 ± 11.50 mm | 14.76 ± 0.09 mm | - | 0.76 ± 0.01 mm | - |
+| within 20 mm | 0/10 | 1.16 ± 0.00 s | 4.87 ± 0.03 mm | 1.28 ± 0.04 mm | **-13.48 ± 0.03 mm** | 0.77 ± 0.01 mm | +0.00 ± 0.01 mm |
 
 Reference scenario, latency 20 ms with compensation. With the zone, each axis integrates its error only while it is below 20 mm: the integral no longer builds up during the approach, and only corrects the calibration error of the plate. What it still builds up over the last 20 mm of the approach (a few tenths of a degree) is about what the nominal calibration error requires; without calibration error, it is in excess: the ball overshoots the center and comes back as the integral empties, which makes this case the worst return to the center (section 4).
 
@@ -144,8 +144,8 @@ Reference scenario, latency 20 ms with compensation. With the zone, each axis in
 
 | Gains | Kp, Ki, Kd | Fallen | Max distance between 2 s and 4 s (worst calibration error) | Circle error | Δ (LQR - hand-tuned) | Circle error, 60 ms | Δ (LQR - hand-tuned) | θx jitter | Thrown ball caught (±10°) |
 |---|---|---|---|---|---|---|---|---|---|
-| hand-tuned | 1.00, 1.00, 0.58 | 0/10 | 13.82 ± 0.14 mm (×2) | 1.48 ± 0.03 mm | - | 1.66 ± 0.02 mm | - | 0.08 ± 0.01° | 0.67 ± 0.00 m/s |
-| LQR | 1.89, 1.75, 0.80 | 0/10 | 3.40 ± 0.02 mm (none) | 0.81 ± 0.01 mm | **-0.67 ± 0.01 mm** | 0.89 ± 0.02 mm | **-0.77 ± 0.01 mm** | 0.12 ± 0.01° | 0.66 ± 0.00 m/s |
+| hand-tuned | 1.00, 1.00, 0.58 | 0/10 | 13.82 ± 0.14 mm (×2) | 1.47 ± 0.02 mm | - | 1.63 ± 0.02 mm | - | 0.08 ± 0.01° | 0.67 ± 0.00 m/s |
+| LQR | 1.89, 1.75, 0.80 | 0/10 | 3.40 ± 0.02 mm (none) | 0.77 ± 0.01 mm | **-0.70 ± 0.01 mm** | 0.87 ± 0.02 mm | **-0.77 ± 0.01 mm** | 0.12 ± 0.01° | 0.66 ± 0.00 m/s |
 
 Latency 20 ms with compensation, integration zone, unless stated. LQR gains (controller/lqr.py, Bryson's rule): a position error of 20 cm, an integral of the error over 0.5 s and a tilt of 10° cost as much as one another. The stiffer loop corrects the calibration error of the plate faster.
 
@@ -155,7 +155,7 @@ Latency 20 ms with compensation, integration zone, unless stated. LQR gains (con
 | Compensation | Fallen | Error (2nd lap) | Δ (with - without) |
 |---|---|---|---|
 | without | 0/10 | 6.78 ± 0.03 mm | - |
-| with | 0/10 | 6.04 ± 0.01 mm | **-0.74 ± 0.01 mm** |
+| with | 0/10 | 6.04 ± 0.01 mm | **-0.75 ± 0.01 mm** |
 
 
 ## 10. Simple physics → MuJoCo: the gap, term by term (synthetic sensor, reference controller)
@@ -185,4 +185,18 @@ Angle-driven plate:
 | MuJoCo | 0/10 | 5.33 ± 0.36 mm | **+0.56 ± 0.06 mm** | 100 % | 31.62 ± 1.20 mm | **+1.06 ± 0.17 mm** | 100 % |
 
 Each addition is switched on alone in the simple physics (simulation/simple_physics.py). A gap is explained when the share predicted by a model is within 80 to 120 %. The additions do not add up: on the return to the center, the rotating-frame terms and the servo lag act in opposite directions.
+
+
+## 11. Adaptive control: the model gain c·g estimated online (latency compensation, camera)
+
+| Ball, latency | Model gain | Fallen | g/(1 + k) | c·g used at 20 s | Circle error | Δ (estimated - fixed) | Max distance between 2 s and 4 s | Δ (estimated - fixed) |
+|---|---|---|---|---|---|---|---|---|
+| hollow (k = 2/3), 20 ms | fixed | 0/10 | 5.89 | 5.89 ± 0.00 | 0.81 ± 0.01 mm | - | 1.28 ± 0.04 mm | - |
+| hollow (k = 2/3), 20 ms | estimated | 0/10 | 5.89 | 5.92 ± 0.00 | 0.77 ± 0.01 mm | **-0.04 ± 0.00 mm** | 1.28 ± 0.04 mm | +0.00 ± 0.00 mm |
+| hollow (k = 2/3), 60 ms | fixed | 0/10 | 5.89 | 5.89 ± 0.00 | 0.89 ± 0.02 mm | - | 1.40 ± 0.04 mm | - |
+| hollow (k = 2/3), 60 ms | estimated | 0/10 | 5.89 | 5.90 ± 0.01 | 0.87 ± 0.02 mm | **-0.02 ± 0.01 mm** | 1.40 ± 0.04 mm | +0.00 ± 0.00 mm |
+| solid (k = 2/5), 20 ms | fixed | 0/10 | 7.01 | 5.89 ± 0.00 | 2.70 ± 0.01 mm | - | 2.65 ± 0.07 mm | - |
+| solid (k = 2/5), 20 ms | estimated | 0/10 | 7.01 | 7.04 ± 0.01 | 0.68 ± 0.01 mm | **-2.03 ± 0.01 mm** | 2.65 ± 0.07 mm | +0.00 ± 0.00 mm |
+
+c·g in (m/s²)/rad; fixed: the value of the hollow ball (nominal). The controller estimates c·g from the measured accelerations of the ball and the commands it sent (controller/adaptation.py): least squares, recursive, on low-pass filtered signals, from the nominal value at every attempt. It uses them only while the ball rolls (at least 3 cm/s) within 1 cm of its setpoint for at least 1 s: elsewhere the linear model does not hold (near rest; during a transient, the plate lags its command). In the reference scenario, only the circle (from 8 s) excites it: the return to the center (before 4 s) does not depend on it. The estimate replaces the nominal c·g in the feedforward and in the latency predictor; the gains of the PID stay those of the nominal model.
 
