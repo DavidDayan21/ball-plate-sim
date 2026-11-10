@@ -149,15 +149,15 @@ Latency 20 ms with compensation, integration zone, unless stated. LQR gains (con
 
 ## 10. Simple physics → MuJoCo on the 3-arm robot: the gap, term by term (synthetic sensor, reference controller)
 
-| Model | Fallen | Circle error | Δ vs basic model | Share of the MuJoCo gap |
-|---|---|---|---|---|
-| Simple physics, basic model | 0/10 | 4.77 ± 0.38 mm | - | - |
-| + r·θ̈ (the plate turns under the ball) | 0/10 | 4.80 ± 0.42 mm | +0.03 ± 0.08 mm | 5 % |
-| + rotating-frame terms (Euler, centrifugal, Coriolis) | 0/10 | 4.88 ± 0.35 mm | +0.11 ± 0.06 mm | 19 % |
-| + exact projection of gravity | 0/10 | 4.83 ± 0.40 mm | +0.07 ± 0.06 mm | 12 % |
-| + servo lag (τ = kv/kp = 10 ms) | 0/10 | 5.35 ± 0.40 mm | **+0.58 ± 0.06 mm** | 103 % |
-| + all of the above | 0/10 | 5.38 ± 0.43 mm | **+0.61 ± 0.10 mm** | 109 % |
-| MuJoCo | 0/10 | 5.33 ± 0.36 mm | **+0.56 ± 0.06 mm** | 100 % |
+| Model | Fallen | Circle error | Δ vs basic model | Share of the MuJoCo gap | Max distance between 2 s and 4 s | Δ vs basic model | Share of the MuJoCo gap |
+|---|---|---|---|---|---|---|---|
+| Simple physics, basic model | 0/10 | 4.77 ± 0.38 mm | - | - | 30.56 ± 0.80 mm | - | - |
+| + r·θ̈ (the plate turns under the ball) | 0/10 | 4.80 ± 0.42 mm | +0.03 ± 0.08 mm | 5 % | 30.50 ± 1.13 mm | -0.06 ± 0.19 mm | -6 % |
+| + rotating-frame terms (Euler, centrifugal, Coriolis) | 0/10 | 4.88 ± 0.35 mm | +0.11 ± 0.06 mm | 19 % | 32.36 ± 0.88 mm | **+1.80 ± 0.15 mm** | 171 % |
+| + exact projection of gravity | 0/10 | 4.83 ± 0.40 mm | +0.07 ± 0.06 mm | 12 % | 30.61 ± 0.95 mm | +0.05 ± 0.10 mm | 5 % |
+| + servo lag (τ = kv/kp = 10 ms) | 0/10 | 5.35 ± 0.40 mm | **+0.58 ± 0.06 mm** | 103 % | 30.20 ± 0.86 mm | **-0.37 ± 0.09 mm** | -35 % |
+| + all of the above | 0/10 | 5.38 ± 0.43 mm | **+0.61 ± 0.10 mm** | 109 % | 31.57 ± 1.10 mm | **+1.01 ± 0.16 mm** | 96 % |
+| MuJoCo | 0/10 | 5.33 ± 0.36 mm | **+0.56 ± 0.06 mm** | 100 % | 31.62 ± 1.20 mm | **+1.06 ± 0.17 mm** | 100 % |
 
-Each addition is switched on alone in the simple physics (simulation/simple_physics.py). A gap is explained when the share predicted by a model is within 80 to 120 %.
+Each addition is switched on alone in the simple physics (simulation/simple_physics.py). A gap is explained when the share predicted by a model is within 80 to 120 %. The additions do not add up: on the return to the center, the rotating-frame terms and the servo lag act in opposite directions.
 

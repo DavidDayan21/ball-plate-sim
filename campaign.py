@@ -13,7 +13,7 @@ The 160×120 camera is as accurate as 320×240, and faster to simulate.
     7. Integral action: error integrated everywhere or only near the setpoint
     8. Gains of the PID: hand-tuned or by LQR
     9. Square trajectory
-    10. Gap between the simple physics and MuJoCo on the robot, explained term by term
+    10. Gap between the simple physics and MuJoCo on the robot, explained term by term (circle and return)
 
 Every case is simulated over N draws, so that each result comes with its spread:
     - draw 0 is the nominal configuration (noise seed 0, nominal start position);
@@ -637,8 +637,6 @@ def write_report(data: dict, path: str = os.path.join("results", "report.md")) -
 
     rep.section("10. Simple physics → MuJoCo on the 3-arm robot: the gap, term by term "
                 "(synthetic sensor, reference controller)")
-    base = [circle_error(r) for r in runs["simple_robot"]]
-    gap = paired_delta(base, [circle_error(r) for r in runs["mujoco_robot"]])[0]
     tau_ms = 1000 * PM.kv_servo / PM.kp_servo
     models = (("Simple physics, basic model", "simple_robot"),
               ("+ r·θ̈ (the plate turns under the ball)", "simple_robot_rolling"),
@@ -647,16 +645,22 @@ def write_report(data: dict, path: str = os.path.join("results", "report.md")) -
               (f"+ servo lag (τ = kv/kp = {tau_ms:.0f} ms)", "simple_robot_servo"),
               ("+ all of the above", "simple_robot_full"),
               ("MuJoCo", "mujoco_robot"))
-    rows = []
-    for label, case in models:
-        errors = [circle_error(r) for r in runs[case]]
-        delta = paired_delta(base, errors)[0]
-        share = "-" if case == "simple_robot" or math.isnan(gap) or gap == 0 else f"{100 * delta / gap:.0f} %"
-        rows.append([label, fallen(runs[case]), fmt(errors, " mm", scale=1000),
-                     "-" if case == "simple_robot" else fmt_delta(base, errors, " mm", scale=1000), share])
-    rep.table(["Model", "Fallen", "Circle error", "Δ vs basic model", "Share of the MuJoCo gap"], rows)
+    rows = {case: [label, fallen(runs[case])] for label, case in models}
+    for indicator in (circle_error, return_distance):
+        base = [indicator(r) for r in runs["simple_robot"]]
+        gap = paired_delta(base, [indicator(r) for r in runs["mujoco_robot"]])[0]
+        for _, case in models:
+            values = [indicator(r) for r in runs[case]]
+            delta = paired_delta(base, values)[0]
+            share = "-" if case == "simple_robot" or math.isnan(gap) or gap == 0 else f"{100 * delta / gap:.0f} %"
+            rows[case] += [fmt(values, " mm", scale=1000),
+                           "-" if case == "simple_robot" else fmt_delta(base, values, " mm", scale=1000), share]
+    rep.table(["Model", "Fallen", "Circle error", "Δ vs basic model", "Share of the MuJoCo gap",
+               "Max distance between 2 s and 4 s", "Δ vs basic model", "Share of the MuJoCo gap"], list(rows.values()))
     rep.text("Each addition is switched on alone in the simple physics (simulation/simple_physics.py). "
-             "A gap is explained when the share predicted by a model is within 80 to 120 %.")
+             "A gap is explained when the share predicted by a model is within 80 to 120 %. The additions do not "
+             "add up: on the return to the center, the rotating-frame terms and the servo lag act in opposite "
+             "directions.")
 
     rep.save(path)
     print(f"\nReport written to {path}")
