@@ -102,6 +102,7 @@ CASES = {
                                 servo_lag=True, **REFERENCE_CONTROLLER),
     "mujoco_plate": Config(mechanism=False, **REFERENCE_CONTROLLER),
     "mujoco_robot": Config(**REFERENCE_CONTROLLER),
+    "mujoco_robot_noise_free": Config(sigma=0.0, sigma_height=0.0, **REFERENCE_CONTROLLER),
     "camera_reference": replace(BASE, **REFERENCE_CONTROLLER),
     # The brain (default settings), full chain with the camera
     "camera": BASE,
@@ -461,7 +462,8 @@ def write_report(data: dict, path: str = os.path.join("results", "report.md")) -
               ("Simple physics: 3-arm robot", "simple_robot", "simple_plate", "mechanism"),
               ("MuJoCo: angle-driven plate", "mujoco_plate", "simple_plate", "physics"),
               ("MuJoCo: 3-arm robot", "mujoco_robot", "simple_robot", "physics"),
-              ("MuJoCo: 3-arm robot + camera", "camera_reference", "mujoco_robot", "sensor"))
+              ("MuJoCo: 3-arm robot, sensor without noise", "mujoco_robot_noise_free", "mujoco_robot", "noise"),
+              ("MuJoCo: 3-arm robot + camera", "camera_reference", "mujoco_robot_noise_free", "camera"))
     rows = []
     for label, case, compared, factor in levels:
         rs = runs[case]
@@ -489,8 +491,10 @@ def write_report(data: dict, path: str = os.path.join("results", "report.md")) -
                "θx jitter", "Airborne"], rows)
     rep.text("Circle: 6 cm radius in 4 s, error = root-mean-square distance from 12 s to 20 s. "
              "Factor changed: compared with the level above that differs only by this factor "
-             "(the mechanism: the simple plate; the physics: the same level in simple physics; "
-             "the sensor: the MuJoCo robot).")
+             "(the mechanism: the simple plate; the physics: the same level in simple physics; the noise: the "
+             "synthetic sensor of standard deviation 1 mm, made perfect; the camera: the perfect sensor). The "
+             "synthetic sensor is about 5 times noisier than the camera: its noise, not the camera, makes the gap "
+             "between them.")
 
     rep.section("1. Theoretical limits and contact calibration")
     mu_10 = K * math.tan(math.radians(10)) / (1 + K)

@@ -27,7 +27,8 @@ Judged on the mean over the draws. Thrown ball: maximum speed caught at ±10° d
 | Simple physics: 3-arm robot | 0/10 | 0.84 ± 0.01 s | 40.73 ± 0.71 mm | 30.56 ± 0.80 mm | mechanism | +0.66 ± 0.37 mm |
 | MuJoCo: angle-driven plate | 0/10 | 0.84 ± 0.01 s | 40.72 ± 0.97 mm | 31.85 ± 1.19 mm | physics | **+1.95 ± 0.12 mm** |
 | MuJoCo: 3-arm robot | 0/10 | 0.84 ± 0.01 s | 41.29 ± 0.65 mm | 31.62 ± 1.20 mm | physics | **+1.06 ± 0.17 mm** |
-| MuJoCo: 3-arm robot + camera | 0/10 | 0.84 ± 0.00 s | 41.71 ± 0.13 mm | 32.45 ± 0.12 mm | sensor | +0.83 ± 0.38 mm |
+| MuJoCo: 3-arm robot, sensor without noise | 0/10 | 0.84 ± 0.00 s | 41.52 ± 0.12 mm | 32.53 ± 0.10 mm | noise | **+0.91 ± 0.38 mm** |
+| MuJoCo: 3-arm robot + camera | 0/10 | 0.84 ± 0.00 s | 41.71 ± 0.13 mm | 32.45 ± 0.12 mm | camera | **-0.08 ± 0.02 mm** |
 
 Return to the center (start 10 cm away, setpoint at the center until 4 s). Objective "back to the center in less than 2 s": max distance between 2 s and 4 s ≤ 5 mm. Angle-driven plate: its two angles follow the command with the profile of the motors (speed, ramps), without steps; the mechanism adds the arms (kinematics, microsteps: the motors turn about twice as much as the plate, so their ramps tilt it more slowly).
 
@@ -37,9 +38,10 @@ Return to the center (start 10 cm away, setpoint at the center until 4 s). Objec
 | Simple physics: 3-arm robot | 4.77 ± 0.38 mm | mechanism | +0.08 ± 0.18 mm | 0.59 ± 0.06° | - |
 | MuJoCo: angle-driven plate | 5.23 ± 0.60 mm | physics | **+0.54 ± 0.07 mm** | 0.60 ± 0.06° | 0.0 ± 0.0 % |
 | MuJoCo: 3-arm robot | 5.33 ± 0.36 mm | physics | **+0.56 ± 0.06 mm** | 0.59 ± 0.06° | 0.0 ± 0.0 % |
-| MuJoCo: 3-arm robot + camera | 4.58 ± 0.03 mm | sensor | **-0.75 ± 0.12 mm** | 0.12 ± 0.00° | 0.0 ± 0.0 % |
+| MuJoCo: 3-arm robot, sensor without noise | 4.25 ± 0.01 mm | noise | **-1.08 ± 0.12 mm** | 0.07 ± 0.00° | 0.0 ± 0.0 % |
+| MuJoCo: 3-arm robot + camera | 4.58 ± 0.03 mm | camera | **+0.33 ± 0.01 mm** | 0.12 ± 0.00° | 0.0 ± 0.0 % |
 
-Circle: 6 cm radius in 4 s, error = root-mean-square distance from 12 s to 20 s. Factor changed: compared with the level above that differs only by this factor (the mechanism: the simple plate; the physics: the same level in simple physics; the sensor: the MuJoCo robot).
+Circle: 6 cm radius in 4 s, error = root-mean-square distance from 12 s to 20 s. Factor changed: compared with the level above that differs only by this factor (the mechanism: the simple plate; the physics: the same level in simple physics; the noise: the synthetic sensor of standard deviation 1 mm, made perfect; the camera: the perfect sensor). The synthetic sensor is about 5 times noisier than the camera: its noise, not the camera, makes the gap between them.
 
 
 ## 1. Theoretical limits and contact calibration
