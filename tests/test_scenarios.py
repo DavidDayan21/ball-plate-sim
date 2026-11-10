@@ -128,12 +128,21 @@ def test_dropped_ball_caught_by_the_aimed_bounce():
 
 
 def test_slow_ball_not_thrown_off_by_the_fast_ramps():
-    # 100 ms of latency (synthetic sensor): with the fast ramps whatever the speed, the ball bounces most of
-    # the time; kept for a fast ball, it hardly ever leaves the plate
+    # 100 ms of latency (synthetic sensor, 5 times noisier than the camera): with the fast ramps whatever the
+    # speed, the ball bounces most of the time; kept for a fast ball, it hardly ever leaves the plate
     cfg = Config(latency=5)
     assert simulate(replace(cfg, fast_speed=0.0)).airborne_fraction > 0.5
     r = simulate(cfg)
-    assert r.airborne_fraction < 0.02 and tracking_error_rms(r, 12, 20) < 0.01
+    assert r.airborne_fraction < 0.06 and tracking_error_rms(r, 12, 20) < 0.01
+
+
+def test_pushed_ball_gets_the_fast_ramps_at_once():
+    # Push of 0.5 m/s on the ball at rest at the center (camera): caught, since its speed is seen at the first
+    # image after the push; with the speed of the filtered derivative of the PIDs, about 40 ms later, it falls
+    from simulation.config import CameraParams
+    cfg = Config(sensor="camera", camera=CameraParams(width=160, image_height=120), trajectory=center,
+                 duration=3.0, start_position=(0.0, 0.0), pushes=((1.0, 0.4, 0.3),))
+    assert not simulate(cfg).fallen
 
 
 def test_thrown_ball_needs_fast_motors():

@@ -122,8 +122,8 @@ def test_integration_zone_cannot_correct_a_larger_calibration_error():
 
 
 def test_fast_ramps_only_for_a_fast_ball():
-    # The brain allows the fast ramps of the motors only for a ball faster than fast_speed (relative speed
-    # estimated by the derivative of the PIDs): never before the first speed is known
+    # The brain allows the fast ramps of the motors only for a ball faster than fast_speed (speed from the last
+    # two measurements): never before the first speed is known
     from controller.plate import PlateController
     ctrl = PlateController(1.0, 1.0, 0.5, math.radians(10), 0.0, CG, fast_speed=0.3)
     assert not ctrl.fast_ramps

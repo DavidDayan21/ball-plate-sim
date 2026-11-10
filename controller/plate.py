@@ -67,9 +67,11 @@ class PlateController:
     airborne_height, the PIDs only follow the ball and the plate is tilted for the bounce (aimed_tilt).
 
     fast_ramps (after each compute): the motors may use their fast ramp, only if the ball moves faster than
-    fast_speed relative to the setpoint (speed estimated by the derivative of the PIDs). A slow ball has no
-    need of it, and the fast ramp would throw it off the plate: the plate under it would accelerate downward
-    faster than g (r·θ̈ > g, beyond about 100 rad/s² of plate 10 cm from the center).
+    fast_speed. Its speed is taken from the last two measurements, before the latency compensation: without
+    the lag of the derivative filter (a pushed ball gets the fast ramp at once) and without the amplification
+    of the noise by the prediction. A slow ball has no need of the fast ramp, which would throw it off the
+    plate: the plate under it would accelerate downward faster than g (r·θ̈ > g, beyond about 100 rad/s² of
+    plate 10 cm from the center).
     """
 
     def __init__(self, kp: float, ki: float, kd: float, theta_max: float,
@@ -87,10 +89,15 @@ class PlateController:
         self.restitution, self.bounce_gain = restitution, bounce_gain
         self.fast_speed = fast_speed
         self.fast_ramps = False                # no speed estimated yet
+        self.previous_position = None          # last measured (x, y)
 
     def compute(self, setpoint, measurement, setpoint_acc, dt: float):
         """setpoint, setpoint_acc: (x, y) pairs; measurement: (x, y) or (x, y, height of the ball).
         Returns (θx, θy) in rad."""
+        position = (measurement[0], measurement[1])
+        speed = (0.0 if self.previous_position is None else
+                 math.hypot(position[0] - self.previous_position[0], position[1] - self.previous_position[1]) / dt)
+        self.previous_position = position
         airborne = False
         if self.flight is not None:
             self.flight.observe(tuple(measurement) if len(measurement) == 3 else (*measurement, 0.0))
@@ -101,7 +108,7 @@ class PlateController:
         ffy = setpoint_acc[1] / self.model_gain if self.feedforward else 0.0
         theta_x = self.pid_x.compute(setpoint[0], measurement[0], dt, ffx, hold=airborne)
         theta_y = self.pid_y.compute(setpoint[1], measurement[1], dt, ffy, hold=airborne)
-        self.fast_ramps = math.hypot(self.pid_x.derivative, self.pid_y.derivative) >= self.fast_speed
+        self.fast_ramps = speed >= self.fast_speed
         # In the air, θx and θy are the integral terms alone (they compensate the calibration error of the plate):
         # the plate stays level until the impact is estimated (2 measurements of the flight), then it is aimed
         if airborne and self.flight.impact() is not None:
