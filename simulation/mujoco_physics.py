@@ -43,7 +43,7 @@ def contact_solref(pm: MujocoParams) -> str:
 
 # --- Model generation (MJCF format) ------------------------------------------------------------
 HEADER = """<mujoco model="{name}">
-  <option timestep="{dt}" integrator="implicitfast"/>
+  <option timestep="{dt}" integrator="implicitfast"{cone}/>
   <default><geom contype="0" conaffinity="0"/></default>
   <visual><global azimuth="120" elevation="-30"/></visual>
   <worldbody>
@@ -80,7 +80,8 @@ def model_xml(cfg: Config) -> str:
     g, pm = cfg.geometry, cfg.mujoco_params
     h = g.height
     header = HEADER.format(name="balancing robot" if cfg.mechanism else "angle-driven plate",
-                           dt=cfg.dt_physics, z_camera=h + cfg.camera.height, fovy=cfg.camera.fovy)
+                           dt=cfg.dt_physics, z_camera=h + cfg.camera.height, fovy=cfg.camera.fovy,
+                           cone="" if pm.cone == "pyramidal" else f' cone="{pm.cone}"')
     if not cfg.mechanism:
         # Joints: θx (y axis), then θy (-x axis): rotation R = Ry(θx)·Rx(-θy)
         return header + f"""

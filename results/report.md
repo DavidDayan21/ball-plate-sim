@@ -200,3 +200,48 @@ Each addition is switched on alone in the simple physics (simulation/simple_phys
 
 c·g in (m/s²)/rad; fixed: the value of the hollow ball (nominal). The controller estimates c·g from the measured accelerations of the ball and the commands it sent (controller/adaptation.py): least squares, recursive, on low-pass filtered signals, from the nominal value at every attempt. It uses them only while the ball rolls (at least 3 cm/s) within 1 cm of its setpoint for at least 1 s: elsewhere the linear model does not hold (near rest; during a transient, the plate lags its command). In the reference scenario, only the circle (from 8 s) excites it: the return to the center (before 4 s) does not depend on it. The estimate replaces the nominal c·g in the feedforward and in the latency predictor; the gains of the PID stay those of the nominal model.
 
+
+## 12. The remaining gaps of more than 0.5 mm, reproduced by our equations or traced to their cause
+
+Our equations: the simple physics of the 3-arm robot with the full equation of section 10 and sliding (Coulomb friction μ: the ball slides when rolling would need more). A gap is explained when a model reproduces it within 80 to 120 %, as in section 10.
+
+| Robustness variant (section 4): gap of the return to the center to the nominal case | MuJoCo, sensor without noise | Our equations, sensor without noise | Share reproduced | MuJoCo + camera (section 4) | Effect of the camera |
+|---|---|---|---|---|---|
+| Solid ball (k = 2/5) | **+1.17 ± 0.02 mm** | **+1.11 ± 0.03 mm** | 94 % | **+1.38 ± 0.03 mm** | +0.20 mm |
+| No calibration error (0°, 0°) | **+2.13 ± 0.02 mm** | **+2.08 ± 0.03 mm** | 98 % | **+2.12 ± 0.02 mm** | -0.01 mm |
+| Calibration error ×2 (1°, -0.6°) | **+0.97 ± 0.02 mm** | **+0.85 ± 0.03 mm** | 88 % | **+0.53 ± 0.01 mm** | -0.44 mm |
+| Friction μ = 0.02 | **+2.69 ± 0.02 mm** | **+1.73 ± 0.03 mm** | 64 % | **+2.68 ± 0.10 mm** | -0.01 mm |
+| Friction μ = 0.02, MuJoCo with Coulomb's friction cone (elliptic) | **+1.80 ± 0.03 mm** | **+1.73 ± 0.03 mm** | 96 % | - | - |
+
+The brain in both. The return to the center is the tail of the approach: what the integral has built up over the last 2 cm (section 7), against what the calibration error of the plate needs. A solid ball (c·g 19 % higher than the gains of the PID assume) and a plate without calibration error leave the integral in excess; a calibration error ×2 leaves it short, and the ball arrives later. With μ = 0.02, the ball slides while the plate brakes it (rolling at 10° needs μ ≥ 0.071, section 1): its path to the center changes, and the integral of one axis builds up more over the last 2 cm. By default, MuJoCo approximates the friction cone by a pyramid: between its axes, it allows up to 29 % less friction than μ·N (1 - 1/√2); with Coulomb's round cone, our equations reproduce MuJoCo. Last column: the effect of the camera on each gap (MuJoCo + camera minus MuJoCo without noise).
+
+| Effect of the noise of the synthetic sensor (section 0): noise removed | MuJoCo | Our equations | Share reproduced |
+|---|---|---|---|
+| Max distance between 2 s and 4 s | **+1.24 ± 0.21 mm** | **+1.30 ± 0.20 mm** | 105 % |
+| Circle error | **-1.08 ± 0.06 mm** | **-1.09 ± 0.07 mm** | 101 % |
+
+Reference controller of section 0, over 4 times more draws: the noise makes the return vary by more than 1 mm from one draw to the next. Our equations reproduce the effect: it does not come from MuJoCo. The motors cannot follow the noisy command with their gentle ramp, and lag it.
+
+| Effect of the mechanism on the return (section 0), sensor without noise | Δ vs angle-driven plate | Share explained by the ramps |
+|---|---|---|
+| 3-arm robot | **+1.29 ± 0.01 mm** | - |
+| 3-arm robot, ramps and speed of its motors ×2 | **+0.15 ± 0.01 mm** | 88 % |
+
+Simple physics, reference controller. With the noise of section 0, this effect is not significant. The motors turn about twice as much as the plate (the lever of the arms, section 0): with the same ramps, the plate of the robot tilts more slowly. Motors twice as fast remove most of the gap; the rest comes from the kinematics.
+
+| Latency 100 ms without compensation | Max distance between 2 s and 4 s | Share | Circle error | Share |
+|---|---|---|---|---|
+| MuJoCo + camera (section 6) | 34.79 ± 0.55 mm | - | 12.83 ± 0.05 mm | - |
+| Our equations | 38.81 ± 0.59 mm | 112 % | 13.29 ± 0.11 mm | 104 % |
+| Basic model of the simple physics | 12.11 ± 0.44 mm | 35 % | 12.47 ± 0.05 mm | 97 % |
+
+Synthetic sensor with the mean error of the camera (σ = 0.2 mm). Without compensation, 100 ms of latency leaves the loop lightly damped: the ball oscillates around the center for seconds. The plate turning under the ball (r·θ̈) and the lag of the servos damp it even less: the full equation reproduces MuJoCo, the basic model does not.
+
+Other gaps, traced to their cause:
+
+- Error integrated everywhere (section 7): the spread of the arrival and of the overshoot is that of a threshold. On its first pass, the ball comes within 4.83 ± 0.27 mm of the center, below the 5 mm of the arrival in 6 draws out of 10; the arrival is then this first pass, otherwise the next one, more than a second later. The return between 2 s and 4 s does not depend on a threshold.
+
+- Thrown ball without waiting for its speed (section 2), at 0.55 m/s: at the first image, the position alone tilts the plate toward the edge; it brakes the ball (tilt beyond -9.5°) at 0.18 ± 0.00 s instead of 0.12 ± 0.01 s, when the ball is at x = 2.08 ± 0.24 mm instead of -30.77 ± 3.99 mm. Near the threshold, the ball stops at the edge: on draw 0, the fastest throw caught stops 1.3 mm from it. The ball also hops a little while the plate brakes it (in the air 7.0 ± 0.5 % of the time at 0.55 m/s): a millimetre either way decides, hence the exceptions to monotonicity.
+
+- Ball dropped from 30.5 cm (section 4): the max distance between 2 s and 4 s is measured while it still bounces (last flight above 15 mm at 2.54 ± 0.08 s). For this variant, the criterion is that the ball does not fall.
+

@@ -62,12 +62,13 @@ def test_campaign_end_to_end(tmp_path, monkeypatch):
     monkeypatch.setattr(cp, "CASES", {name: replace(cfg, **simple) for name, cfg in cp.CASES.items()})
     monkeypatch.setattr(cp.plt, "show", lambda: None)
     data = cp.run_campaign(2, processes=1)
-    assert all(len(runs) == 2 and runs[0].x != runs[1].x for runs in data["runs"].values())
+    assert all(len(runs) == 2 * cp.DRAWS_FACTOR.get(name, 1) and runs[0].x != runs[1].x
+               for name, runs in data["runs"].items())
     assert all(cp.monotonic(name, data) == "yes" for name in cp.LIMITS)
     report = tmp_path / "report.md"
     cp.write_report(data, str(report))
     text = report.read_text(encoding="utf-8")
-    assert all(f"## {i}." in text for i in range(12)) and "| 0/2 |" in text and " ± " in text
+    assert all(f"## {i}." in text for i in range(13)) and "| 0/2 |" in text and " ± " in text
     assert "| MuJoCo: 3-arm robot, sensor without noise |" in text and "| noise |" in text   # section 0
     assert "| hand-tuned | 1.00, 1.00, 0.58 |" in text                # gains (section 8)
     assert "| LQR | {:.2f}, {:.2f}, {:.2f} |".format(*cp.BASE.pid_gains()) in text
@@ -75,6 +76,8 @@ def test_campaign_end_to_end(tmp_path, monkeypatch):
     assert "| Share of the MuJoCo gap | Max distance between 2 s and 4 s | Δ vs basic model | Share of the MuJoCo gap |" in text
     assert "| 10 cm | 30.5 cm | 0/2 |" in text                     # drop grid (section 5)
     assert "| solid (k = 2/5), 20 ms | estimated | 0/2 | 7.01 |" in text   # model gain (section 11)
+    assert "| Friction μ = 0.02, MuJoCo with Coulomb's friction cone (elliptic) |" in text   # gaps (section 12)
+    assert "| 3-arm robot, ramps and speed of its motors ×2 |" in text and "below the 5 mm of the arrival" in text
     assert "## Objectives of the brain" in text and "| No fall in the robustness variants | 0/18 falls |" in text
     assert "(calibration error: " in text
     cp.show_figures(data)

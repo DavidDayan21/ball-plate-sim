@@ -46,7 +46,10 @@ class MujocoParams:
                                        # Requires dt_physics ≤ 0.5 ms (otherwise spurious bounces)
     friction: float = 1.0              # ball-plate; MuJoCo keeps the larger of the two geoms,
                                        # so it is set on both
-    k_actual: float | None = None      # actual inertia of the ball; None: the one the controller assumes
+    k_actual: float | None = None      # actual inertia of the ball; None: the one the controller assumes.
+                                       # Also used by the simple physics
+    cone: str = "pyramidal"            # friction cone of the contacts: "pyramidal" (MuJoCo's default: 4 facets,
+                                       # up to 29 % less friction between its axes) or "elliptic" (Coulomb's law)
 
 
 @dataclass(frozen=True)
@@ -104,6 +107,7 @@ class Config:
     frame_terms: bool = False          # Euler, centrifugal and Coriolis accelerations of the rotating plate
     exact_gravity: bool = False        # gravity projected exactly on the tilted plate (couples the axes)
     servo_lag: bool = False            # motors lag their target like the MuJoCo servos (τ = kv/kp)
+    sliding: bool = False              # the ball may slide: Coulomb friction μ = mujoco_params.friction
     plate: PlateParams = field(default_factory=lambda: PlateParams(
         bias_x=math.radians(0.5), bias_y=math.radians(-0.3)))
     geometry: Geometry = field(default_factory=Geometry)

@@ -18,15 +18,21 @@ The additions to the basic model can be switched on one by one (Config, all off 
     exact_gravity    gravity projected exactly on the tilted plate (cos θx couples the axes)
     servo_lag        the motors (or the two angles of the angle-driven plate) follow their target with a
                      first-order lag τ = kv/kp, like the position servos of the MuJoCo model
+    sliding          Coulomb friction μ (mujoco_params.friction): the ball slides when rolling would need a
+                     friction force above μ·N (see SimplePhysics._slide)
 
-Assumptions: rolling without slipping, permanent contact, spin of the ball about the normal neglected
-(third-order terms). With mechanism=True, the angles go through the 3 motors (simulation/motor.py)
+The inertia of the ball is mujoco_params.k_actual when given (a ball other than the one the controller
+assumes), plate.k_inertia otherwise.
+
+Assumptions: rolling without slipping (unless sliding), permanent contact, spin of the ball about the normal
+neglected (third-order terms). With mechanism=True, the angles go through the 3 motors (simulation/motor.py)
 and the actual tilt is given by the forward kinematics; with mechanism=False, the two angles of the
 plate follow their target with the same profile as the motors, without steps.
 
 The basic model serves as the theoretical reference: its results can be derived by hand
 (see tests/test_controller.py).
 """
+from dataclasses import replace
 import math
 
 from controller.kinematics import forward_kinematics, inverse_kinematics
@@ -67,19 +73,22 @@ def rotating_plate_acceleration(p, v, omega, domega, gravity, k: float, frame: b
 
 class SimplePhysics:
     def __init__(self, cfg: Config):
-        self.p, self.g = cfg.plate, cfg.geometry
+        pm = cfg.mujoco_params
+        self.p = cfg.plate if pm.k_actual is None else replace(cfg.plate, k_inertia=pm.k_actual)
+        self.g = cfg.geometry
         self.mechanism = cfg.mechanism
         self.x, self.y = cfg.start_position
         self.vx, self.vy = cfg.start_velocity
         self.unreachable_poses = 0
         # Additions to the basic model
         self.rolling, self.frame, self.exact_gravity = cfg.rolling_term, cfg.frame_terms, cfg.exact_gravity
-        self.extended = self.rolling or self.frame or self.exact_gravity
-        pm = cfg.mujoco_params
+        self.sliding, self.friction = cfg.sliding, pm.friction
+        self.extended = self.rolling or self.frame or self.exact_gravity or self.sliding
         self.servo_tau = pm.kv_servo / pm.kp_servo if cfg.servo_lag else 0.0
         if cfg.start_height:
             raise ValueError("The simple physics keeps the ball on the plate: a dropped ball needs MuJoCo")
-        self.k, self.r = cfg.plate.k_inertia, cfg.plate.ball_radius
+        self.k, self.r = self.p.k_inertia, self.p.ball_radius
+        self.spin = None                        # sliding: (r·ωx, r·ωy) of the ball; None while it rolls
         self.previous_tilt = (0.0, 0.0)
         self.omega = (0.0, 0.0, 0.0)
         if self.mechanism:
@@ -159,6 +168,8 @@ class SimplePhysics:
         g2 = G * math.cos(bx) * math.sin(by) if self.exact_gravity else G * math.sin(by)
         a1, a2 = rotating_plate_acceleration((self.x, self.y, self.r), (self.vx, self.vy), omega, domega,
                                              (g1, g2), self.k, self.frame)
+        if self.sliding and self._slide(dt, (a1, a2), omega, previous, G * math.cos(bx) * math.cos(by)):
+            return
         self.vx += a1 * dt
         self.vy += a2 * dt
         if self.rolling:                        # d/dt(ẋ + r·Ω2) = a1 and d/dt(ẏ − r·Ω1) = a2
@@ -166,3 +177,36 @@ class SimplePhysics:
             self.vy += self.r * (omega[0] - previous[0])
         self.x += self.vx * dt
         self.y += self.vy * dt
+
+    def _slide(self, dt: float, rolling, omega, previous, normal: float) -> bool:
+        """Sliding addition, Coulomb friction μ. True if the ball slides during this step (it is then moved here).
+
+        rolling = (ẍ, ÿ) + r·Ω̇ terms of the rolling ball = g'/(1 + k), g' being gravity and frame terms; normal: N/m.
+        Per unit mass, the friction f gives ẍ = g' + f (− r·Ω̇2 with the rolling term) and spins the ball:
+        r·ω̇x = f_y/k, r·ω̇y = −f_x/k. Rolling needs f = −k·g'/(1 + k): if that exceeds μ·N, the ball slides,
+        with f = μ·N against the slip of its contact point, u = (ẋ + r·Ω2 − r·ωy, ẏ − r·Ω1 + r·ωx) (Ω only with
+        the rolling term: the plate turning under the ball). It rolls again when the slip reverses."""
+        r, k = self.r, self.k
+        w = 1.0 if self.rolling else 0.0
+        if self.spin is None:
+            need = (-k * rolling[0], -k * rolling[1])
+            if math.hypot(*need) <= self.friction * normal:
+                return False
+            self.spin = (w * r * omega[0] - self.vy, self.vx + w * r * omega[1])    # spin of the rolling ball: u = 0
+            direction = need                                                      # the slip starts against it
+        else:
+            direction = (-(self.vx + w * r * omega[1] - self.spin[1]), -(self.vy - w * r * omega[0] + self.spin[0]))
+        norm = math.hypot(*direction)
+        fx, fy = self.friction * normal * direction[0] / norm, self.friction * normal * direction[1] / norm
+        self.vx += ((1 + k) * rolling[0] + fx) * dt
+        self.vy += ((1 + k) * rolling[1] + fy) * dt
+        if self.rolling:
+            self.vx -= r * (omega[1] - previous[1])
+            self.vy += r * (omega[0] - previous[0])
+        self.spin = (self.spin[0] + fy / k * dt, self.spin[1] - fx / k * dt)
+        self.x += self.vx * dt
+        self.y += self.vy * dt
+        ux, uy = self.vx + w * r * omega[1] - self.spin[1], self.vy - w * r * omega[0] + self.spin[0]
+        if ux * direction[0] + uy * direction[1] >= 0:     # the slip has reversed (it was against `direction`)
+            self.spin = None
+        return True

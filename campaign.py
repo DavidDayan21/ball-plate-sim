@@ -16,6 +16,7 @@ The 160×120 camera is as accurate as 320×240, and faster to simulate.
     10. Gap between the simple physics and MuJoCo, explained term by term (circle and return), on the
         angle-driven plate and on the robot
     11. Adaptive control: the model gain c·g estimated online, for a hollow and a solid ball
+    12. The remaining gaps of more than 0.5 mm, reproduced by our equations or traced to their cause
 
 Every case is simulated over N draws, so that each result comes with its spread:
     - draw 0 is the nominal configuration (noise seed 0, nominal start position);
@@ -41,7 +42,7 @@ import matplotlib.pyplot as plt
 
 from simulation.config import G, REFERENCE_CONTROLLER, REFERENCE_GAINS, Config, CameraParams, square, center
 from simulation.loop import simulate
-from simulation.metrics import arrival_time, max_distance, overshoot, theta_std, tracking_error_rms
+from simulation.metrics import arrival_time, distance, max_distance, overshoot, theta_std, tracking_error_rms
 from simulation.mujoco_physics import rolling_acceleration, measured_restitution
 from simulation.parallel import execute
 
@@ -69,6 +70,31 @@ def with_calibration_error(cfg: Config, factor: float) -> Config:
 
 
 HAND_GAINS = replace(BASE, gains=REFERENCE_GAINS)    # the brain with the hand-tuned gains used before B3
+
+# Section 12: our equations (simple physics, 3-arm robot, full equation of section 10 with sliding) and MuJoCo,
+# both with the brain and a sensor without noise
+FULL_EQUATION = {"rolling_term": True, "frame_terms": True, "exact_gravity": True, "servo_lag": True}
+NOISE_FREE = {"sigma": 0.0, "sigma_height": 0.0}
+EQUATIONS = Config(physics="simple", sliding=True, **FULL_EQUATION, **NOISE_FREE)
+MUJOCO_NOISE_FREE = Config(**NOISE_FREE)
+CAMERA_SIGMA = 0.0002               # (m) synthetic sensor with the mean error of the camera (0.25 mm = σ·√(π/2))
+VARIANTS = {"solid_ball": {"k_actual": 2 / 5}, "no_calibration_error": None, "calibration_error_x2": None,
+            "friction_0.02": {"friction": 0.02}}
+
+
+def variant(cfg: Config, name: str) -> Config:
+    """cfg with the physical change of the robustness variant `name` (section 4)."""
+    if name == "no_calibration_error":
+        return with_calibration_error(cfg, 0.0)
+    if name == "calibration_error_x2":
+        return with_calibration_error(cfg, 2.0)
+    return replace(cfg, mujoco_params=replace(cfg.mujoco_params, **VARIANTS[name]))
+
+
+def throw_config(cfg: Config, speed: float, tilt_deg: float = 10.0) -> Config:
+    """Ball thrown from x = THROW_START toward +x at `speed`, setpoint at the center."""
+    return replace(cfg, theta_max=math.radians(tilt_deg), trajectory=center, duration=5.0,
+                   start_position=(THROW_START, 0.0), start_velocity=(speed, 0.0))
 
 
 def drop_case(distance: float, height: float, aimed: bool = True) -> str:
@@ -140,7 +166,35 @@ CASES = {
     "camera_fixed_gain": replace(BASE, adapt_model_gain=False),
     "latency_60ms_fixed_gain": replace(BASE, latency=3, adapt_model_gain=False),
     "solid_ball_fixed_gain": replace(BASE, mujoco_params=replace(PM, k_actual=2 / 5), adapt_model_gain=False),
+    # Section 12: the robustness variants without noise, in MuJoCo (also with Coulomb's friction cone) and in
+    # our equations
+    "mujoco_noise_free": MUJOCO_NOISE_FREE,
+    **{f"mujoco_noise_free_{name}": variant(MUJOCO_NOISE_FREE, name) for name in VARIANTS},
+    "mujoco_noise_free_elliptic": replace(MUJOCO_NOISE_FREE, mujoco_params=replace(PM, cone="elliptic")),
+    "mujoco_noise_free_elliptic_friction_0.02": replace(MUJOCO_NOISE_FREE,
+                                                        mujoco_params=replace(PM, cone="elliptic", friction=0.02)),
+    "equations": EQUATIONS,
+    **{f"equations_{name}": variant(EQUATIONS, name) for name in VARIANTS},
+    # ... the effect of the noise (section 0) over more draws (DRAWS_FACTOR), in MuJoCo and in our equations
+    "noise_mujoco_robot": Config(**REFERENCE_CONTROLLER),
+    "noise_mujoco_robot_free": Config(**NOISE_FREE, **REFERENCE_CONTROLLER),
+    "noise_equations": Config(physics="simple", **FULL_EQUATION, **REFERENCE_CONTROLLER),
+    "noise_equations_free": Config(physics="simple", **FULL_EQUATION, **NOISE_FREE, **REFERENCE_CONTROLLER),
+    # ... the effect of the mechanism (section 0), without noise: the arms halve the ramps of the plate
+    "mechanism_plate": Config(physics="simple", mechanism=False, **NOISE_FREE, **REFERENCE_CONTROLLER),
+    "mechanism_robot": Config(physics="simple", **NOISE_FREE, **REFERENCE_CONTROLLER),
+    "mechanism_robot_double_ramps": Config(physics="simple", max_acceleration=2 * BASE.max_acceleration,
+                                           max_speed=2 * BASE.max_speed, **NOISE_FREE, **REFERENCE_CONTROLLER),
+    # ... 100 ms of latency without compensation (section 6): our equations, full and basic
+    "latency_100ms_uncompensated_equations": replace(EQUATIONS, latency=5, latency_compensation=False,
+                                                     sigma=CAMERA_SIGMA),
+    "latency_100ms_uncompensated_basic": Config(physics="simple", latency=5, latency_compensation=False,
+                                                sigma=CAMERA_SIGMA),
+    # ... the thrown ball with and without waiting for its speed (section 2), at the same speed
+    "throw_0.55_wait": throw_config(BASE, 0.55),
+    "throw_0.55_no_wait": throw_config(replace(BASE, wait_for_speed=False), 0.55),
 }
+DRAWS_FACTOR = {"noise_mujoco_robot": 4, "noise_mujoco_robot_free": 4, "noise_equations": 4, "noise_equations_free": 4}
 ROBUSTNESS = {"Nominal (ping-pong, μ = 1)": "camera", "Solid ball (k = 2/5)": "solid_ball",
               "Ball 10× heavier (27 g)": "heavy_ball", "Friction μ = 0.2": "friction_0.2",
               "Friction μ = 0.02": "friction_0.02", "Plate 2× heavier (0.5 kg)": "heavy_plate",
@@ -234,8 +288,7 @@ def limit_config(name: str, v: float) -> Config:
     kind, tilt_deg, settings = LIMITS[name]
     cfg = replace(BASE, **settings)
     if kind == "throw":
-        return replace(cfg, theta_max=math.radians(tilt_deg), trajectory=center, duration=5.0,
-                       start_position=(THROW_START, 0.0), start_velocity=(v, 0.0))
+        return throw_config(cfg, v, tilt_deg)
     return replace(cfg, trajectory=center, duration=5.0, start_position=(0.0, 0.0),
                    pushes=((1.0, 0.8 * v, 0.6 * v),))
 
@@ -320,6 +373,28 @@ def settled_distance(r) -> float:
     return math.nan if r.fallen else max_distance(r, DROP_DURATION - 2, DROP_DURATION)
 
 
+def first_pass_minimum(r) -> float:
+    """Closest approach to the setpoint before the first overshoot: minimum distance from the first time the ball
+    comes within 1 cm until it is more than 1 cm away again (NaN if it never comes within 1 cm)."""
+    d = [distance(r, i) for i in range(len(r.t))]
+    start = next((i for i, v in enumerate(d) if v < 0.01), None)
+    if r.fallen or start is None:
+        return math.nan
+    end = next((i for i in range(start, len(d)) if d[i] > 0.01), len(d))
+    return min(d[start:end])
+
+
+def last_flight(r) -> float:
+    """Last time the ball is in the air (true height above AIRBORNE), NaN if never."""
+    return next((t for t, h in zip(reversed(r.t), reversed(r.height)) if h > AIRBORNE), math.nan)
+
+
+def braking(r, tilt: float = math.radians(-9.5)):
+    """Thrown ball (toward +x): first time the plate tilts beyond `tilt` against it, and where the ball is then."""
+    i = next((i for i, (tx, _) in enumerate(r.actual_tilt) if tx <= tilt), None)
+    return (math.nan, math.nan) if i is None else (r.t[i], r.x[i])
+
+
 # --- Formatting ----------------------------------------------------------------------------------
 def fmt(values, unit: str = "", decimals: int = 2, scale: float = 1.0) -> str:
     """'mean ± std unit' over the draws ('mean unit' with a single draw)."""
@@ -380,7 +455,7 @@ def run_campaign(draws: int, processes: int = None) -> dict:
         limits[name]          list of (v_max, tested, runs of draw 0), one per draw
         checks[name]          draw 0: list of (v, caught) around the threshold
     """
-    jobs = [(name, k) for name in CASES for k in range(draws)]
+    jobs = [(name, k) for name in CASES for k in range(draws * DRAWS_FACTOR.get(name, 1))]
     results = execute(simulate, [draw(CASES[name], k) for name, k in jobs], processes)
     runs = {name: [] for name in CASES}
     for (name, _), r in zip(jobs, results):
@@ -743,8 +818,114 @@ def write_report(data: dict, path: str = os.path.join("results", "report.md")) -
              "(before 4 s) does not depend on it. The estimate replaces the nominal c·g in the feedforward and in "
              "the latency predictor; the gains of the PID stay those of the nominal model.")
 
+    write_gaps(rep, runs, data)
     rep.save(path)
     print(f"\nReport written to {path}")
+
+
+def share(reproduced: float, measured: float) -> str:
+    """Share of a measured gap that a model reproduces."""
+    return "-" if math.isnan(reproduced) or math.isnan(measured) or measured == 0 else f"{100 * reproduced / measured:.0f} %"
+
+
+def write_gaps(rep: Report, runs: dict, data: dict) -> None:
+    """Section 12: every gap of more than 0.5 mm left by sections 0 to 11, explained."""
+    rep.section("12. The remaining gaps of more than 0.5 mm, reproduced by our equations or traced to their cause")
+    rep.text("Our equations: the simple physics of the 3-arm robot with the full equation of section 10 and sliding "
+             "(Coulomb friction μ: the ball slides when rolling would need more). A gap is explained when a model "
+             "reproduces it within 80 to 120 %, as in section 10.")
+
+    def gap(base, case, indicator=return_distance):
+        a, b = [indicator(r) for r in runs[base]], [indicator(r) for r in runs[case]]
+        return fmt_delta(a, b, " mm", scale=1000), paired_delta(a, b)[0]
+
+    rows = []
+    for label, name in (("Solid ball (k = 2/5)", "solid_ball"), ("No calibration error (0°, 0°)", "no_calibration_error"),
+                        ("Calibration error ×2 (1°, -0.6°)", "calibration_error_x2"), ("Friction μ = 0.02", "friction_0.02")):
+        text_mj, mj = gap("mujoco_noise_free", f"mujoco_noise_free_{name}")
+        text_eq, eq = gap("equations", f"equations_{name}")
+        text_cam, cam = gap("camera", name)
+        rows.append([label, text_mj, text_eq, share(eq, mj), text_cam, f"{1000 * (cam - mj):+.2f} mm"])
+    text_el, el = gap("mujoco_noise_free_elliptic", "mujoco_noise_free_elliptic_friction_0.02")
+    text_eq, eq = gap("equations", "equations_friction_0.02")
+    rows.append(["Friction μ = 0.02, MuJoCo with Coulomb's friction cone (elliptic)", text_el, text_eq, share(eq, el), "-", "-"])
+    rep.table(["Robustness variant (section 4): gap of the return to the center to the nominal case",
+               "MuJoCo, sensor without noise", "Our equations, sensor without noise", "Share reproduced",
+               "MuJoCo + camera (section 4)", "Effect of the camera"], rows)
+    rep.text("The brain in both. The return to the center is the tail of the approach: what the integral has built up "
+             "over the last 2 cm (section 7), against what the calibration error of the plate needs. A solid ball "
+             "(c·g 19 % higher than the gains of the PID assume) and a plate without calibration error leave the "
+             "integral in excess; a calibration error ×2 leaves it short, and the ball arrives later. With μ = 0.02, "
+             "the ball slides while the plate brakes it (rolling at 10° needs μ ≥ 0.071, section 1): its path to the "
+             "center changes, and the integral of one axis builds up more over the last 2 cm. By default, MuJoCo approximates the friction cone by a pyramid: between its axes, it "
+             "allows up to 29 % less friction than μ·N (1 - 1/√2); with Coulomb's round cone, our equations "
+             "reproduce MuJoCo. Last column: the effect of the camera on each gap (MuJoCo + camera minus MuJoCo "
+             "without noise).")
+
+    rows = []
+    for label, indicator in (("Max distance between 2 s and 4 s", return_distance), ("Circle error", circle_error)):
+        text_mj, mj = gap("noise_mujoco_robot", "noise_mujoco_robot_free", indicator)
+        text_eq, eq = gap("noise_equations", "noise_equations_free", indicator)
+        rows.append([label, text_mj, text_eq, share(eq, mj)])
+    rep.table(["Effect of the noise of the synthetic sensor (section 0): noise removed", "MuJoCo", "Our equations",
+               "Share reproduced"], rows)
+    rep.text(f"Reference controller of section 0, over {DRAWS_FACTOR['noise_mujoco_robot']} times more draws: the "
+             "noise makes the return vary by more than 1 mm from one draw to the next. Our equations reproduce the "
+             "effect: it does not come from MuJoCo. The motors cannot follow the noisy command with their gentle "
+             "ramp, and lag it.")
+
+    text_robot, robot = gap("mechanism_plate", "mechanism_robot")
+    text_double, double = gap("mechanism_plate", "mechanism_robot_double_ramps")
+    rep.table(["Effect of the mechanism on the return (section 0), sensor without noise", "Δ vs angle-driven plate",
+               "Share explained by the ramps"],
+              [["3-arm robot", text_robot, "-"],
+               ["3-arm robot, ramps and speed of its motors ×2", text_double,
+                share(robot - double, robot)]])
+    rep.text("Simple physics, reference controller. With the noise of section 0, this effect is not significant. The "
+             "motors turn about twice as much as the plate (the lever of the arms, section 0): with the same ramps, "
+             "the plate of the robot tilts more slowly. Motors twice as fast remove most of the gap; the rest comes "
+             "from the kinematics.")
+
+    rows = []
+    camera_return = [return_distance(r) for r in runs["latency_100ms_uncompensated"]]
+    camera_circle = [circle_error(r) for r in runs["latency_100ms_uncompensated"]]
+    rows.append(["MuJoCo + camera (section 6)", fmt(camera_return, " mm", scale=1000), "-",
+                 fmt(camera_circle, " mm", scale=1000), "-"])
+    for label, case in (("Our equations", "latency_100ms_uncompensated_equations"),
+                        ("Basic model of the simple physics", "latency_100ms_uncompensated_basic")):
+        ret, cir = [return_distance(r) for r in runs[case]], [circle_error(r) for r in runs[case]]
+        rows.append([label, fmt(ret, " mm", scale=1000), share(mean_std(ret)[0], mean_std(camera_return)[0]),
+                     fmt(cir, " mm", scale=1000), share(mean_std(cir)[0], mean_std(camera_circle)[0])])
+    rep.table(["Latency 100 ms without compensation", "Max distance between 2 s and 4 s", "Share", "Circle error",
+               "Share"], rows)
+    rep.text(f"Synthetic sensor with the mean error of the camera (σ = {1000 * CAMERA_SIGMA:.1f} mm). Without "
+             "compensation, 100 ms of latency leaves the loop lightly damped: the ball oscillates around the center "
+             "for seconds. The plate turning under the ball (r·θ̈) and the lag of the servos damp it even less: the "
+             "full equation reproduces MuJoCo, the basic model does not.")
+
+    everywhere = [first_pass_minimum(r) for r in runs["camera_integral_everywhere"]]
+    below = sum(v < 0.005 for v in everywhere)            # arrival: first time below 5 mm (5 % of 10 cm)
+    wait, no_wait = [braking(r) for r in runs["throw_0.55_wait"]], [braking(r) for r in runs["throw_0.55_no_wait"]]
+    caught = [r for v, r in sorted(data["limits"]["throw_10deg_no_wait"][0][2].items()) if not r.fallen]
+    margin = 1000 * (R_PLATE - max(caught[-1].x)) if caught else math.nan
+    flights = [last_flight(r) for r in runs["dropped"]]
+    rep.text("Other gaps, traced to their cause:")
+    rep.text(f"- Error integrated everywhere (section 7): the spread of the arrival and of the overshoot is that of a "
+             f"threshold. On its first pass, the ball comes within {fmt(everywhere, ' mm', scale=1000)} of the center, "
+             f"below the 5 mm of the arrival in {below} draws out of {len(everywhere)}; the arrival is then this "
+             "first pass, otherwise the next one, more than a second later. The return between 2 s and 4 s does not "
+             "depend on a threshold.")
+    rep.text(f"- Thrown ball without waiting for its speed (section 2), at 0.55 m/s: at the first image, the position "
+             f"alone tilts the plate toward the edge; it brakes the ball (tilt beyond -9.5°) at "
+             f"{fmt([t for t, _ in no_wait], ' s')} instead of {fmt([t for t, _ in wait], ' s')}, when the ball is at "
+             f"x = {fmt([x for _, x in no_wait], ' mm', scale=1000)} instead of {fmt([x for _, x in wait], ' mm', scale=1000)}. "
+             f"Near the threshold, the ball stops at the edge: on draw 0, the fastest throw caught stops {margin:.1f} mm "
+             "from it. The ball also hops a little while the plate brakes it (in the air "
+             f"{fmt([airborne(r) for r in runs['throw_0.55_no_wait']], ' %', 1, 100)} of the time at 0.55 m/s): "
+             "a millimetre either way decides, hence the exceptions to monotonicity.")
+    rep.text(f"- Ball dropped from 30.5 cm (section 4): the max distance between 2 s and 4 s is measured while it "
+             f"still bounces (last flight above {1000 * AIRBORNE:.0f} mm at {fmt(flights, ' s')}). For this variant, "
+             "the criterion is that the ball does not fall.")
 
 
 # --- Figures (draw 0) ----------------------------------------------------------------------------------

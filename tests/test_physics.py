@@ -8,7 +8,8 @@ import pytest
 
 from controller.kinematics import Geometry, inverse_kinematics
 from simulation.config import G, Config, PlateParams
-from simulation.mujoco_physics import MujocoPhysics, rolling_acceleration, build, plate_tilt, measured_restitution
+from simulation.mujoco_physics import (MujocoPhysics, rolling_acceleration, build, model_xml, plate_tilt,
+                                       measured_restitution)
 from simulation.simple_physics import SimplePhysics, acceleration, rotating_plate_acceleration
 
 K = 2 / 3
@@ -115,6 +116,60 @@ def test_no_slip_condition():
     slides = rolling_acceleration(K, th, friction=0.7 * mu_min)
     assert abs(rolls / (G * math.sin(th) / (1 + K)) - 1) < 0.01
     assert abs(slides / (G * (math.sin(th) - 0.7 * mu_min * math.cos(th))) - 1) < 0.02
+
+
+def _ball_on_fixed_plate(theta, friction, duration=0.3, vx=0.0, rx_spin=None, k_actual=None):
+    """Simple physics, sliding allowed: angle-driven plate held at θx (no bias), ball released at the center
+    with the speed vx. Returns (times, x, phys)."""
+    pm = replace(Config().mujoco_params, friction=friction, k_actual=k_actual)
+    cfg = Config(physics="simple", mechanism=False, sliding=True, plate=PlateParams(), mujoco_params=pm,
+                 start_position=(0.0, 0.0), start_velocity=(vx, 0.0))
+    phys = SimplePhysics(cfg)
+    phys.tilt = phys.previous_tilt = (theta, 0.0)
+    for m in phys.motors:
+        m.position = m.target = theta if m is phys.motors[0] else 0.0
+    if rx_spin is not None:
+        phys.spin = (0.0, rx_spin)                 # r·ωy given: the ball starts with this spin, sliding
+    T, X = [], []
+    for n in range(round(duration / 0.0005)):
+        phys.step(0.0005)
+        T.append((n + 1) * 0.0005)
+        X.append(phys.ball()[0])
+    return np.array(T), np.array(X), phys
+
+
+def test_simple_physics_sliding_matches_the_no_slip_condition():
+    # Same theory as MuJoCo above: a = g·sin θ / (1 + k) above μ_min, a = g·(sin θ - μ·cos θ) below
+    th = math.radians(10)
+    mu_min = K * math.tan(th) / (1 + K)
+    for factor, expected in ((1.3, G * math.sin(th) / (1 + K)), (0.7, G * (math.sin(th) - 0.7 * mu_min * math.cos(th)))):
+        t, x, phys = _ball_on_fixed_plate(th, factor * mu_min)
+        assert 2 * np.polyfit(t, x, 2)[0] == pytest.approx(expected, rel=1e-3)
+        assert (phys.spin is None) == (factor > 1)
+    # A ball inside k_actual: solid ball, c = 5/7
+    t, x, _ = _ball_on_fixed_plate(th, 1.0, k_actual=2 / 5)
+    assert 2 * np.polyfit(t, x, 2)[0] == pytest.approx(G * math.sin(th) / (1 + 2 / 5), rel=1e-3)
+
+
+def test_sliding_ball_rolls_again():
+    # Level plate, ball thrown at 0.5 m/s without spin: friction slows it and spins it up until it rolls,
+    # at v = v0/(1 + k) (angular momentum about the contact point conserved), after t = k·v0 / ((1 + k)·μ·g)
+    v0, mu = 0.5, 0.05
+    t, x, phys = _ball_on_fixed_plate(0.0, mu, duration=0.6, vx=v0, rx_spin=0.0)
+    assert phys.spin is None
+    assert phys.ball_velocity()[0] == pytest.approx(v0 / (1 + K), rel=1e-3)
+    t_roll = K * v0 / ((1 + K) * mu * G)
+    x_roll = v0 * t_roll - mu * G * t_roll ** 2 / 2
+    assert phys.ball()[0] == pytest.approx(x_roll + v0 / (1 + K) * (0.6 - t_roll), rel=1e-3)
+
+
+def test_friction_cone_option():
+    # Pyramidal: MuJoCo's default, the model is unchanged; elliptic: Coulomb's round cone
+    pm = Config().mujoco_params
+    assert "cone=" not in model_xml(Config())
+    elliptic = Config(mujoco_params=replace(pm, cone="elliptic"))
+    assert 'cone="elliptic"' in model_xml(elliptic)
+    assert mujoco.MjModel.from_xml_string(model_xml(elliptic)).opt.cone == mujoco.mjtCone.mjCONE_ELLIPTIC
 
 
 def test_dropped_ball():
