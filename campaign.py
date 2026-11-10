@@ -11,8 +11,9 @@ The 160×120 camera is as accurate as 320×240, and faster to simulate.
     5. Dropped ball: where and from how high
     6. Camera latency, with and without compensation by prediction
     7. Integral action: error integrated everywhere or only near the setpoint
-    8. Square trajectory
-    9. Gap between the simple physics and MuJoCo on the robot, explained term by term
+    8. Gains of the PID: hand-tuned or by LQR
+    9. Square trajectory
+    10. Gap between the simple physics and MuJoCo on the robot, explained term by term
 
 Every case is simulated over N draws, so that each result comes with its spread:
     - draw 0 is the nominal configuration (noise seed 0, nominal start position);
@@ -36,7 +37,7 @@ import time
 
 import matplotlib.pyplot as plt
 
-from simulation.config import G, Config, CameraParams, square, center
+from simulation.config import G, REFERENCE_CONTROLLER, REFERENCE_GAINS, Config, CameraParams, square, center
 from simulation.loop import simulate
 from simulation.metrics import arrival_time, max_distance, overshoot, theta_std, tracking_error_rms
 from simulation.mujoco_physics import rolling_acceleration, measured_restitution
@@ -58,12 +59,15 @@ SPEED_STEP = 0.01                   # (m/s) resolution of the maximum speeds
 SPEED_RANGE = (0.1, 1.5)            # (m/s) bisection bracket: caught at the low end, fallen at the high end
 CHECK_SPAN = 5                      # draw 0: every speed within ±5 steps of the threshold is simulated
 
-# Sections 0 and 9 validate the simulator, not the brain: they use a frozen reference controller (the PID
-# without latency compensation, error integrated everywhere, ball never considered in the air, no wait for
-# the speed), so that their results do not change when the brain improves, and the motors of the first robot
-# (single ramp of 50 rad/s²: the ball never hops, which the simple physics does not model).
-REFERENCE_CONTROLLER = {"latency_compensation": False, "integration_zone": math.inf,
-                        "airborne_height": math.inf, "wait_for_speed": False, "fast_move": math.inf}
+
+def with_calibration_error(cfg: Config, factor: float) -> Config:
+    """The same configuration, with the calibration error of the plate multiplied by factor."""
+    p = cfg.plate
+    return replace(cfg, plate=replace(p, bias_x=factor * p.bias_x, bias_y=factor * p.bias_y))
+
+
+HAND_GAINS = replace(BASE, gains=REFERENCE_GAINS)    # the brain with the hand-tuned gains used before B3
+
 
 def drop_case(distance: float, height: float, aimed: bool = True) -> str:
     return f"drop_{round(1000 * distance)}mm_{round(1000 * height)}mm" + ("" if aimed else "_reacting")
@@ -80,7 +84,7 @@ def drop_config(distance: float, height: float) -> Config:
 
 # Closed-loop cases (nominal configurations), each simulated over every draw
 CASES = {
-    # Simulator validation (sections 0 and 9), reference controller
+    # Simulator validation (sections 0 and 10), frozen reference controller (simulation/config.py)
     "simple_plate": Config(physics="simple", mechanism=False, **REFERENCE_CONTROLLER),
     "simple_robot": Config(physics="simple", **REFERENCE_CONTROLLER),
     "simple_robot_rolling": Config(physics="simple", rolling_term=True, **REFERENCE_CONTROLLER),
@@ -100,9 +104,8 @@ CASES = {
     "friction_0.02": replace(BASE, mujoco_params=replace(PM, friction=0.02)),
     "heavy_plate": replace(BASE, mujoco_params=replace(PM, plate_mass=0.5)),
     "dropped": replace(BASE, start_height=DROP_HEIGHT),
-    "no_calibration_error": replace(BASE, plate=replace(BASE.plate, bias_x=0.0, bias_y=0.0)),
-    "calibration_error_x2": replace(BASE, plate=replace(BASE.plate, bias_x=2 * BASE.plate.bias_x,
-                                                         bias_y=2 * BASE.plate.bias_y)),
+    "no_calibration_error": with_calibration_error(BASE, 0.0),
+    "calibration_error_x2": with_calibration_error(BASE, 2.0),
     "latency_60ms": replace(BASE, latency=3),
     "latency_100ms": replace(BASE, latency=5),
     "square": replace(BASE, trajectory=square, duration=16.0, start_position=(0.05, 0.05)),
@@ -110,13 +113,18 @@ CASES = {
     **{drop_case(d, h): drop_config(d, h) for d in DROP_DISTANCES for h in DROP_HEIGHTS},
     **{drop_case(d, h, aimed=False): replace(drop_config(d, h), airborne_height=math.inf)
        for d in DROP_DISTANCES for h in DROP_HEIGHTS},
-    # The brain without one of its parts: latency compensation (sections 6 and 8), integration zone (section 7)
+    # The brain without one of its parts: latency compensation (sections 6 and 9), integration zone (section 7),
+    # LQR gains (section 8)
     "camera_uncompensated": replace(BASE, latency_compensation=False),
     "latency_60ms_uncompensated": replace(BASE, latency=3, latency_compensation=False),
     "latency_100ms_uncompensated": replace(BASE, latency=5, latency_compensation=False),
     "square_uncompensated": replace(BASE, trajectory=square, duration=16.0, start_position=(0.05, 0.05),
                                     latency_compensation=False),
     "camera_integral_everywhere": replace(BASE, integration_zone=math.inf),
+    "camera_hand_gains": HAND_GAINS,
+    "no_calibration_error_hand_gains": with_calibration_error(HAND_GAINS, 0.0),
+    "calibration_error_x2_hand_gains": with_calibration_error(HAND_GAINS, 2.0),
+    "latency_60ms_hand_gains": replace(HAND_GAINS, latency=3),
 }
 ROBUSTNESS = {"Nominal (ping-pong, μ = 1)": "camera", "Solid ball (k = 2/5)": "solid_ball",
               "Ball 10× heavier (27 g)": "heavy_ball", "Friction μ = 0.2": "friction_0.2",
@@ -126,10 +134,13 @@ ROBUSTNESS = {"Nominal (ping-pong, μ = 1)": "camera", "Solid ball (k = 2/5)": "
               "Ball dropped from 30.5 cm (ITTF height)": "dropped"}
 # The return to the center must hold whatever the calibration error of the plate, from 0 to 1°
 CALIBRATION = {"none": "no_calibration_error", "nominal": "camera", "×2": "calibration_error_x2"}
+CALIBRATION_HAND_GAINS = {"none": "no_calibration_error_hand_gains", "nominal": "camera_hand_gains",
+                          "×2": "calibration_error_x2_hand_gains"}
 # Maximum speeds searched by bisection: name -> (kind, max tilt in degrees, settings changed from BASE)
 LIMITS = {"throw_10deg": ("throw", 10, {}), "throw_20deg": ("throw", 20, {}), "push": ("push", 10, {}),
           "throw_10deg_no_wait": ("throw", 10, {"wait_for_speed": False}),
-          "throw_10deg_slow_motors": ("throw", 10, {"fast_move": math.inf})}
+          "throw_10deg_slow_motors": ("throw", 10, {"fast_move": math.inf}),
+          "throw_10deg_hand_gains": ("throw", 10, {"gains": REFERENCE_GAINS})}
 
 
 # --- Draws and statistics ------------------------------------------------------------------------
@@ -372,6 +383,15 @@ def run_campaign(draws: int, processes: int = None) -> dict:
     return {"draws": draws, "runs": runs, "limits": limits, "checks": checks}
 
 
+def worst_return(runs: dict, calibration: dict) -> tuple:
+    """(label, return distances over the draws) of the calibration error whose mean return is the worst
+    (a calibration error where every draw fell counts as the worst)."""
+    backs = {label: [return_distance(r) for r in runs[case]] for label, case in calibration.items()}
+    means = {label: mean_std(values)[0] for label, values in backs.items()}
+    worst = max(backs, key=lambda label: math.inf if math.isnan(means[label]) else means[label])
+    return worst, backs[worst]
+
+
 def objectives(data: dict) -> list:
     """Quantified objectives of the brain, judged on the mean over the draws: rows [objective, measured,
     target, met]. Thrown ball at ±10°, circle at 60 ms of latency, return to the center (worst of the
@@ -379,9 +399,7 @@ def objectives(data: dict) -> list:
     runs = data["runs"]
     shares = [math.nan if v is None else v / physical_limit("throw_10deg") for v, _, _ in data["limits"]["throw_10deg"]]
     circle = [circle_error(r) for r in runs["latency_60ms"]]
-    backs = {label: [return_distance(r) for r in runs[case]] for label, case in CALIBRATION.items()}
-    mean_back = {label: mean_std(values)[0] for label, values in backs.items()}
-    worst = max(backs, key=lambda label: math.inf if math.isnan(mean_back[label]) else mean_back[label])
+    worst, back = worst_return(runs, CALIBRATION)
     falls = sum(r.fallen for case in ROBUSTNESS.values() for r in runs[case])
     total = sum(len(runs[case]) for case in ROBUSTNESS.values())
     met = lambda ok: "yes" if ok else "**no**"
@@ -389,8 +407,8 @@ def objectives(data: dict) -> list:
         ["Thrown ball caught (±10°)", fmt(shares, " %", 0, 100), "≥ 90 % of the physical limit",
          met(mean_std(shares)[0] >= 0.90)],
         ["Circle with 60 ms of latency", fmt(circle, " mm", scale=1000), "< 2 mm", met(mean_std(circle)[0] < 0.002)],
-        ["Back to the center in less than 2 s", f"{fmt(backs[worst], ' mm', scale=1000)} (calibration error: {worst})",
-         "≤ 5 mm between 2 s and 4 s", met(mean_back[worst] <= 0.005)],
+        ["Back to the center in less than 2 s", f"{fmt(back, ' mm', scale=1000)} (calibration error: {worst})",
+         "≤ 5 mm between 2 s and 4 s", met(mean_std(back)[0] <= 0.005)],
         ["No fall in the robustness variants", f"{falls}/{total} falls", "0", met(falls == 0)],
     ]
 
@@ -416,10 +434,12 @@ def write_report(data: dict, path: str = os.path.join("results", "report.md")) -
              "other columns. Δ: mean of the paired differences over the same draws ± standard error, "
              "in **bold** when significant (paired t-test at the 5 % level: |Δ| > t × standard error, "
              "t = 97.5 % quantile of Student's distribution, 2.26 for 10 draws).")
-    rep.text("The brain is the PID with its latency compensation, its integration zone and its aimed bounce "
-             "(default settings): it is judged by the objectives and sections 2 to 8. Sections 0 and 9 validate the "
-             "simulator: they use a frozen reference controller (the PID without latency compensation, error "
-             "integrated everywhere, ball never considered in the air).")
+    kp, ki, kd = BASE.pid_gains()
+    rep.text(f"The brain is the PID with its LQR gains (Kp = {kp:.2f}, Ki = {ki:.2f}, Kd = {kd:.2f}), its latency "
+             "compensation, its integration zone and its aimed bounce (default settings): it is judged by the "
+             "objectives and sections 2 to 9. Sections 0 and 10 validate the simulator: they use a frozen reference "
+             "controller (hand-tuned gains Kp = 1, Ki = 1, ζ = 0.7, without latency compensation, error integrated "
+             "everywhere, ball never considered in the air) and the motors of the first robot (single ramp).")
 
     rep.section("Objectives of the brain (full chain with the camera)")
     rep.table(["Objective", "Measured", "Target", "Met"], objectives(data))
@@ -581,7 +601,33 @@ def write_report(data: dict, path: str = os.path.join("results", "report.md")) -
              f"error only while it is below {zone_mm:.0f} mm: the integral no longer builds up during the "
              "approach, and only corrects the calibration error of the plate.")
 
-    rep.section("8. Square trajectory (10 cm sides, 5 cm/s), latency 20 ms")
+    rep.section("8. Gains of the PID: hand-tuned or by LQR")
+    hand = {key: [circle_error(r) for r in runs[case]] for key, case in (("20", "camera_hand_gains"),
+                                                                           ("60", "latency_60ms_hand_gains"))}
+    rows = []
+    for label, gains, cases, calibration, limit in (
+            ("hand-tuned", REFERENCE_GAINS, ("camera_hand_gains", "latency_60ms_hand_gains"), CALIBRATION_HAND_GAINS,
+             "throw_10deg_hand_gains"),
+            ("LQR", (kp, ki, kd), ("camera", "latency_60ms"), CALIBRATION, "throw_10deg")):
+        worst, back = worst_return(runs, calibration)
+        errors = {key: [circle_error(r) for r in runs[case]] for key, case in zip(("20", "60"), cases)}
+        speeds = [math.nan if v is None else v for v, _, _ in data["limits"][limit]]
+        lqr = label == "LQR"
+        rows.append([label, "{:.2f}, {:.2f}, {:.2f}".format(*gains), fallen(runs[cases[0]]),
+                     f"{fmt(back, ' mm', scale=1000)} ({worst})", fmt(errors["20"], " mm", scale=1000),
+                     fmt_delta(hand["20"], errors["20"], " mm", scale=1000) if lqr else "-",
+                     fmt(errors["60"], " mm", scale=1000),
+                     fmt_delta(hand["60"], errors["60"], " mm", scale=1000) if lqr else "-",
+                     fmt([jitter(r) for r in runs[cases[0]]], "°", scale=180 / math.pi), fmt(speeds, " m/s")])
+    rep.table(["Gains", "Kp, Ki, Kd", "Fallen", "Max distance between 2 s and 4 s (worst calibration error)",
+               "Circle error", "Δ (LQR - hand-tuned)", "Circle error, 60 ms", "Δ (LQR - hand-tuned)", "θx jitter",
+               "Thrown ball caught (±10°)"], rows)
+    rep.text(f"Latency 20 ms with compensation, integration zone, unless stated. LQR gains (controller/lqr.py, "
+             f"Bryson's rule): a position error of {100 * BASE.lqr_position:.0f} cm, an integral of the error over "
+             f"{BASE.lqr_integral_time:.1f} s and a tilt of {math.degrees(BASE.lqr_tilt):.0f}° cost as much as one "
+             "another. The stiffer loop corrects the calibration error of the plate faster.")
+
+    rep.section("9. Square trajectory (10 cm sides, 5 cm/s), latency 20 ms")
     without = [square_error(r) for r in runs["square_uncompensated"]]
     with_ = [square_error(r) for r in runs["square"]]
     rep.table(["Compensation", "Fallen", "Error (2nd lap)", "Δ (with - without)"], [
@@ -589,7 +635,7 @@ def write_report(data: dict, path: str = os.path.join("results", "report.md")) -
         ["with", fallen(runs["square"]), fmt(with_, " mm", scale=1000),
          fmt_delta(without, with_, " mm", scale=1000)]])
 
-    rep.section("9. Simple physics → MuJoCo on the 3-arm robot: the gap, term by term "
+    rep.section("10. Simple physics → MuJoCo on the 3-arm robot: the gap, term by term "
                 "(synthetic sensor, reference controller)")
     base = [circle_error(r) for r in runs["simple_robot"]]
     gap = paired_delta(base, [circle_error(r) for r in runs["mujoco_robot"]])[0]

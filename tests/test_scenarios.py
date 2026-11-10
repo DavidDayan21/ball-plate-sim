@@ -5,7 +5,7 @@ import statistics
 
 from simulation.loop import simulate
 from simulation.config import Config, center
-from simulation.metrics import theta_std, tracking_error_rms
+from simulation.metrics import max_distance, theta_std, tracking_error_rms
 
 SIMPLE_PLATE = Config(physics="simple", mechanism=False)
 SIMPLE_ROBOT = Config(physics="simple", max_acceleration=math.inf)
@@ -37,7 +37,8 @@ def test_simple_robot():
 
 
 def test_slow_motors_degrade_tracking():
-    assert circle_error(replace(SIMPLE_ROBOT, max_speed=0.5)) > 1.5 * circle_error(SIMPLE_ROBOT)
+    # (at 0.5 rad/s, the LQR gains lose the ball)
+    assert circle_error(replace(SIMPLE_ROBOT, max_speed=0.7)) > 1.5 * circle_error(SIMPLE_ROBOT)
 
 
 # --- MuJoCo -------------------------------------------------------------------------------------
@@ -77,9 +78,19 @@ def test_latency_degrades_tracking():
 
 
 def test_latency_compensation():
-    # Compensation is on by default (part of the PID brain)
+    # Compensation is on by default (part of the PID brain); 60 ms, the latency of the objective
     assert Config().latency_compensation
-    assert circle_error(Config(latency=5)) < 0.5 * circle_error(Config(latency=5, latency_compensation=False))
+    assert circle_error(Config(latency=3)) < 0.5 * circle_error(Config(latency=3, latency_compensation=False))
+
+
+def test_return_to_the_center_whatever_the_calibration_error():
+    # Objective "back to the center in less than 2 s" (start 10 cm away): with the LQR gains (B3), within 5 mm
+    # between 2 s and 4 s for a calibration error of the plate of 0, 1 or 2 times the nominal one (synthetic
+    # sensor; the hand-tuned gains left 16 mm at 2 times)
+    for factor in (0.0, 1.0, 2.0):
+        cfg = Config(duration=4.0)
+        cfg = replace(cfg, plate=replace(cfg.plate, bias_x=factor * cfg.plate.bias_x, bias_y=factor * cfg.plate.bias_y))
+        assert max_distance(simulate(cfg), 2, 4) < 0.005
 
 
 def test_thrown_ball_caught():

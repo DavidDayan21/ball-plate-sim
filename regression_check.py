@@ -34,7 +34,7 @@ import time
 import numpy as np
 
 from simulation.loop import Results, simulate
-from simulation.config import Config, CameraParams, square, center
+from simulation.config import REFERENCE_CONTROLLER, Config, CameraParams, square, center
 from simulation.parallel import execute
 from simulation.mujoco_physics import rolling_acceleration, measured_restitution
 from simulation.session import Session, sandbox_config
@@ -45,11 +45,8 @@ INFO_KEY = "__info__"        # reserved key: date and environment of the referen
 
 # --- Reference cases ---------------------------------------------------------------------------
 # Every setting that a case relies on is written explicitly, so that changing a default value of Config
-# (as the brain or the robot improves) does not change the cases: they use the reference controller of the
-# campaign (latency compensation off unless stated, error integrated everywhere, ball never considered in
-# the air, no wait for the speed) and the motors of the first robot (single ramp of 50 rad/s²).
-REFERENCE_CONTROLLER = {"latency_compensation": False, "integration_zone": math.inf,
-                        "airborne_height": math.inf, "wait_for_speed": False, "fast_move": math.inf}
+# (as the brain or the robot improves) does not change the cases: they use the frozen reference controller
+# and motors (simulation/config.py), with latency compensation only where stated.
 CAMERA = Config(sensor="camera", camera=CameraParams(width=160, image_height=120), **REFERENCE_CONTROLLER)
 PM = CAMERA.mujoco_params
 

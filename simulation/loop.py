@@ -88,7 +88,7 @@ class Simulation:
             self.sensor = Sensor(cfg.sigma, cfg.latency, cfg.seed, cfg.sigma_height)
         flight = (FlightEstimator(cfg.geometry.height, cfg.plate.ball_radius, cfg.control_period, cfg.latency,
                                   cfg.airborne_height, G) if cfg.airborne_height < math.inf else None)
-        self.ctrl = PlateController(cfg.kp, cfg.ki, cfg.kd(), cfg.theta_max, cfg.tau_d,
+        self.ctrl = PlateController(*cfg.pid_gains(), cfg.theta_max, cfg.tau_d,
                                       model_gain=cfg.plate.coefficient * G, feedforward=cfg.feedforward,
                                       latency_compensation=cfg.latency if cfg.latency_compensation else 0,
                                       period=cfg.control_period, integration_zone=cfg.integration_zone,

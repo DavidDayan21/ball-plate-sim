@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 import math
 
 from controller.kinematics import Geometry
+from controller.lqr import pid_gains
 
 G = 9.81  # m/s²
 
@@ -137,11 +138,16 @@ class Config:
     airborne_height: float = 0.015     # (m) above this measured height, the ball is in the air: the camera takes
                                        # its center on the light ray, at the distance given by its size, and the
                                        # brain aims the bounce (controller/flight.py). math.inf: never in the air
-    # Controller
+    # Controller (the PID brain)
     control_period: float = 0.02       # 50 Hz
-    kp: float = 1.0                    # (rad/m)
-    ki: float = 1.0                    # (rad/(m·s))
-    zeta: float = 0.7                  # target damping, gives Kd
+    # Gains of the PID by LQR (controller/lqr.py, Bryson's rule): a position error of lqr_position, an integral
+    # of the error of lqr_position·lqr_integral_time and a tilt of lqr_tilt cost as much as one another.
+    # Chosen in B3 for the return to the center whatever the calibration error, keeping a margin at 100 ms of
+    # latency (stiffer: the loop oscillates there): Kp = 1.89 rad/m, Ki = 1.75 rad/(m·s), Kd = 0.80 rad·s/m
+    lqr_position: float = 0.20         # (m)
+    lqr_integral_time: float = 0.5     # (s)
+    lqr_tilt: float = math.radians(10)
+    gains: tuple = None                # (Kp, Ki, Kd) imposed instead of the LQR gains
     theta_max: float = math.radians(10)
     tau_d: float = 0.05                # derivative filter (s); 0: no filter
     feedforward: bool = True
@@ -152,9 +158,22 @@ class Config:
     integration_zone: float = 0.02     # (m) each axis integrates its error only within this distance of the
                                        # setpoint (math.inf: everywhere). It must exceed the offset θb/Kp that
                                        # a calibration error θb leaves without integral: 2 cm corrects up to
-                                       # 0.02 rad = 1.1° with Kp = 1 rad/m (part of the PID brain)
+                                       # 0.02·Kp rad (2.2° with the LQR gains)
 
-    def kd(self) -> float:
-        """Kd giving the target damping ζ: 2·ζ·ω0 = c·g·Kd, with ω0 = √(c·g·Kp)."""
-        cg = self.plate.coefficient * G
-        return 2 * self.zeta * math.sqrt(cg * self.kp) / cg
+    def pid_gains(self) -> tuple:
+        """(Kp, Ki, Kd) of each axis, in rad/m, rad/(m·s) and rad·s/m."""
+        if self.gains is not None:
+            return self.gains
+        return pid_gains(self.plate.coefficient * G, self.lqr_position, self.lqr_integral_time, self.lqr_tilt)
+
+
+# The frozen reference controller: the PID before the brain was improved (hand-tuned gains Kp = 1 rad/m,
+# Ki = 1 rad/(m·s) and the Kd giving a damping ζ = 0.7 to the PD, 2·ζ·√(c·g·Kp) = c·g·Kd; no latency compensation;
+# error integrated everywhere; ball never considered in the air; no wait for the speed), with the motors of the
+# first robot (single ramp of 50 rad/s²: the ball never hops, which the simple physics does not model).
+# The validation of the simulator (campaign sections 0 and 10) and the regression check use it, so that their
+# results do not change when the brain or the robot improves.
+_CG = PlateParams().coefficient * G
+REFERENCE_GAINS = (1.0, 1.0, 2 * 0.7 * math.sqrt(_CG * 1.0) / _CG)
+REFERENCE_CONTROLLER = {"gains": REFERENCE_GAINS, "latency_compensation": False, "integration_zone": math.inf,
+                        "airborne_height": math.inf, "wait_for_speed": False, "fast_move": math.inf}

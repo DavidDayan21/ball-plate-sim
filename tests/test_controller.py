@@ -10,10 +10,11 @@ import numpy as np
 import pytest
 
 from controller.flight import FlightEstimator
+from controller.lqr import lqr, pid_gains
 from controller.pid import PID
 from controller.plate import LatencyPredictor
 from simulation.camera import inverse_rotation
-from simulation.config import G, PlateParams
+from simulation.config import G, REFERENCE_GAINS, Config, PlateParams
 from simulation.simple_physics import acceleration
 
 P = PlateParams()
@@ -118,6 +119,32 @@ def test_integration_zone_cannot_correct_a_larger_calibration_error():
     _, X, _ = loop_1d(PID(kp=1.0, ki=1.0, kd=kd_for(0.7), integration_zone=0.02), p=replace(P, bias_x=bias),
                       duration=20)
     assert math.isclose(X[-1], bias / 1.0, rel_tol=1e-3)
+
+
+def test_lqr_double_integrator():
+    # ẍ = u with the cost ∫(q·x² + u²)·dt: known solution K = (√q, √(2·√q))
+    q = 4.0
+    K = lqr(np.array([[0.0, 1.0], [0.0, 0.0]]), np.array([[0.0], [1.0]]), np.diag([q, 0.0]), np.eye(1))
+    assert np.allclose(K, [[math.sqrt(q), math.sqrt(2 * math.sqrt(q))]], rtol=1e-12, atol=0)
+
+
+def test_lqr_gains_of_the_pid():
+    # Closed loop of one axis: s³ + c·g·Kd·s² + c·g·Kp·s + c·g·Ki = 0, stable
+    kp, ki, kd = pid_gains(CG, 0.14, 0.7, math.radians(10))
+    assert np.all(np.roots([1, CG * kd, CG * kp, CG * ki]).real < 0)
+    # When the integral is slow compared with the loop, its pole is -1/integral_time
+    kp, ki, kd = pid_gains(CG, 0.05, 5.0, math.radians(10))
+    slowest = max(np.roots([1, CG * kd, CG * kp, CG * ki]).real)
+    assert math.isclose(slowest, -1 / 5.0, rel_tol=1e-4)
+
+
+def test_gains_of_the_configuration():
+    cfg = Config()
+    assert cfg.pid_gains() == pid_gains(CG, cfg.lqr_position, cfg.lqr_integral_time, cfg.lqr_tilt)
+    assert cfg.pid_gains() == pytest.approx((1.89, 1.75, 0.80), abs=0.005)      # chosen in B3
+    assert Config(gains=(1.0, 2.0, 3.0)).pid_gains() == (1.0, 2.0, 3.0)
+    # Hand-tuned gains of the frozen reference controller: Kd gives the damping ζ = 0.7 to the PD
+    assert REFERENCE_GAINS == (1.0, 1.0, kd_for(0.7))
 
 
 def test_pid_unstable_beyond_routh():

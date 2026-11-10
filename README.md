@@ -84,9 +84,9 @@ seed k (`Config.seed`) and a start position shifted by up to ±0.5 mm on each ax
 variation for the camera, which draws no random number. The report gives mean ± standard deviation;
 a difference between two cases, paired over the same draws, is significant by a paired t-test at the
 5 % level (|mean| > t × standard error, t = 2.26 for 10 draws). Maximum speeds are found by bisection,
-to 0.01 m/s. The report opens with the objectives of the brain (met or not); sections 0 and 9 validate
-the simulator with a frozen reference controller (the PID without latency compensation, error
-integrated everywhere).
+to 0.01 m/s. The report opens with the objectives of the brain (met or not); sections 0 and 10 validate
+the simulator with a frozen reference controller (`simulation/config.py`: the hand-tuned PID without
+latency compensation, error integrated everywhere, with the motors of the first robot).
 
 Regression check: any refactoring must leave the results bit-identical. The reference
 (`results/reference/`, ignored by git) covers all the cases of the campaign, the physics validation
@@ -146,7 +146,7 @@ International CSV format: `,` separator, decimal point, UTF-8 encoding (no BOM).
 | Motors | 10 rad/s, 1/16 microsteps, ramps at 50 rad/s² for the small corrections and 400 rad/s² for the large moves (gap above 0.1 rad, since B4; peak torque about 0.31 N·m, to check against a datasheet), max torque 0.4 N·m; in MuJoCo, position servos (kp = 50 N·m/rad, kv = 0.5 N·m·s/rad) that lag their target by τ = kv/kp = 10 ms |
 | Simple physics | Basic model ẍ = c·g·sin θ; optional additions (`Config`): rolling term r·θ̈, rotating-frame terms, exact gravity, servo lag. The full equation is derived in `simulation/simple_physics.py` and checked against MuJoCo |
 | Sensor | Camera 50 cm above the plate, 50 Hz, latency 20 ms (the first image arrives 20 ms after the start); height of the ball from its apparent size (± 3 mm), a ball partly out of the image is not measured |
-| Controller (PID brain) | 50 Hz, Kp = 1 rad/m, Ki = 1 rad/(m·s), ζ = 0.7, max tilt ±10°, latency compensation by prediction, error integrated only within 2 cm of the setpoint on each axis; ball in the air (measured above 1.5 cm): its parabola is fitted and the plate is tilted so that the bounce sends it halfway back to the setpoint (restitution assumed 0.87); at the first measurement, the plate is kept until the speed of the ball is known. All on by default |
+| Controller (PID brain) | 50 Hz, gains by LQR (since B3: Kp = 1.89 rad/m, Ki = 1.75 rad/(m·s), Kd = 0.80 rad·s/m, from a position error of 20 cm, an integral over 0.5 s and a tilt of 10° of equal cost; before: Kp = 1, Ki = 1, ζ = 0.7), max tilt ±10°, latency compensation by prediction, error integrated only within 2 cm of the setpoint on each axis; ball in the air (measured above 1.5 cm): its parabola is fitted and the plate is tilted so that the bounce sends it halfway back to the setpoint (restitution assumed 0.87); at the first measurement, the plate is kept until the speed of the ball is known. All on by default |
 
 ## Technologies
 
