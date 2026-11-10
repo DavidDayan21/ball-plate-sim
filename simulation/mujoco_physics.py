@@ -1,7 +1,8 @@
 """MuJoCo physics: 3D models (generated from the configuration) and simulation interface.
 
 Two models, with a fixed camera "top_camera" above the plate:
-    - mechanism=False: plate on a gimbal (2 joints), angles applied by two servos
+    - mechanism=False: plate on a gimbal (2 joints), angles applied by two servos; they follow their
+      target with the profile of the motors (simulation/motor.py), without steps
     - mechanism=True:  complete robot, 3 × (motor -> arm -> elbow -> rod), free plate;
       each rod is connected to the plate by a "connect" constraint (ball joint), which closes
       the chain: 6 + 3 + 3 - 3×3 = 3 degrees of freedom, driven by the 3 motors.
@@ -18,7 +19,7 @@ import numpy as np
 
 from controller.kinematics import inverse_kinematics
 from simulation.config import Config, MujocoParams
-from simulation.motor import Motor
+from simulation.motor import motors
 
 # --- Ball-plate contact ---------------------------------------------------------------------------
 AIRBORNE_HEIGHT = 1e-4      # (m) "airborne" ball: more than 0.1 mm above the plate. Below that, the
@@ -152,9 +153,8 @@ class MujocoPhysics:
         self.cfg, self.p, self.g = cfg, cfg.plate, cfg.geometry
         self.mechanism = cfg.mechanism
         self.model, self.data = build(cfg)
-        self.motors = ([Motor(0.0, cfg.max_speed, cfg.resolution, max_acceleration=cfg.max_acceleration,
-                               fast_acceleration=cfg.fast_acceleration, fast_move=cfg.fast_move)
-                         for _ in range(3)] if self.mechanism else [])
+        self.motors = (motors(cfg, (0.0, 0.0, 0.0), cfg.resolution) if self.mechanism
+                       else motors(cfg, (0.0, 0.0), 0.0))       # the 3 motors, or the 2 angles of the plate
         self.unreachable_poses = 0
         self.airborne_steps = 0                # steps with the ball airborne, in total
         self.airborne_steps_period = 0         # since the last read
@@ -206,7 +206,8 @@ class MujocoPhysics:
             except ValueError:
                 self.unreachable_poses += 1
         else:
-            self.data.ctrl[:] = (target_x, target_y)
+            for m, a in zip(self.motors, (target_x, target_y)):
+                m.request(a)
 
     def actual_tilt(self):
         tx, ty = plate_tilt(self.data)
@@ -260,9 +261,8 @@ class MujocoPhysics:
         self.data.qvel[adr + 3:adr + 6] += R.T @ np.array([-dvy / r, dvx / r, 0.0])
 
     def step(self, dt: float) -> None:
-        if self.mechanism:
-            for i, m in enumerate(self.motors):
-                self.data.ctrl[i] = m.advance(dt)
+        for i, m in enumerate(self.motors):
+            self.data.ctrl[i] = m.advance(dt)
         mujoco.mj_step(self.model, self.data)
         # Only the ball-plate contact is enabled: with no contact, the height of the ball is checked
         if self.data.ncon == 0 and self.ball_height() > AIRBORNE_HEIGHT:

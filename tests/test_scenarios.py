@@ -1,7 +1,6 @@
 """Complete closed-loop scenarios, from the simple physics to the MuJoCo + camera chain."""
 import math
 from dataclasses import replace
-import statistics
 
 from simulation.loop import simulate
 from simulation.config import Config, center
@@ -43,13 +42,10 @@ def test_slow_motors_degrade_tracking():
 
 # --- MuJoCo -------------------------------------------------------------------------------------
 def test_mujoco_angle_driven_plate():
-    # Without motors, the plate jumps to each new command: the ball bounces 20 to 50 % of the time and its
-    # path is chaotic (a start shifted by 1 nm changes the error from 1.2 to 4 mm or more, and the last bits
-    # of the computations differ between machines). Judged on the median of 5 starts shifted by 1 nm
-    x0, y0 = Config().start_position
-    runs = [simulate(Config(mechanism=False, start_position=(x0 + k * 1e-9, y0))) for k in range(5)]
-    assert not any(r.fallen for r in runs)
-    assert statistics.median(tracking_error_rms(r, 12, 20) for r in runs) < 0.008
+    # The angles of the plate follow the command with the profile of the motors: the ball no longer bounces
+    # at every command, and the path is no longer chaotic (1.59 to 1.62 mm over starts shifted by 1 nm)
+    r = simulate(Config(mechanism=False))
+    assert not r.fallen and tracking_error_rms(r, 12, 20) < 0.004
 
 
 def test_mujoco_robot_with_ramps():

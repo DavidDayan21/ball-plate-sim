@@ -16,13 +16,13 @@ The additions to the basic model can be switched on one by one (Config, all off 
     rolling_term     r·Ω̇: the plate turns under the ball (in 1D, the ball moves by −r·Δθ)
     frame_terms      Euler (Ω̇3), centrifugal and Coriolis accelerations of the rotating plate
     exact_gravity    gravity projected exactly on the tilted plate (cos θx couples the axes)
-    servo_lag        the motors follow their target with a first-order lag τ = kv/kp, like the
-                     position servos of the MuJoCo model
-They need the mechanism (continuous tilt): without it, the tilt jumps at every command.
+    servo_lag        the motors (or the two angles of the angle-driven plate) follow their target with a
+                     first-order lag τ = kv/kp, like the position servos of the MuJoCo model
 
 Assumptions: rolling without slipping, permanent contact, spin of the ball about the normal neglected
 (third-order terms). With mechanism=True, the angles go through the 3 motors (simulation/motor.py)
-and the actual tilt is given by the forward kinematics.
+and the actual tilt is given by the forward kinematics; with mechanism=False, the two angles of the
+plate follow their target with the same profile as the motors, without steps.
 
 The basic model serves as the theoretical reference: its results can be derived by hand
 (see tests/test_controller.py).
@@ -31,7 +31,7 @@ import math
 
 from controller.kinematics import forward_kinematics, inverse_kinematics
 from simulation.config import G, Config, PlateParams
-from simulation.motor import Motor
+from simulation.motor import motors
 
 
 def acceleration(theta_x: float, theta_y: float, p: PlateParams):
@@ -71,15 +71,12 @@ class SimplePhysics:
         self.mechanism = cfg.mechanism
         self.x, self.y = cfg.start_position
         self.vx, self.vy = cfg.start_velocity
-        self.commanded_tilt = (0.0, 0.0)
         self.unreachable_poses = 0
         # Additions to the basic model
         self.rolling, self.frame, self.exact_gravity = cfg.rolling_term, cfg.frame_terms, cfg.exact_gravity
         self.extended = self.rolling or self.frame or self.exact_gravity
         pm = cfg.mujoco_params
         self.servo_tau = pm.kv_servo / pm.kp_servo if cfg.servo_lag else 0.0
-        if (self.extended or self.servo_tau) and not self.mechanism:
-            raise ValueError("The additions to the simple physics need mechanism=True (continuous tilt)")
         if cfg.start_height:
             raise ValueError("The simple physics keeps the ball on the plate: a dropped ball needs MuJoCo")
         self.k, self.r = cfg.plate.k_inertia, cfg.plate.ball_radius
@@ -87,10 +84,11 @@ class SimplePhysics:
         self.omega = (0.0, 0.0, 0.0)
         if self.mechanism:
             self.alphas = inverse_kinematics(self.g, 0.0, 0.0)
-            self.motors = [Motor(a, cfg.max_speed, cfg.resolution, max_acceleration=cfg.max_acceleration,
-                                 fast_acceleration=cfg.fast_acceleration, fast_move=cfg.fast_move)
-                            for a in self.alphas]
+            self.motors = motors(cfg, self.alphas, cfg.resolution)
             self.pose = (0.0, 0.0, self.g.height)
+        else:
+            self.tilt = (0.0, 0.0)              # the two angles of the plate, driven like motors
+            self.motors = motors(cfg, self.tilt, 0.0)
 
     def ball(self):
         """Position (x, y) of the ball in the plate frame (m)."""
@@ -100,8 +98,10 @@ class SimplePhysics:
         return math.hypot(self.x, self.y) > self.p.plate_radius
 
     def command(self, theta_x: float, theta_y: float) -> None:
-        self.commanded_tilt = (theta_x, theta_y)
-        if self.mechanism:
+        if not self.mechanism:
+            for m, a in zip(self.motors, (theta_x, theta_y)):
+                m.request(a)
+        else:
             try:
                 for m, a in zip(self.motors, inverse_kinematics(self.g, theta_x, theta_y)):
                     m.request(a)
@@ -109,7 +109,7 @@ class SimplePhysics:
                 self.unreachable_poses += 1     # impossible pose: the motors keep their target
 
     def actual_tilt(self):
-        return (self.pose[0], self.pose[1]) if self.mechanism else self.commanded_tilt
+        return (self.pose[0], self.pose[1]) if self.mechanism else self.tilt
 
     def motor_angles(self):
         return self.alphas if self.mechanism else ()
@@ -129,14 +129,17 @@ class SimplePhysics:
         self.x, self.y, self.vx, self.vy = x, y, vx, vy
 
     def step(self, dt: float) -> None:
-        if self.mechanism:
-            new_angles = tuple(m.advance(dt) for m in self.motors)
-            if self.servo_tau:                  # first-order lag, discretized exactly
-                gain = 1 - math.exp(-dt / self.servo_tau)
-                new_angles = tuple(a + (t - a) * gain for a, t in zip(self.alphas, new_angles))
-            if new_angles != self.alphas:          # the pose only changes if a motor has moved
+        angles = self.alphas if self.mechanism else self.tilt
+        new_angles = tuple(m.advance(dt) for m in self.motors)
+        if self.servo_tau:                      # first-order lag, discretized exactly
+            gain = 1 - math.exp(-dt / self.servo_tau)
+            new_angles = tuple(a + (t - a) * gain for a, t in zip(angles, new_angles))
+        if new_angles != angles:                # the pose only changes if a motor has moved
+            if self.mechanism:
                 self.alphas = new_angles
                 self.pose = forward_kinematics(self.g, self.alphas, initial_pose=self.pose)
+            else:
+                self.tilt = new_angles
         tx, ty = self.actual_tilt()
         if not self.extended:
             self.x, self.y, self.vx, self.vy = semi_implicit_step(self.x, self.y, self.vx, self.vy,

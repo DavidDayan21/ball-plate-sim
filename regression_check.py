@@ -91,6 +91,8 @@ SIMULATIONS = {
     # Added after the first reference
     "simple_robot_full_equation": Config(physics="simple", rolling_term=True, frame_terms=True,
                                          exact_gravity=True, servo_lag=True, **REFERENCE_CONTROLLER),
+    "simple_plate_full_equation": Config(physics="simple", mechanism=False, rolling_term=True, frame_terms=True,
+                                         exact_gravity=True, servo_lag=True, **REFERENCE_CONTROLLER),
 }
 
 

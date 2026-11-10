@@ -21,21 +21,21 @@ Judged on the mean over the draws. Thrown ball: maximum speed caught at ±10° d
 
 ## 0. From the simple model to the full chain (reference scenario, reference controller)
 
-| Level | Fallen | Arrival (first time < 5 mm) | Overshoot after arrival | Max distance between 2 s and 4 s |
-|---|---|---|---|---|
-| Simple physics: angle-driven plate | 0/10 | 0.84 ± 0.01 s | 37.12 ± 0.60 mm | 29.01 ± 0.48 mm |
-| Simple physics: 3-arm robot | 0/10 | 0.84 ± 0.01 s | 40.73 ± 0.71 mm | 30.56 ± 0.80 mm |
-| MuJoCo: angle-driven plate | 0/10 | 0.87 ± 0.02 s | 37.92 ± 1.48 mm | 34.06 ± 1.11 mm |
-| MuJoCo: 3-arm robot | 0/10 | 0.84 ± 0.01 s | 41.29 ± 0.65 mm | 31.62 ± 1.20 mm |
-| MuJoCo: 3-arm robot + camera | 0/10 | 0.84 ± 0.00 s | 41.71 ± 0.13 mm | 32.45 ± 0.12 mm |
+| Level | Fallen | Arrival (first time < 5 mm) | Overshoot after arrival | Max distance between 2 s and 4 s | Factor changed | Δ (effect of the factor) |
+|---|---|---|---|---|---|---|
+| Simple physics: angle-driven plate | 0/10 | 0.83 ± 0.01 s | 38.94 ± 0.83 mm | 29.90 ± 1.31 mm | - | - |
+| Simple physics: 3-arm robot | 0/10 | 0.84 ± 0.01 s | 40.73 ± 0.71 mm | 30.56 ± 0.80 mm | mechanism | +0.66 ± 0.37 mm |
+| MuJoCo: angle-driven plate | 0/10 | 0.84 ± 0.01 s | 40.72 ± 0.97 mm | 31.85 ± 1.19 mm | physics | **+1.95 ± 0.12 mm** |
+| MuJoCo: 3-arm robot | 0/10 | 0.84 ± 0.01 s | 41.29 ± 0.65 mm | 31.62 ± 1.20 mm | physics | **+1.06 ± 0.17 mm** |
+| MuJoCo: 3-arm robot + camera | 0/10 | 0.84 ± 0.00 s | 41.71 ± 0.13 mm | 32.45 ± 0.12 mm | sensor | +0.83 ± 0.38 mm |
 
-Return to the center (start 10 cm away, setpoint at the center until 4 s). Objective "back to the center in less than 2 s": max distance between 2 s and 4 s ≤ 5 mm.
+Return to the center (start 10 cm away, setpoint at the center until 4 s). Objective "back to the center in less than 2 s": max distance between 2 s and 4 s ≤ 5 mm. Angle-driven plate: its two angles follow the command with the profile of the motors (speed, ramps), without steps; the mechanism adds the arms (kinematics, microsteps: the motors turn about twice as much as the plate, so their ramps tilt it more slowly).
 
 | Level | Circle error | Factor changed | Δ circle error (effect of the factor) | θx jitter | Airborne |
 |---|---|---|---|---|---|
-| Simple physics: angle-driven plate | 3.43 ± 0.08 mm | - | - | 0.58 ± 0.05° | - |
-| Simple physics: 3-arm robot | 4.77 ± 0.38 mm | mechanism | **+1.34 ± 0.13 mm** | 0.59 ± 0.06° | - |
-| MuJoCo: angle-driven plate | 3.36 ± 0.89 mm | physics | -0.07 ± 0.27 mm | 0.58 ± 0.05° | 74.5 ± 3.1 % |
+| Simple physics: angle-driven plate | 4.69 ± 0.50 mm | - | - | 0.59 ± 0.06° | - |
+| Simple physics: 3-arm robot | 4.77 ± 0.38 mm | mechanism | +0.08 ± 0.18 mm | 0.59 ± 0.06° | - |
+| MuJoCo: angle-driven plate | 5.23 ± 0.60 mm | physics | **+0.54 ± 0.07 mm** | 0.60 ± 0.06° | 0.0 ± 0.0 % |
 | MuJoCo: 3-arm robot | 5.33 ± 0.36 mm | physics | **+0.56 ± 0.06 mm** | 0.59 ± 0.06° | 0.0 ± 0.0 % |
 | MuJoCo: 3-arm robot + camera | 4.58 ± 0.03 mm | sensor | **-0.75 ± 0.12 mm** | 0.12 ± 0.00° | 0.0 ± 0.0 % |
 
@@ -147,7 +147,21 @@ Latency 20 ms with compensation, integration zone, unless stated. LQR gains (con
 | with | 0/10 | 6.04 ± 0.01 mm | **-0.74 ± 0.01 mm** |
 
 
-## 10. Simple physics → MuJoCo on the 3-arm robot: the gap, term by term (synthetic sensor, reference controller)
+## 10. Simple physics → MuJoCo: the gap, term by term (synthetic sensor, reference controller)
+
+Angle-driven plate:
+
+| Model | Fallen | Circle error | Δ vs basic model | Share of the MuJoCo gap | Max distance between 2 s and 4 s | Δ vs basic model | Share of the MuJoCo gap |
+|---|---|---|---|---|---|---|---|
+| Simple physics, basic model | 0/10 | 4.69 ± 0.50 mm | - | - | 29.90 ± 1.31 mm | - | - |
+| + r·θ̈ (the plate turns under the ball) | 0/10 | 4.62 ± 0.52 mm | -0.07 ± 0.06 mm | -13 % | 29.70 ± 1.36 mm | -0.19 ± 0.19 mm | -10 % |
+| + rotating-frame terms (Euler, centrifugal, Coriolis) | 0/10 | 4.83 ± 0.63 mm | +0.15 ± 0.07 mm | 27 % | 32.78 ± 1.29 mm | **+2.88 ± 0.13 mm** | 147 % |
+| + exact projection of gravity | 0/10 | 4.68 ± 0.51 mm | -0.01 ± 0.02 mm | -1 % | 29.93 ± 1.29 mm | +0.03 ± 0.04 mm | 2 % |
+| + servo lag (τ = kv/kp = 10 ms) | 0/10 | 5.17 ± 0.53 mm | **+0.48 ± 0.03 mm** | 89 % | 29.39 ± 1.30 mm | **-0.51 ± 0.03 mm** | -26 % |
+| + all of the above | 0/10 | 5.13 ± 0.57 mm | **+0.44 ± 0.06 mm** | 82 % | 31.70 ± 1.16 mm | **+1.80 ± 0.11 mm** | 92 % |
+| MuJoCo | 0/10 | 5.23 ± 0.60 mm | **+0.54 ± 0.07 mm** | 100 % | 31.85 ± 1.19 mm | **+1.95 ± 0.12 mm** | 100 % |
+
+3-arm robot:
 
 | Model | Fallen | Circle error | Δ vs basic model | Share of the MuJoCo gap | Max distance between 2 s and 4 s | Δ vs basic model | Share of the MuJoCo gap |
 |---|---|---|---|---|---|---|---|

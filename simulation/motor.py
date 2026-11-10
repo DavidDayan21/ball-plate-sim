@@ -1,7 +1,7 @@
 """Command model of a position-controlled stepper motor.
 
-Assumptions: the requested position is rounded to the nearest step (or microstep) and clamped
-by limits; the motor reaches it with a bounded speed and, if max_acceleration is finite,
+Assumptions: the requested position is rounded to the nearest step (or microstep; resolution 0: not
+rounded) and clamped by limits; the motor reaches it with a bounded speed and, if max_acceleration is finite,
 a bounded acceleration (trapezoidal profile, like stepper motor drivers).
 
     max_acceleration = inf: "square-wave" profile (max speed immediately)
@@ -12,8 +12,17 @@ a bounded acceleration (trapezoidal profile, like stepper motor drivers).
 
 Torque and inertia are not modeled here: in MuJoCo, this profile is the setpoint
 of the motor servo, which has a limited torque.
+
+The angle-driven plate (no arms) uses the same profile on its two angles, without steps: a plate that
+jumped to every command would make the ball bounce.
 """
 import math
+
+
+def motors(cfg, initial_angles, resolution: float) -> list:
+    """One Motor per initial angle, with the speed and the ramps of the configuration."""
+    return [Motor(a, cfg.max_speed, resolution, max_acceleration=cfg.max_acceleration,
+                  fast_acceleration=cfg.fast_acceleration, fast_move=cfg.fast_move) for a in initial_angles]
 
 
 class Motor:
@@ -33,7 +42,7 @@ class Motor:
 
     def request(self, angle: float) -> None:
         """New angle setpoint: rounded to the nearest step, then clamped by the limits."""
-        quantized = round(angle / self.resolution) * self.resolution
+        quantized = round(angle / self.resolution) * self.resolution if self.resolution else angle
         self.target = min(max(quantized, self.angle_min), self.angle_max)
 
     def advance(self, dt: float) -> float:

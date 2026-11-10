@@ -13,7 +13,8 @@ The 160×120 camera is as accurate as 320×240, and faster to simulate.
     7. Integral action: error integrated everywhere or only near the setpoint
     8. Gains of the PID: hand-tuned or by LQR
     9. Square trajectory
-    10. Gap between the simple physics and MuJoCo on the robot, explained term by term (circle and return)
+    10. Gap between the simple physics and MuJoCo, explained term by term (circle and return), on the
+        angle-driven plate and on the robot
 
 Every case is simulated over N draws, so that each result comes with its spread:
     - draw 0 is the nominal configuration (noise seed 0, nominal start position);
@@ -86,6 +87,12 @@ def drop_config(distance: float, height: float) -> Config:
 CASES = {
     # Simulator validation (sections 0 and 10), frozen reference controller (simulation/config.py)
     "simple_plate": Config(physics="simple", mechanism=False, **REFERENCE_CONTROLLER),
+    "simple_plate_rolling": Config(physics="simple", mechanism=False, rolling_term=True, **REFERENCE_CONTROLLER),
+    "simple_plate_frame": Config(physics="simple", mechanism=False, frame_terms=True, **REFERENCE_CONTROLLER),
+    "simple_plate_gravity": Config(physics="simple", mechanism=False, exact_gravity=True, **REFERENCE_CONTROLLER),
+    "simple_plate_servo": Config(physics="simple", mechanism=False, servo_lag=True, **REFERENCE_CONTROLLER),
+    "simple_plate_full": Config(physics="simple", mechanism=False, rolling_term=True, frame_terms=True,
+                                exact_gravity=True, servo_lag=True, **REFERENCE_CONTROLLER),
     "simple_robot": Config(physics="simple", **REFERENCE_CONTROLLER),
     "simple_robot_rolling": Config(physics="simple", rolling_term=True, **REFERENCE_CONTROLLER),
     "simple_robot_frame": Config(physics="simple", frame_terms=True, **REFERENCE_CONTROLLER),
@@ -456,15 +463,20 @@ def write_report(data: dict, path: str = os.path.join("results", "report.md")) -
               ("MuJoCo: 3-arm robot", "mujoco_robot", "simple_robot", "physics"),
               ("MuJoCo: 3-arm robot + camera", "camera_reference", "mujoco_robot", "sensor"))
     rows = []
-    for label, case, _, _ in levels:
+    for label, case, compared, factor in levels:
         rs = runs[case]
+        delta = "-" if compared is None else fmt_delta([return_distance(r) for r in runs[compared]],
+                                                       [return_distance(r) for r in rs], " mm", scale=1000)
         rows.append([label, fallen(rs), fmt([arrival(r) for r in rs], " s"),
                      fmt([overshoot_after_arrival(r) for r in rs], " mm", scale=1000),
-                     fmt([return_distance(r) for r in rs], " mm", scale=1000)])
+                     fmt([return_distance(r) for r in rs], " mm", scale=1000), factor, delta])
     rep.table(["Level", "Fallen", "Arrival (first time < 5 mm)", "Overshoot after arrival",
-               "Max distance between 2 s and 4 s"], rows)
+               "Max distance between 2 s and 4 s", "Factor changed", "Δ (effect of the factor)"], rows)
     rep.text("Return to the center (start 10 cm away, setpoint at the center until 4 s). Objective "
-             "\"back to the center in less than 2 s\": max distance between 2 s and 4 s ≤ 5 mm.")
+             "\"back to the center in less than 2 s\": max distance between 2 s and 4 s ≤ 5 mm. Angle-driven plate: "
+             "its two angles follow the command with the profile of the motors (speed, ramps), without steps; "
+             "the mechanism adds the arms (kinematics, microsteps: the motors turn about twice as much as the "
+             "plate, so their ramps tilt it more slowly).")
     rows = []
     for label, case, compared, factor in levels:
         rs = runs[case]
@@ -635,28 +647,31 @@ def write_report(data: dict, path: str = os.path.join("results", "report.md")) -
         ["with", fallen(runs["square"]), fmt(with_, " mm", scale=1000),
          fmt_delta(without, with_, " mm", scale=1000)]])
 
-    rep.section("10. Simple physics → MuJoCo on the 3-arm robot: the gap, term by term "
-                "(synthetic sensor, reference controller)")
+    rep.section("10. Simple physics → MuJoCo: the gap, term by term (synthetic sensor, reference controller)")
     tau_ms = 1000 * PM.kv_servo / PM.kp_servo
-    models = (("Simple physics, basic model", "simple_robot"),
-              ("+ r·θ̈ (the plate turns under the ball)", "simple_robot_rolling"),
-              ("+ rotating-frame terms (Euler, centrifugal, Coriolis)", "simple_robot_frame"),
-              ("+ exact projection of gravity", "simple_robot_gravity"),
-              (f"+ servo lag (τ = kv/kp = {tau_ms:.0f} ms)", "simple_robot_servo"),
-              ("+ all of the above", "simple_robot_full"),
-              ("MuJoCo", "mujoco_robot"))
-    rows = {case: [label, fallen(runs[case])] for label, case in models}
-    for indicator in (circle_error, return_distance):
-        base = [indicator(r) for r in runs["simple_robot"]]
-        gap = paired_delta(base, [indicator(r) for r in runs["mujoco_robot"]])[0]
-        for _, case in models:
-            values = [indicator(r) for r in runs[case]]
-            delta = paired_delta(base, values)[0]
-            share = "-" if case == "simple_robot" or math.isnan(gap) or gap == 0 else f"{100 * delta / gap:.0f} %"
-            rows[case] += [fmt(values, " mm", scale=1000),
-                           "-" if case == "simple_robot" else fmt_delta(base, values, " mm", scale=1000), share]
-    rep.table(["Model", "Fallen", "Circle error", "Δ vs basic model", "Share of the MuJoCo gap",
-               "Max distance between 2 s and 4 s", "Δ vs basic model", "Share of the MuJoCo gap"], list(rows.values()))
+    additions = (("+ r·θ̈ (the plate turns under the ball)", "rolling"),
+                 ("+ rotating-frame terms (Euler, centrifugal, Coriolis)", "frame"),
+                 ("+ exact projection of gravity", "gravity"),
+                 (f"+ servo lag (τ = kv/kp = {tau_ms:.0f} ms)", "servo"),
+                 ("+ all of the above", "full"))
+    for level, name in (("Angle-driven plate", "plate"), ("3-arm robot", "robot")):
+        basic, mujoco = f"simple_{name}", f"mujoco_{name}"
+        models = (("Simple physics, basic model", basic),
+                  *((label, f"simple_{name}_{suffix}") for label, suffix in additions), ("MuJoCo", mujoco))
+        rows = {case: [label, fallen(runs[case])] for label, case in models}
+        for indicator in (circle_error, return_distance):
+            base = [indicator(r) for r in runs[basic]]
+            gap = paired_delta(base, [indicator(r) for r in runs[mujoco]])[0]
+            for _, case in models:
+                values = [indicator(r) for r in runs[case]]
+                delta = paired_delta(base, values)[0]
+                share = "-" if case == basic or math.isnan(gap) or gap == 0 else f"{100 * delta / gap:.0f} %"
+                rows[case] += [fmt(values, " mm", scale=1000),
+                               "-" if case == basic else fmt_delta(base, values, " mm", scale=1000), share]
+        rep.text(f"{level}:")
+        rep.table(["Model", "Fallen", "Circle error", "Δ vs basic model", "Share of the MuJoCo gap",
+                   "Max distance between 2 s and 4 s", "Δ vs basic model", "Share of the MuJoCo gap"],
+                  list(rows.values()))
     rep.text("Each addition is switched on alone in the simple physics (simulation/simple_physics.py). "
              "A gap is explained when the share predicted by a model is within 80 to 120 %. The additions do not "
              "add up: on the return to the center, the rotating-frame terms and the servo lag act in opposite "

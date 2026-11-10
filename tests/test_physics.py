@@ -41,9 +41,21 @@ def test_servo_lag_is_first_order():
     assert [m.target for m in phys.motors] == pytest.approx(target, abs=cfg.resolution)
 
 
-def test_additions_need_the_mechanism():
-    with pytest.raises(ValueError):
-        SimplePhysics(Config(physics="simple", mechanism=False, rolling_term=True))
+@pytest.mark.parametrize("physics", [SimplePhysics, MujocoPhysics])
+def test_angle_driven_plate_follows_ramps(physics):
+    # Without arms, the two angles of the plate follow their target with the profile of the motors (here a
+    # single ramp of 50 rad/s²), without steps: a jump of the command does not make the plate jump
+    cfg = Config(physics="simple", mechanism=False, rolling_term=True, fast_move=math.inf, plate=PlateParams())
+    phys = physics(cfg)
+    phys.command(0.05, 0.0)
+    steps = round(0.02 / cfg.dt_physics)
+    for _ in range(steps):
+        phys.step(cfg.dt_physics)
+    # Still accelerating: at most ½·a·t·(t + dt) (ramp integrated step by step: v then x)
+    assert 0.0 < phys.actual_tilt()[0] <= 0.5 * cfg.max_acceleration * 0.02 * (0.02 + cfg.dt_physics) + 1e-12
+    for _ in range(10 * steps):
+        phys.step(cfg.dt_physics)
+    assert phys.actual_tilt() == pytest.approx((0.05, 0.0), abs=1e-4)
 
 
 def test_rotating_plate_equation_matches_mujoco():
