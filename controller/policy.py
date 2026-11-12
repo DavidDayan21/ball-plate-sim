@@ -6,7 +6,9 @@ brain which is not learned: its memory and the layout of its observation, the sa
 
 It plays by the rules of the PID brain and knows what the PID knows: the measurements as they arrive, N periods
 late (N is known), the commands it has sent, the setpoint and its acceleration, the maximum tilt. It knows neither
-the ball (inertia, mass, friction) nor the calibration error of the plate.
+the ball (inertia, mass, friction) nor the calibration error of the plate. The policy itself has no memory: the
+only long one of this brain is the integral of the error, kept here like the PID keeps its own (a calibration
+error shows in nothing else).
 
 Observation: OBSERVATION_SIZE numbers of comparable sizes (LAYOUT gives the place of each group).
     position               newest measured (x, y), in units of LENGTH
@@ -22,6 +24,10 @@ Observation: OBSERVATION_SIZE numbers of comparable sizes (LAYOUT gives the plac
     setpoint_acceleration  in units of ACCELERATION
     latency                N / MAX_LATENCY
     received               measurements received so far, min(count, 3) / 3: no speed is known at the first one
+    error                  setpoint - newest measurement (x, y), in units of ERROR and bounded at ±ERROR_LIMIT: the
+                           last millimeters, which position and setpoint only show as a small difference
+    integral               integral of that error (x, y), in units of INTEGRAL and bounded at ±INTEGRAL_LIMIT; each
+                           axis only integrates within ZONE of its setpoint, like the PID (controller/pid.py)
 
 Action: (ax, ay) in [-1, 1], the command (θx, θy) in units of theta_max; beyond, it is saturated.
 """
@@ -38,6 +44,11 @@ SPEED = 0.2                      # (m/s)
 HEIGHT = 0.02                    # (m) radius of the ball
 ACCELERATION = 1.0               # (m/s²) about what the plate gives the ball at its maximum tilt (c·g·θmax)
 SETPOINT_SPEED_LIMIT = 2.5       # (units of SPEED) 0.5 m/s
+ERROR = 0.01                     # (m)
+ERROR_LIMIT = 2.0                # (units of ERROR) 2 cm
+ZONE = 0.02                      # (m) integration zone, the one of the PID brain
+INTEGRAL = 0.01                  # (m·s) what the PID brain accumulates to cancel a calibration error of 1°
+INTEGRAL_LIMIT = 3.0             # (units of INTEGRAL)
 
 
 def _layout(**sizes):
@@ -51,7 +62,11 @@ def _layout(**sizes):
 
 LAYOUT, OBSERVATION_SIZE = _layout(position=2, speeds=2 * (MEASUREMENTS - 1), heights=MEASUREMENTS,
                                    commands=2 * COMMANDS, setpoint=2, setpoint_speed=2, setpoint_acceleration=2,
-                                   latency=1, received=1)
+                                   latency=1, received=1, error=2, integral=2)
+
+
+def _bounded(value: float, limit: float) -> float:
+    return max(-limit, min(limit, value))
 
 
 class PolicyController:
@@ -67,6 +82,7 @@ class PolicyController:
         self.commands = deque([(0.0, 0.0)] * COMMANDS, maxlen=COMMANDS)   # actions, oldest first
         self.received = 0
         self.previous_setpoint = None
+        self.integral = [0.0, 0.0]                                        # of the error (m·s)
 
     def observe(self, setpoint, measurement, setpoint_acc, dt: float) -> np.ndarray:
         """Stores the measurement, (x, y) or (x, y, height of the ball), and returns the observation."""
@@ -82,13 +98,18 @@ class PolicyController:
         observation[LAYOUT["heights"]] = [p[2] / HEIGHT for p in m]
         observation[LAYOUT["commands"]] = [a for command in reversed(self.commands) for a in command]
         observation[LAYOUT["setpoint"]] = (setpoint[0] / LENGTH, setpoint[1] / LENGTH)
-        observation[LAYOUT["setpoint_speed"]] = [
-            max(-SETPOINT_SPEED_LIMIT, min(SETPOINT_SPEED_LIMIT, (setpoint[k] - previous[k]) / dt / SPEED))
-            for k in range(2)]
+        observation[LAYOUT["setpoint_speed"]] = [_bounded((setpoint[k] - previous[k]) / dt / SPEED,
+                                                          SETPOINT_SPEED_LIMIT) for k in range(2)]
         observation[LAYOUT["setpoint_acceleration"]] = (setpoint_acc[0] / ACCELERATION,
                                                         setpoint_acc[1] / ACCELERATION)
         observation[LAYOUT["latency"]] = self.latency / MAX_LATENCY
         observation[LAYOUT["received"]] = min(self.received, MEASUREMENTS) / MEASUREMENTS
+        error = (setpoint[0] - m[0][0], setpoint[1] - m[0][1])
+        for k in range(2):
+            if abs(error[k]) < ZONE:
+                self.integral[k] = _bounded(self.integral[k] + error[k] * dt, INTEGRAL_LIMIT * INTEGRAL)
+        observation[LAYOUT["error"]] = [_bounded(e / ERROR, ERROR_LIMIT) for e in error]
+        observation[LAYOUT["integral"]] = [i / INTEGRAL for i in self.integral]
         return observation
 
     def act(self, action):
@@ -96,7 +117,7 @@ class PolicyController:
         ax, ay = (float(a) for a in action)
         if math.isnan(ax + ay):
             raise ValueError(f"Action of the policy: {action}")
-        ax, ay = max(-1.0, min(1.0, ax)), max(-1.0, min(1.0, ay))
+        ax, ay = _bounded(ax, 1.0), _bounded(ay, 1.0)
         self.commands.append((ax, ay))
         return ax * self.theta_max, ay * self.theta_max
 

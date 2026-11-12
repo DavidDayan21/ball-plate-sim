@@ -382,6 +382,20 @@ def test_policy_observation():
     assert o[LAYOUT["received"]] == 1.0
 
 
+def test_policy_observation_error_and_integral():
+    T = 0.02
+    brain = PolicyController(None, 0.1, latency=1)
+    # x: 5 mm from its setpoint during 1 s; y: 3 cm away, outside the integration zone
+    for _ in range(50):
+        o = brain.observe((0.005, 0.03), (0.0, 0.0), (0.0, 0.0), T)
+    assert o[LAYOUT["error"]] == pytest.approx([0.5, 2.0])               # in units of 1 cm, bounded at ±2
+    assert o[LAYOUT["integral"]] == pytest.approx([0.5, 0.0])            # in units of 1 cm·s
+    # The integral is bounded at ±3
+    for _ in range(400):
+        o = brain.observe((0.0, 0.0), (0.019, 0.0), (0.0, 0.0), T)
+    assert o[LAYOUT["error"]] == pytest.approx([-1.9, 0.0]) and o[LAYOUT["integral"]] == pytest.approx([-3.0, 0.0])
+
+
 def test_policy_brain_has_the_interface_of_the_pid_brain():
     seen = []
 

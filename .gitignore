@@ -25,3 +25,6 @@ results/attempts/
 
 # Regression check reference (specific to each machine, regenerated with regression_check.py)
 results/reference/
+
+# Trainings of the AI brain (models and progress, regenerated with python -m training.train)
+results/training/

@@ -19,7 +19,7 @@ Building the real robot remains a distant goal: the code will then be ready.
 | 3D sandbox | Throws, drops, bounces, pushes, setpoints, data of every attempt | Done |
 | A. Reliable measurements | Bit-exact regression check, spread over N draws, robust metrics, simple physics → MuJoCo gap | Done |
 | B. PID brain | Objectives in the report, integral limited to the neighborhood of the setpoint, aimed bounce of a dropped ball, thrown ball (start with the speed, fast motor ramps for the large moves), gains tuned by LQR, adaptive control (model gain c·g estimated online), every gap of more than 0.5 mm explained (report, section 12) | Done |
-| C. Local AI brain | A policy (neural network) learned by reinforcement in MuJoCo, same rules as the PID (sensor, motors, ±10°). Done: interchangeable brains, training environment. To come: training, comparison with the PID | **In progress** |
+| C. Local AI brain | A policy (neural network) learned by reinforcement in MuJoCo, same rules as the PID (sensor, motors, ±10°). Done: interchangeable brains, training environment, training script. To come: the training itself, comparison with the PID | **In progress** |
 | D. Software for the general public | MuJoCo physics in our interface, choice of brain, comparison | To do |
 | E. Construction (distant) | Design, real-world defects, complete error budget | Later |
 
@@ -52,6 +52,7 @@ simulation/
   parallel.py            Independent simulations spread over several processes
 training/
   environment.py         Training environment of the AI brain: random episodes, reward, speed measurement
+  train.py               Training of the policy by reinforcement (PPO), on several robots in parallel
 tests/                   Automated tests, by theme (controller, mechanics, sensors, physics,
                          scenarios, metrics, session, regression check, campaign, training)
 campaign.py              Full measurement campaign over N draws, in parallel -> results/report.md
@@ -68,6 +69,13 @@ pip install -r requirements.txt
 python -m pytest
 ```
 
+To train the AI brain (not needed to simulate, nor to run the tests: those of the training script are then
+skipped), add the training libraries, PyTorch (about 130 MB to download) and Stable-Baselines3:
+
+```powershell
+pip install -r requirements-train.txt
+```
+
 ## Usage
 
 ```powershell
@@ -82,7 +90,14 @@ python regression_check.py --record       # before a change: reference of all th
 python regression_check.py --compare      # after: checks that they are bit-identical
 python regression_check.py --compare --by-position    # same after a renaming (changed names, same order)
 python -m training.environment            # speed of the training environment on this machine (1 minute)
+python -m training.train --name first --periods 2e5    # training of the AI brain: a trial of a few minutes
+python -m training.train --name first --periods 5e7    # same training, continued up to 50 million periods
 ```
+
+Training: `--periods` is the total of control periods (20 ms of the robot each), over all the robots simulated
+in parallel (`--processes`, half of the logical cores by default). Every million periods (`--every`), the
+training is saved in `results/training/<name>/` (ignored by git) and the policy is evaluated on the reference
+scenario: one line printed, one row in `progress.csv`. Ctrl+C saves and stops; the same command resumes.
 
 Measurement campaign: every case is simulated over N draws (`--draws`, 10 by default), in parallel
 (`--processes`, one per core by default). Draw 0 is the nominal configuration; draw k ≥ 1 uses noise
@@ -124,13 +139,20 @@ The motors, their ramps and the rule of the fast ramps are the same for both.
 
 The policy of the AI brain is a function from an observation to an action, to be learned by reinforcement
 (phase C, in progress). The observation holds what the PID brain also knows (`controller/policy.py`): the last
-3 measurements, the last 6 commands, the setpoint with its speed and its acceleration, the latency. The action
+3 measurements, the last 6 commands, the setpoint with its speed and its acceleration, the latency, the error
+to the setpoint and its integral (the only long memory of the brain, kept like the PID keeps its own). The action
 is the command (θx, θy) in units of the maximum tilt. The training environment (`training/environment.py`)
 plays episodes of 10 s on the MuJoCo robot, each with another robot, ball, sensor and scenario drawn at random
 (inertia, mass and friction of the ball, calibration error, latency, noise; ball placed, thrown or pushed;
-setpoint fixed, jumping or circling), and rewards every period: 1 - (distance to the setpoint / 10 cm)², minus
-the jerk of the command, and a penalty if the ball falls. A policy sees exactly the same robot in the
-environment and in a simulation (checked bit for bit in the tests).
+setpoint fixed, jumping or circling), and rewards every period, from the distance d to the setpoint: half for
+staying near it, 1 - (d / 10 cm)², half for the last millimeters, 1 / (1 + d / 5 mm), minus the jerk of the
+command, and a penalty if the ball falls. A policy sees exactly the same robot in the environment and in a
+simulation (checked bit for bit in the tests).
+
+The training (`training/train.py`) uses PPO (proximal policy optimization, from Stable-Baselines3). The policy
+is a neural network of 2 layers of 128 neurons; during the training, a random deviation is added to its action,
+to try. The robots play 20 s each, then the actions that brought more reward than expected are made more likely,
+by small steps, millions of times.
 
 ## 3D sandbox
 
@@ -175,4 +197,4 @@ International CSV format: `,` separator, decimal point, UTF-8 encoding (no BOM).
 
 ## Technologies
 
-Python, NumPy, Matplotlib, MuJoCo, OpenCV, pytest.
+Python, NumPy, Matplotlib, MuJoCo, OpenCV, pytest. For the training of the AI brain only: PyTorch, Stable-Baselines3.

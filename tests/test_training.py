@@ -78,8 +78,10 @@ def test_episodes_are_drawn_within_their_ranges():
 def test_reward():
     reward, steady = Reward(), (0.2, 0.0)
     assert reward(0.0, steady, steady, False) == 1.0                    # on the setpoint, command unchanged
-    assert reward(0.01, steady, steady, False) < reward(0.001, steady, steady, False) < 1.0
-    assert reward(0.1, steady, steady, False) == pytest.approx(0.0)     # 10 cm away: the period is lost
+    assert reward(0.005, steady, steady, False) == pytest.approx(0.5 * (1 - 0.05 ** 2) + 0.5 * 0.5)
+    assert reward(0.1, steady, steady, False) == pytest.approx(0.5 / 21)        # 10 cm away: the period is lost
+    # The last millimeters count: from 15 mm to 2 mm, a quarter of a period (1 % with the parabola alone)
+    assert reward(0.002, steady, steady, False) - reward(0.015, steady, steady, False) == pytest.approx(0.243, abs=0.001)
     assert reward(0.0, (1.0, 0.0), (-1.0, 0.0), False) == pytest.approx(1.0 - 0.05 * 4)   # jerk of the command
     assert reward(math.nan, steady, steady, True) == -100.0             # fall
 
@@ -128,9 +130,10 @@ def test_fall_ends_the_episode():
 
 
 def test_hand_written_policy_keeps_the_ball_of_the_mujoco_robot():
-    # MuJoCo robot, 3 episodes: the PD holds the ball near its setpoint; without command, it falls
+    # MuJoCo robot, 3 episodes: the PD holds the ball near its setpoint (a few mm away: it has no integral);
+    # without command, it falls
     _, rewards, ends = run(BallPlateEnv(seed=3), pd_policy, 1500)
-    assert (True, False) not in ends and sum(rewards) / len(rewards) > 0.7
+    assert (True, False) not in ends and sum(rewards) / len(rewards) > 0.5
     _, rewards, ends = run(BallPlateEnv(seed=3), do_nothing, 300)
     assert (True, False) in ends
 

@@ -1,0 +1,5 @@
+# Training of the AI brain (python -m training.train), on top of requirements.txt
+-r requirements.txt
+torch==2.15.0
+gymnasium==1.4.0
+stable-baselines3==2.9.2

@@ -15,9 +15,10 @@ An episode (draw_episode) lasts 10 s. Drawn for each one:
       following a circle.
 A ball dropped from above is left for a later version.
 
-Reward of a control period (Reward): 1 - (distance to the setpoint / 10 cm)², minus the jerk of the command; a
-fall ends the episode and costs a penalty. The distance is the true one, at the end of the period (the reward is
-not seen by the brain). The constant 1 only matters at a fall: it then loses all the periods to come.
+Reward of a control period (Reward), from the distance d to the setpoint: half for staying near it,
+1 - (d / 10 cm)², half for the last millimeters, 1 / (1 + d / 5 mm); minus the jerk of the command. A fall ends the
+episode and costs a penalty, besides all the periods to come. The distance is the true one, at the end of the
+period (the reward is not seen by the brain).
 
     python -m training.environment     speed of the environment on this machine
 """
@@ -102,8 +103,15 @@ def draw_episode(rng: random.Random, base: Config = None, duration: float = EPIS
 
 @dataclass(frozen=True)
 class Reward:
-    """Reward of a control period. action, previous_action: in units of theta_max (controller/policy.py)."""
-    scale: float = 0.1            # (m) distance to the setpoint that costs a whole period
+    """Reward of a control period: 1 on the setpoint with a steady command.
+    action, previous_action: in units of theta_max (controller/policy.py).
+
+    The first half, a parabola, is flat near the setpoint: from 15 mm to 2 mm, it only brings 1 % of a period,
+    and alone it leaves the policy there (measured on the simple physics, one training of 2 million periods each:
+    errors about 1.5 times larger). The second half is the steepest on the setpoint: 0.5 at `precision`, 0.83 at
+    1 mm."""
+    scale: float = 0.1            # (m) distance to the setpoint where the first half is lost
+    precision: float = 0.005      # (m) distance to the setpoint where half of the second half is lost
     jerk: float = 0.05            # weight of the squared change of the action between two periods
     fall: float = 100.0           # penalty of a fall: as much as 2 s on the setpoint bring
 
@@ -111,7 +119,8 @@ class Reward:
         if fallen:
             return -self.fall
         change = (action[0] - previous_action[0]) ** 2 + (action[1] - previous_action[1]) ** 2
-        return 1.0 - (distance / self.scale) ** 2 - self.jerk * change
+        near, last_millimeters = 1.0 - (distance / self.scale) ** 2, 1.0 / (1.0 + distance / self.precision)
+        return 0.5 * (near + last_millimeters) - self.jerk * change
 
 
 class BallPlateEnv:
@@ -158,7 +167,7 @@ class BallPlateEnv:
         reward = self.reward(distance, applied, self.previous_action, fallen)
         self.previous_action = applied
         truncated = not fallen and self.steps >= self.max_steps
-        return self.observation, reward, fallen, truncated, {"distance": distance}
+        return self.observation, reward, fallen, truncated, {"distance": distance, "fallen": fallen}
 
     def _observe(self) -> bool:
         """Advances to the next decision of the brain and stores its observation. False if the ball has fallen
