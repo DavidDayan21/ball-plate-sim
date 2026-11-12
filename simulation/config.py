@@ -66,6 +66,49 @@ class CameraParams:
 
 
 # --- Setpoint trajectories: t -> (x_ref, y_ref, ax_ref, ay_ref) ----------------------------------
+@dataclass(frozen=True)
+class Point:
+    """Ball held at (x, y)."""
+    x: float = 0.0
+    y: float = 0.0
+
+    def __call__(self, t: float):
+        return self.x, self.y, 0.0, 0.0
+
+
+@dataclass(frozen=True)
+class Step:
+    """Ball held at `start` (x, y), then at `end` from the time `time` on."""
+    start: tuple
+    end: tuple
+    time: float
+
+    def __call__(self, t: float):
+        x, y = self.start if t < self.time else self.end
+        return x, y, 0.0, 0.0
+
+
+@dataclass(frozen=True)
+class Circle:
+    """Circle of radius `radius` around (cx, cy), traveled in `period` seconds (negative: clockwise), starting at
+    the angle `phase`."""
+    radius: float
+    period: float
+    phase: float = 0.0
+    cx: float = 0.0
+    cy: float = 0.0
+
+    def __call__(self, t: float):
+        w = 2 * math.pi / self.period
+        phi = w * t + self.phase
+        x, y = self.radius * math.cos(phi), self.radius * math.sin(phi)
+        return self.cx + x, self.cy + y, -w ** 2 * x, -w ** 2 * y
+
+
+center = Point()                                                  # ball held at the center
+circle = Circle(radius=0.06, period=4.0, phase=math.pi / 4)       # 6 cm in 4 s (9.4 cm/s), starting at 45°
+
+
 def reference(t: float):
     """Reference scenario. 0-4 s: center. 4-8 s: point (5 cm, 5 cm).
     Then: circle of radius 6 cm traveled in 4 s, starting at 45°."""
@@ -74,19 +117,6 @@ def reference(t: float):
     if t < 8.0:
         return 0.05, 0.05, 0.0, 0.0
     return circle(t - 8.0)
-
-
-def center(t: float):
-    """Ball held at the center."""
-    return 0.0, 0.0, 0.0, 0.0
-
-
-def circle(t: float):
-    """Circle of radius 6 cm traveled in 4 s (speed 9.4 cm/s), starting at 45°."""
-    R, w = 0.06, 2 * math.pi / 4.0
-    phi = w * t + math.pi / 4
-    x, y = R * math.cos(phi), R * math.sin(phi)
-    return x, y, -w ** 2 * x, -w ** 2 * y
 
 
 def square(t: float):
@@ -132,6 +162,9 @@ class Config:
                                        # in MuJoCo (max 0.4 N·m). To check against a motor datasheet
     fast_move: float = 0.1             # (rad, motor angle) above this gap to its target, a move is large;
                                        # math.inf: gentle ramps only
+    fast_speed: float = 0.3            # (m/s) the fast ramps only for a ball measured faster than this, whatever
+                                       # the brain (controller/ramps.py): a slow ball would be thrown off the
+                                       # plate (0: whatever the speed)
     # Sensor
     sensor: str = "synthetic"          # "synthetic" (Gaussian noise) or "camera" (MuJoCo only)
     sigma: float = 0.001               # synthetic sensor: standard deviation of the noise (m)
@@ -160,8 +193,6 @@ class Config:
     bounce_restitution: float = 0.87   # aimed bounce: restitution assumed (ITTF rule 0.85 to 0.91; MuJoCo 0.874)
     bounce_gain: float = 0.5           # aimed bounce: share of the distance to the setpoint covered by each bounce
     wait_for_speed: bool = True        # first measurement: plate kept until the speed of the ball is known
-    fast_speed: float = 0.3            # (m/s) the fast ramps of the motors only for a ball faster than this: a slow
-                                       # ball would be thrown off the plate (0: whatever the speed)
     integration_zone: float = 0.02     # (m) each axis integrates its error only within this distance of the
                                        # setpoint (math.inf: everywhere). It must exceed the offset θb/Kp that
                                        # a calibration error θb leaves without integral: 2 cm corrects up to

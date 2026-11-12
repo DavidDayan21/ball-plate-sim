@@ -14,6 +14,8 @@ from controller.flight import FlightEstimator
 from controller.lqr import lqr, pid_gains
 from controller.pid import PID
 from controller.plate import LatencyPredictor
+from controller.policy import LAYOUT, OBSERVATION_SIZE, PolicyController
+from controller.ramps import FastRamps
 from simulation.camera import inverse_rotation
 from simulation.config import G, REFERENCE_GAINS, Config, PlateParams, circle
 from simulation.simple_physics import acceleration
@@ -123,16 +125,15 @@ def test_integration_zone_cannot_correct_a_larger_calibration_error():
 
 
 def test_fast_ramps_only_for_a_fast_ball():
-    # The brain allows the fast ramps of the motors only for a ball faster than fast_speed (speed from the last
-    # two measurements): never before the first speed is known
-    from controller.plate import PlateController
-    ctrl = PlateController(1.0, 1.0, 0.5, math.radians(10), 0.0, CG, fast_speed=0.3)
-    assert not ctrl.fast_ramps
+    # The fast ramps of the motors are allowed only for a ball faster than fast_speed (speed from the last two
+    # measurements): never before the first speed is known
+    assert not FastRamps(0.3).allowed
     for speed, allowed in ((0.1, False), (0.5, True)):
-        ctrl = PlateController(1.0, 1.0, 0.5, math.radians(10), 0.0, CG, fast_speed=0.3)
-        for k in range(3):
-            ctrl.compute((0.0, 0.0), (-0.1 + speed * 0.02 * k, 0.0), (0.0, 0.0), 0.02)
-        assert ctrl.fast_ramps == allowed
+        ramps = FastRamps(0.3)
+        assert not ramps.update((-0.1, 0.0), 0.02)
+        for k in (1, 2):
+            assert ramps.update((-0.1 + speed * 0.02 * k, 0.0), 0.02) == ramps.allowed == allowed
+    assert FastRamps(0.0).update((0.0, 0.0), 0.02)             # fast_speed = 0: whatever the speed
 
 
 def test_lqr_double_integrator():
@@ -348,3 +349,51 @@ def test_estimator_waits_for_a_calm_rolling_ball():
         est.update((0.01, 0.0), (0.01, 0.0), airborne=False)
         est.command((0.0, 0.0))
     assert est.gain == CG
+
+
+# --- Brain driven by a policy (controller/policy.py) ----------------------------------------------
+def test_policy_observation():
+    T, theta_max = 0.02, math.radians(10)
+    brain = PolicyController(None, theta_max, latency=3)
+    # First measurement: no speed yet, no command sent
+    o = brain.observe((0.05, 0.0), (0.02, -0.01, 0.004), (0.3, 0.0), T)
+    assert o.shape == (OBSERVATION_SIZE,) and o.dtype == np.float32
+    assert o[LAYOUT["position"]] == pytest.approx([0.2, -0.1])           # in units of 10 cm
+    assert o[LAYOUT["heights"]] == pytest.approx([0.2, 0.2, 0.2])        # in units of 2 cm
+    assert o[LAYOUT["setpoint"]] == pytest.approx([0.5, 0.0])
+    assert o[LAYOUT["setpoint_acceleration"]] == pytest.approx([0.3, 0.0])
+    assert o[LAYOUT["latency"]] == pytest.approx(3 / 5) and o[LAYOUT["received"]] == pytest.approx(1 / 3)
+    assert not (o[LAYOUT["speeds"]].any() or o[LAYOUT["commands"]].any() or o[LAYOUT["setpoint_speed"]].any())
+    # The action is the command in units of theta_max, saturated at ±1
+    assert brain.act((0.5, -3.0)) == pytest.approx((0.5 * theta_max, -theta_max))
+    # Second measurement: the ball has moved by 2 mm (0.1 m/s), the setpoint by 1 mm (0.05 m/s)
+    o = brain.observe((0.051, 0.0), (0.022, -0.01, 0.0), (0.0, 0.0), T)
+    assert o[LAYOUT["speeds"]] == pytest.approx([0.5, 0.0, 0.0, 0.0])    # in units of 0.2 m/s
+    assert o[LAYOUT["setpoint_speed"]] == pytest.approx([0.25, 0.0])
+    assert o[LAYOUT["commands"]] == pytest.approx([0.5, -1.0] + [0.0] * 10)
+    assert o[LAYOUT["heights"]] == pytest.approx([0.0, 0.2, 0.2])
+    assert o[LAYOUT["received"]] == pytest.approx(2 / 3)
+    # Third measurement: speeds and commands newest first; a jump of the setpoint is bounded
+    brain.act((0.1, 0.2))
+    o = brain.observe((-0.05, 0.0), (0.022, -0.012, 0.0), (0.0, 0.0), T)
+    assert o[LAYOUT["speeds"]] == pytest.approx([0.0, -0.5, 0.5, 0.0], abs=1e-6)
+    assert o[LAYOUT["commands"]][:4] == pytest.approx([0.1, 0.2, 0.5, -1.0])
+    assert o[LAYOUT["setpoint_speed"]] == pytest.approx([-2.5, 0.0])
+    assert o[LAYOUT["received"]] == 1.0
+
+
+def test_policy_brain_has_the_interface_of_the_pid_brain():
+    seen = []
+
+    def policy(observation):
+        seen.append(observation)
+        return 0.2, -0.4
+
+    brain = PolicyController(policy, 0.1, latency=1)
+    assert brain.compute((0.0, 0.0), (0.01, 0.0, 0.0), (0.0, 0.0), 0.02) == pytest.approx((0.02, -0.04))
+    assert brain.compute((0.0, 0.0), (0.01, 0.0), (0.0, 0.0), 0.02) == pytest.approx((0.02, -0.04))
+    assert seen[1][LAYOUT["commands"]][:2] == pytest.approx([0.2, -0.4]) and math.isnan(brain.model_gain)
+    with pytest.raises(ValueError):
+        PolicyController(policy, 0.1, latency=6)               # the policy knows up to 5 periods of latency
+    with pytest.raises(ValueError):
+        brain.act((math.nan, 0.0))

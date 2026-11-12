@@ -4,7 +4,7 @@ import math
 import pytest
 
 from simulation.loop import Results
-from simulation.metrics import arrival_time, max_distance, overshoot
+from simulation.metrics import arrival_time, max_distance, overshoot, stoppable_speed
 
 
 def history(points, dt: float = 0.5) -> Results:
@@ -43,3 +43,11 @@ def test_distance_after_2_s_is_continuous():
     high = history(APPROACH[:5] + [(0.0051, 0.0), (0.0, 0.0)])
     assert max_distance(high, 2.5, 4) - max_distance(low, 2.5, 4) == pytest.approx(0.0002)
     assert arrival_time(low, 4) == arrival_time(high, 4) == 1.0
+
+
+def test_stoppable_speed():
+    # Ball thrown from 10 cm before the center toward the opposite edge, 25 cm away, plate at 10°, hollow ball
+    # (c·g = 3/5·g): 0.71 m/s (campaign, section 2). Braked at c·g·sin θ, it stops after v²/(2·a) = 25 cm
+    a = 0.6 * 9.81 * math.sin(math.radians(10))
+    v = stoppable_speed(0.25, math.radians(10), 0.6 * 9.81)
+    assert v == pytest.approx(0.715, abs=0.001) and v ** 2 / (2 * a) == pytest.approx(0.25)

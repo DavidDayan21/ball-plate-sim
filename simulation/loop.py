@@ -1,11 +1,17 @@
-"""Single closed loop, whatever the physics.
+"""Single closed loop, whatever the physics and the brain.
 
 At every step (0.5 ms): the physics advances. Every 20 ms (50 Hz):
-    measurement (synthetic sensor or camera) -> controller -> command (θx, θy) -> motors / servos
+    measurement (synthetic sensor or camera) -> brain -> command (θx, θy) -> motors / servos
 The first measurement arrives one latency after the start: until then, the plate keeps its command.
 
     physics = "simple": our own equations (simulation/simple_physics.py)
     physics = "mujoco": 3D physics engine (simulation/mujoco_physics.py)
+
+A brain is an object with:
+    compute(setpoint, measurement, setpoint_acc, dt) -> (θx, θy) in rad, called at every control period;
+    model_gain: the c·g of its model of the ball ((m/s²)/rad), NaN if it has none.
+The PID brain (pid_brain) is the default one; controller/policy.py holds the brain driven by a policy.
+The motors, their ramps and the rule of the fast ramps (controller/ramps.py) are the same for every brain.
 """
 from dataclasses import dataclass, field
 import math
@@ -14,6 +20,8 @@ import time
 from controller.adaptation import ModelGainEstimator
 from controller.flight import FlightEstimator
 from controller.plate import PlateController
+from controller.policy import PolicyController
+from controller.ramps import FastRamps
 from simulation.sensor import Sensor
 from simulation.config import G, Config
 
@@ -28,8 +36,8 @@ class Results:
     y_ref: list = field(default_factory=list)
     theta_x: list = field(default_factory=list)              # controller commands (rad)
     theta_y: list = field(default_factory=list)
-    model_gain: list = field(default_factory=list)           # c·g used by the controller ((m/s²)/rad): nominal,
-                                                             # or estimated online (adapt_model_gain)
+    model_gain: list = field(default_factory=list)           # c·g used by the brain ((m/s²)/rad): nominal, or
+                                                             # estimated online (adapt_model_gain); NaN: no model
     actual_tilt: list = field(default_factory=list)          # actual (θx, θy) of the plate (rad)
     alphas: list = field(default_factory=list)               # angles of the 3 motors (rad)
     velocity: list = field(default_factory=list)             # (vx, vy) of the ball, plate frame (m/s)
@@ -54,14 +62,31 @@ def create_physics(cfg: Config):
     raise ValueError(f"Unknown physics: {cfg.physics}")
 
 
+def pid_brain(cfg: Config) -> PlateController:
+    """The PID brain, with the settings of cfg."""
+    flight = (FlightEstimator(cfg.geometry.height, cfg.plate.ball_radius, cfg.control_period, cfg.latency,
+                              cfg.airborne_height, G) if cfg.airborne_height < math.inf else None)
+    model_gain = cfg.plate.coefficient * G
+    estimator = (ModelGainEstimator(model_gain, cfg.control_period, cfg.latency, cfg.theta_max)
+                 if cfg.adapt_model_gain else None)
+    return PlateController(*cfg.pid_gains(), cfg.theta_max, cfg.tau_d,
+                           model_gain=model_gain, feedforward=cfg.feedforward,
+                           latency_compensation=cfg.latency if cfg.latency_compensation else 0,
+                           period=cfg.control_period, integration_zone=cfg.integration_zone,
+                           flight=flight, restitution=cfg.bounce_restitution, bounce_gain=cfg.bounce_gain,
+                           wait_for_speed=cfg.wait_for_speed, estimator=estimator)
+
+
 class Simulation:
     """Step-by-step simulation (one step = dt_physics).
 
     simulate() runs it over the whole scenario duration; the sandbox drives it live.
+    brain: function cfg -> brain (the PID brain by default), called again at every reset_control().
     """
 
-    def __init__(self, cfg: Config):
+    def __init__(self, cfg: Config, brain=pid_brain):
         self.cfg = cfg
+        self.create_brain = brain
         self.phys = create_physics(cfg)
         self.camera = None
         if cfg.sensor == "camera":
@@ -83,24 +108,14 @@ class Simulation:
                                   cfg.plate.ball_radius, cfg.tilt_correction, cfg.airborne_height)
 
     def reset_control(self) -> None:
-        """(Re)creates the sensor and the controller from self.cfg, with their memory reset."""
+        """(Re)creates the sensor, the rule of the fast ramps and the brain from self.cfg, with their memory reset."""
         cfg = self.cfg
         if self.camera is not None:
             self.sensor = Sensor(sigma=0.0, latency=cfg.latency)   # the noise comes from the image
         else:
             self.sensor = Sensor(cfg.sigma, cfg.latency, cfg.seed, cfg.sigma_height)
-        flight = (FlightEstimator(cfg.geometry.height, cfg.plate.ball_radius, cfg.control_period, cfg.latency,
-                                  cfg.airborne_height, G) if cfg.airborne_height < math.inf else None)
-        model_gain = cfg.plate.coefficient * G
-        estimator = (ModelGainEstimator(model_gain, cfg.control_period, cfg.latency, cfg.theta_max)
-                     if cfg.adapt_model_gain else None)
-        self.ctrl = PlateController(*cfg.pid_gains(), cfg.theta_max, cfg.tau_d,
-                                      model_gain=model_gain, feedforward=cfg.feedforward,
-                                      latency_compensation=cfg.latency if cfg.latency_compensation else 0,
-                                      period=cfg.control_period, integration_zone=cfg.integration_zone,
-                                      flight=flight, restitution=cfg.bounce_restitution, bounce_gain=cfg.bounce_gain,
-                                      wait_for_speed=cfg.wait_for_speed, fast_speed=cfg.fast_speed,
-                                      estimator=estimator)
+        self.ramps = FastRamps(cfg.fast_speed)
+        self.brain = self.create_brain(cfg)
 
     @property
     def t(self) -> float:
@@ -108,31 +123,50 @@ class Simulation:
 
     def step(self) -> bool:
         """Advances one step. Returns False if the ball has fallen."""
-        cfg, phys, r, n = self.cfg, self.phys, self.r, self.n
-        t = self.t
-        if phys.fallen():
-            r.fallen = True
+        if self.phys.fallen():
+            self.r.fallen = True
             return False
+        inputs = self.sense()
+        if inputs is not None:
+            self.theta = self.brain.compute(*inputs, self.cfg.control_period)
+        self.actuate()
+        return True
 
-        if n % self.steps_per_control == 0:
-            bx, by = phys.ball()
-            if self.camera is not None:
-                mx, my, mh = self.camera.measure(phys.data, *self.theta, self.last_measurement)
-                self.last_measurement = (mx, my, mh)
-            else:
-                mx, my, mh = bx, by, phys.ball_height()
-            measured = self.sensor.measure(mx, my, mh)
-            if self.camera is None:         # synthetic sensor: noisy measurement of this instant (before latency)
-                mx, my, mh = self.sensor.queue[-1] if self.sensor.queue else measured
-            r.measurement_error.append(math.hypot(mx - bx, my - by))
-            r.measured_height.append(mh)
-            xr, yr, axr, ayr = cfg.trajectory(t)
-            if measured is not None:        # before the first image arrives, the plate keeps its command
-                self.theta = self.ctrl.compute((xr, yr), measured, (axr, ayr), cfg.control_period)
-            phys.command(*self.theta, fast=self.ctrl.fast_ramps)
-            for series, val in ((r.t, t), (r.x, bx), (r.y, by), (r.x_ref, xr), (r.y_ref, yr),
-                               (r.theta_x, self.theta[0]), (r.theta_y, self.theta[1]),
-                               (r.model_gain, self.ctrl.model_gain),
+    def sense(self):
+        """First half of a step. At a control instant, measures the ball; returns what the brain receives,
+        (setpoint, measurement, setpoint acceleration), or None when it has nothing to decide: between two control
+        instants, and before the first image arrives (the plate keeps its command)."""
+        cfg, phys, r = self.cfg, self.phys, self.r
+        if self.n % self.steps_per_control != 0:
+            return None
+        t = self.t
+        bx, by = phys.ball()
+        if self.camera is not None:
+            mx, my, mh = self.camera.measure(phys.data, *self.theta, self.last_measurement)
+            self.last_measurement = (mx, my, mh)
+        else:
+            mx, my, mh = bx, by, phys.ball_height()
+        measured = self.sensor.measure(mx, my, mh)
+        if self.camera is None:             # synthetic sensor: noisy measurement of this instant (before latency)
+            mx, my, mh = self.sensor.queue[-1] if self.sensor.queue else measured
+        r.measurement_error.append(math.hypot(mx - bx, my - by))
+        r.measured_height.append(mh)
+        xr, yr, axr, ayr = cfg.trajectory(t)
+        for series, val in ((r.t, t), (r.x, bx), (r.y, by), (r.x_ref, xr), (r.y_ref, yr)):
+            series.append(val)
+        if measured is None:
+            return None
+        self.ramps.update(measured, cfg.control_period)
+        return (xr, yr), measured, (axr, ayr)
+
+    def actuate(self) -> None:
+        """Second half of a step. At a control instant, sends the command self.theta to the motors and records the
+        period; then the physics advances by one step."""
+        cfg, phys, r = self.cfg, self.phys, self.r
+        if self.n % self.steps_per_control == 0:
+            phys.command(*self.theta, fast=self.ramps.allowed)
+            for series, val in ((r.theta_x, self.theta[0]), (r.theta_y, self.theta[1]),
+                               (r.model_gain, self.brain.model_gain),
                                (r.actual_tilt, phys.actual_tilt()),
                                (r.alphas, phys.motor_angles()),
                                (r.velocity, phys.ball_velocity()), (r.height, phys.ball_height())):
@@ -140,12 +174,22 @@ class Simulation:
             if cfg.physics == "mujoco":
                 r.torques.append(phys.torques())
                 r.airborne.append(phys.read_period_airborne_steps() / self.steps_per_control)
-
-        if n in self.push_steps:
-            phys.push(*self.push_steps[n])
+        if self.n in self.push_steps:
+            phys.push(*self.push_steps[self.n])
         phys.step(cfg.dt_physics)
         self.n += 1
-        return True
+
+    def next_decision(self):
+        """For a brain driven from outside (training): advances until it has to decide. Returns what it receives
+        (see sense), or None if the ball has fallen. Its command is then written in self.theta, before actuate()."""
+        while True:
+            if self.phys.fallen():
+                self.r.fallen = True
+                return None
+            inputs = self.sense()
+            if inputs is not None:
+                return inputs
+            self.actuate()
 
     def finish(self) -> Results:
         """Releases the resources and completes the global metrics."""
@@ -160,9 +204,14 @@ class Simulation:
         return r
 
 
-def simulate(cfg: Config, view: bool = False) -> Results:
-    """Simulates the scenario of cfg. view=True (MuJoCo): real-time 3D window."""
-    sim = Simulation(cfg)
+def policy_brain(policy=None):
+    """Brain driven by `policy` (controller/policy.py), as a function cfg -> brain for Simulation and simulate."""
+    return lambda cfg: PolicyController(policy, cfg.theta_max, cfg.latency)
+
+
+def simulate(cfg: Config, view: bool = False, brain=pid_brain) -> Results:
+    """Simulates the scenario of cfg. view=True (MuJoCo): real-time 3D window. brain: see Simulation."""
+    sim = Simulation(cfg, brain)
     viewer = None
     if view:
         import mujoco.viewer

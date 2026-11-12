@@ -5,7 +5,7 @@ from dataclasses import replace
 import pytest
 
 from simulation.loop import simulate
-from simulation.config import G, Config, center
+from simulation.config import G, Circle, Config, Point, Step, center, circle, reference
 from simulation.metrics import max_distance, theta_std, tracking_error_rms
 
 SIMPLE_PLATE = Config(physics="simple", mechanism=False)
@@ -14,6 +14,24 @@ SIMPLE_ROBOT = Config(physics="simple", max_acceleration=math.inf)
 
 def circle_error(cfg) -> float:
     return tracking_error_rms(simulate(cfg), 12, 20)
+
+
+# --- Setpoint trajectories ---------------------------------------------------------------------
+def test_setpoint_trajectories():
+    assert Point(0.02, -0.01)(3.0) == (0.02, -0.01, 0.0, 0.0) and center(3.0) == (0.0, 0.0, 0.0, 0.0)
+    jump = Step((0.0, 0.01), (0.05, 0.05), 4.0)
+    assert jump(3.99) == (0.0, 0.01, 0.0, 0.0) and jump(4.0) == (0.05, 0.05, 0.0, 0.0)
+    # Circle: at its radius from its center, back after one period, acceleration = second derivative
+    c, t, h = Circle(0.05, -5.0, 1.0, 0.01, -0.02), 0.7, 1e-3
+    x, y, ax, ay = c(t)
+    assert math.hypot(x - 0.01, y + 0.02) == pytest.approx(0.05) and c(t + 5.0) == pytest.approx(c(t))
+    assert [(c(t + h)[k] - 2 * c(t)[k] + c(t - h)[k]) / h ** 2 for k in range(2)] == pytest.approx([ax, ay], rel=1e-4)
+    assert math.atan2(c(t + h)[1] + 0.02, c(t + h)[0] - 0.01) < math.atan2(y + 0.02, x - 0.01)    # clockwise
+    # The reference circle: 6 cm in 4 s, starting at 45°, counterclockwise; the reference scenario joins it at 8 s
+    r = 0.06 / math.sqrt(2)
+    assert circle(0.0)[:2] == pytest.approx((r, r)) and circle(1.0)[:2] == pytest.approx((-r, r))
+    assert circle(0.0)[2:] == pytest.approx((-(math.pi / 2) ** 2 * r, -(math.pi / 2) ** 2 * r))
+    assert reference(9.0) == circle(1.0) and reference(5.0) == (0.05, 0.05, 0.0, 0.0)
 
 
 # --- Simple physics ---------------------------------------------------------------------------

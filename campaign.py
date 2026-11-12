@@ -42,7 +42,8 @@ import matplotlib.pyplot as plt
 
 from simulation.config import G, REFERENCE_CONTROLLER, REFERENCE_GAINS, Config, CameraParams, square, center
 from simulation.loop import simulate
-from simulation.metrics import arrival_time, distance, max_distance, overshoot, theta_std, tracking_error_rms
+from simulation.metrics import (arrival_time, distance, max_distance, overshoot, stoppable_speed, theta_std,
+                                tracking_error_rms)
 from simulation.mujoco_physics import rolling_acceleration, measured_restitution
 from simulation.parallel import execute
 
@@ -296,10 +297,10 @@ def limit_config(name: str, v: float) -> Config:
 
 
 def physical_limit(name: str) -> float:
-    """Maximum braking a = c·g·sin θmax over the available distance d: v = √(2·a·d)."""
+    """Highest speed that the plate can stop over the available distance d."""
     kind, tilt_deg, _ = LIMITS[name]
     distance = R_PLATE - THROW_START if kind == "throw" else R_PLATE
-    return math.sqrt(2 * CG * math.sin(math.radians(tilt_deg)) * distance)
+    return stoppable_speed(distance, math.radians(tilt_deg), CG)
 
 
 def find_limit(job):

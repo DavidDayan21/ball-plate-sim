@@ -1,4 +1,4 @@
-"""Performance metrics computed on a history (simulation/loop.py: Results)."""
+"""Performance metrics computed on a history (simulation/loop.py: Results), and the physical limit of a throw."""
 import math
 
 
@@ -40,6 +40,12 @@ def overshoot(r, t1: float, fraction: float = 0.05) -> float:
     if math.isnan(t_arrival):
         return math.nan
     return max_distance(r, t_arrival, t1)
+
+
+def stoppable_speed(distance: float, theta_max: float, model_gain: float) -> float:
+    """Highest speed (m/s) of a ball that the plate can stop over `distance`: tilted by theta_max against it, the
+    plate brakes it by a = c·g·sin θmax (model_gain = c·g), hence v = √(2·a·d). The physical limit of any brain."""
+    return math.sqrt(2 * model_gain * math.sin(theta_max) * distance)
 
 
 def theta_std(r, t0: float, t1: float) -> float:

@@ -19,7 +19,7 @@ Building the real robot remains a distant goal: the code will then be ready.
 | 3D sandbox | Throws, drops, bounces, pushes, setpoints, data of every attempt | Done |
 | A. Reliable measurements | Bit-exact regression check, spread over N draws, robust metrics, simple physics → MuJoCo gap | Done |
 | B. PID brain | Objectives in the report, integral limited to the neighborhood of the setpoint, aimed bounce of a dropped ball, thrown ball (start with the speed, fast motor ramps for the large moves), gains tuned by LQR, adaptive control (model gain c·g estimated online), every gap of more than 0.5 mm explained (report, section 12) | Done |
-| C. Local AI brain | Training in MuJoCo, same rules as the PID (sensor, motors, ±10°) | To do |
+| C. Local AI brain | A policy (neural network) learned by reinforcement in MuJoCo, same rules as the PID (sensor, motors, ±10°). Done: interchangeable brains, training environment. To come: training, comparison with the PID | **In progress** |
 | D. Software for the general public | MuJoCo physics in our interface, choice of brain, comparison | To do |
 | E. Construction (distant) | Design, real-world defects, complete error budget | Later |
 
@@ -33,13 +33,15 @@ no fall in the robustness variants.
 ```text
 controller/              What would run on the real robot (independent of the simulator)
   pid.py                 PID: derivative filter, saturation, anti-windup, integration zone, feedforward
-  plate.py               2 PIDs (x, y axes) + feedforward + latency predictor + aimed bounce
+  plate.py               PID brain: 2 PIDs (x, y axes) + feedforward + latency predictor + aimed bounce
   adaptation.py          Adaptive control: online estimation of the model gain c·g (inertia of the ball)
+  policy.py              AI brain: memory and observation of a brain driven by a policy (observation -> action)
+  ramps.py               Rule of the fast ramps of the motors, the same for every brain
   flight.py              Ball in the air: ballistic tracking, prediction of the impact
   kinematics.py          Geometry, inverse (exact) and forward (Newton) kinematics
 simulation/
   config.py              Single configuration, physical parameters, setpoint trajectories
-  loop.py                Single closed loop: sensor -> controller -> motors -> physics
+  loop.py                Single closed loop, whatever the brain: sensor -> brain -> motors -> physics
   simple_physics.py      Simple physics (theoretical reference)
   mujoco_physics.py      MuJoCo physics: generation of the 3D models, contact, interface, validation
   motor.py               Stepper motor: max speed, microsteps, limits, ramps
@@ -48,8 +50,10 @@ simulation/
   metrics.py             Metrics: tracking error, return to the center, command jitter
   session.py             Sandbox: series of attempts, automatic end, CSV recording
   parallel.py            Independent simulations spread over several processes
+training/
+  environment.py         Training environment of the AI brain: random episodes, reward, speed measurement
 tests/                   Automated tests, by theme (controller, mechanics, sensors, physics,
-                         scenarios, metrics, session, regression check, campaign)
+                         scenarios, metrics, session, regression check, campaign, training)
 campaign.py              Full measurement campaign over N draws, in parallel -> results/report.md
 sandbox.py               The robot in 3D and in real time, driven from a control panel
 regression_check.py      Checks that a change leaves all the results bit-identical
@@ -77,6 +81,7 @@ python -m mujoco.viewer --mjcf=results/robot.xml       # opens the model alone i
 python regression_check.py --record       # before a change: reference of all the results
 python regression_check.py --compare      # after: checks that they are bit-identical
 python regression_check.py --compare --by-position    # same after a renaming (changed names, same order)
+python -m training.environment            # speed of the training environment on this machine (1 minute)
 ```
 
 Measurement campaign: every case is simulated over N draws (`--draws`, 10 by default), in parallel
@@ -109,6 +114,23 @@ r = simulate(Config(physics="simple", mechanism=False))           # theoretical 
 r = simulate(Config(trajectory=center, start_position=(-0.1, 0.0), start_velocity=(0.4, 0.0)))  # thrown ball
 r = simulate(Config(start_height=0.305))                           # ball dropped from 30.5 cm (MuJoCo only)
 ```
+
+## The two brains
+
+A brain receives, every 20 ms, the measurement of the ball (late by the latency), the setpoint and its
+acceleration, and answers with the two tilts of the plate. The loop (`simulation/loop.py`) accepts any brain:
+`simulate(cfg)` uses the PID brain, `simulate(cfg, brain=policy_brain(policy))` a brain driven by a policy.
+The motors, their ramps and the rule of the fast ramps are the same for both.
+
+The policy of the AI brain is a function from an observation to an action, to be learned by reinforcement
+(phase C, in progress). The observation holds what the PID brain also knows (`controller/policy.py`): the last
+3 measurements, the last 6 commands, the setpoint with its speed and its acceleration, the latency. The action
+is the command (θx, θy) in units of the maximum tilt. The training environment (`training/environment.py`)
+plays episodes of 10 s on the MuJoCo robot, each with another robot, ball, sensor and scenario drawn at random
+(inertia, mass and friction of the ball, calibration error, latency, noise; ball placed, thrown or pushed;
+setpoint fixed, jumping or circling), and rewards every period: 1 - (distance to the setpoint / 10 cm)², minus
+the jerk of the command, and a penalty if the ball falls. A policy sees exactly the same robot in the
+environment and in a simulation (checked bit for bit in the tests).
 
 ## 3D sandbox
 
@@ -146,7 +168,7 @@ International CSV format: `,` separator, decimal point, UTF-8 encoding (no BOM).
 | Ball | Ping-pong: radius 2 cm, 2.7 g, hollow (J = 2/3·m·r²) |
 | Ball-plate contact | Target restitution 0.88 (ITTF rule: dropped from 30.5 cm, bounces back to 22-25 cm), stiffness 200 Hz, simulation step 0.5 ms; friction μ = 1, Coulomb's round friction cone (`cone="elliptic"`, since the end of phase B; MuJoCo's own default, a pyramid, allows up to 29 % less friction between its axes when the ball slides) |
 | Mechanism | 3 arms of 5 cm, rods of 12 cm, ball joints 10 cm from the center. Without the arms (`mechanism=False`, angle-driven plate used to validate the simulator), the two angles of the plate follow the command with the profile of the motors, without steps |
-| Motors | 10 rad/s, 1/16 microsteps, ramps at 50 rad/s² for the small corrections and 400 rad/s² for the large moves (gap above 0.1 rad, since B4; peak torque about 0.31 N·m, to check on the torque curve of the chosen motor before construction: a 17HS4401S holds 0.40 N·m at rest, less at 10 rad/s), the latter only when the brain allows it: for a ball faster than 0.3 m/s (a slow ball would be thrown off the plate), max torque 0.4 N·m; in MuJoCo, position servos (kp = 50 N·m/rad, kv = 0.5 N·m·s/rad) that lag their target by τ = kv/kp = 10 ms |
+| Motors | 10 rad/s, 1/16 microsteps, ramps at 50 rad/s² for the small corrections and 400 rad/s² for the large moves (gap above 0.1 rad, since B4; peak torque about 0.31 N·m, to check on the torque curve of the chosen motor before construction: a 17HS4401S holds 0.40 N·m at rest, less at 10 rad/s), the latter only for a ball measured faster than 0.3 m/s, whatever the brain (a slow ball would be thrown off the plate), max torque 0.4 N·m; in MuJoCo, position servos (kp = 50 N·m/rad, kv = 0.5 N·m·s/rad) that lag their target by τ = kv/kp = 10 ms |
 | Simple physics | Basic model ẍ = c·g·sin θ; optional additions (`Config`): rolling term r·θ̈, rotating-frame terms, exact gravity, servo lag, sliding (Coulomb friction). The full equation is derived in `simulation/simple_physics.py` and checked against MuJoCo; it explains the gap to MuJoCo on the angle-driven plate and on the robot (campaign, section 10), and with sliding, the remaining gaps (section 12) |
 | Sensor | Camera 50 cm above the plate, 50 Hz, latency 20 ms (the first image arrives 20 ms after the start); height of the ball from its apparent size (± 3 mm), a ball partly out of the image is not measured |
 | Controller (PID brain) | 50 Hz, gains by LQR (since B3: Kp = 1.89 rad/m, Ki = 1.75 rad/(m·s), Kd = 0.80 rad·s/m, from a position error of 20 cm, an integral over 0.5 s and a tilt of 10° of equal cost; before: Kp = 1, Ki = 1, ζ = 0.7), max tilt ±10°, latency compensation by prediction, error integrated only within 2 cm of the setpoint on each axis; ball in the air (measured above 1.5 cm): its parabola is fitted and the plate is tilted so that the bounce sends it halfway back to the setpoint (restitution assumed 0.87); at the first measurement, the plate is kept until the speed of the ball is known; model gain c·g of the feedforward and of the latency predictor estimated online (since B6: recursive least squares on the measured accelerations and the commands, only while the ball rolls within 1 cm of its setpoint; from the hollow ball at every attempt). All on by default |
