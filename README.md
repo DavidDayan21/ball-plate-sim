@@ -95,9 +95,11 @@ python -m training.train --name first --periods 5e7    # same training, continue
 ```
 
 Training: `--periods` is the total of control periods (20 ms of the robot each), over all the robots simulated
-in parallel (`--processes`, half of the logical cores by default). Every million periods (`--every`), the
-training is saved in `results/training/<name>/` (ignored by git) and the policy is evaluated on the reference
-scenario: one line printed, one row in `progress.csv`. Ctrl+C saves and stops; the same command resumes.
+in parallel: `--processes` processes (half of the logical cores by default) of `--per-process` robots each (4 by
+default). Every million periods (`--every`), the training is saved in `results/training/<name>/` (ignored by
+git) and the policy is evaluated on the reference scenario: one line printed, one row in `progress.csv`, and a
+second line telling where the time went (simulation, exchanges with the robots, policy, learning, evaluation).
+Ctrl+C saves and stops; the same command resumes, on as many robots.
 
 Measurement campaign: every case is simulated over N draws (`--draws`, 10 by default), in parallel
 (`--processes`, one per core by default). Draw 0 is the nominal configuration; draw k ≥ 1 uses noise
