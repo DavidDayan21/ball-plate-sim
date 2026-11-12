@@ -1,6 +1,5 @@
 """Training script of the AI brain. Skipped without the training libraries (requirements-train.txt)."""
 import csv
-import math
 
 import numpy as np
 import pytest
@@ -9,7 +8,6 @@ pytest.importorskip("stable_baselines3")
 
 from controller.policy import LAYOUT, OBSERVATION_SIZE  # noqa: E402 (after the skip)
 from training import train as script                    # noqa: E402
-from training.environment import pd_policy              # noqa: E402
 
 
 def rows(folder):
@@ -57,7 +55,7 @@ def test_robots():
     k = int(np.argmax(dones))
     assert infos[k]["fallen"] and not infos[k]["TimeLimit.truncated"] and rewards[k] == -100.0
     assert np.array_equal(infos[k]["terminal_observation"], previous[k])
-    assert observations[k][LAYOUT["received"]] == pytest.approx(1 / 3)
+    assert observations[k][LAYOUT["received"]] == pytest.approx(1 / 8)
     robots.close()
 
 
@@ -65,15 +63,6 @@ def test_robots_are_the_same_in_one_or_several_processes():
     together, _ = play(script.Robots(processes=1, per_process=4), 40)
     spread, infos = play(script.Robots(processes=2, per_process=2), 40)
     assert all(np.array_equal(a, b) for a, b in zip(together, spread)) and len(infos) == 4
-
-
-def test_evaluation_on_the_reference_scenario():
-    # The hand-written PD keeps the ball, without the precision of the PID brain (no integral, no feedforward)
-    marks = script.evaluate(pd_policy)
-    assert list(marks) == ["return_20ms_mm", "circle_20ms_mm", "return_60ms_mm", "circle_60ms_mm"]
-    assert all(1.0 < mark < 50.0 for mark in marks.values())
-    # Without command, the ball falls: no mark
-    assert all(math.isnan(mark) for mark in script.evaluate(lambda observation: (0.0, 0.0)).values())
 
 
 def test_training_saves_and_resumes(short, capsys):

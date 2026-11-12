@@ -14,10 +14,12 @@ from controller.flight import FlightEstimator
 from controller.lqr import lqr, pid_gains
 from controller.pid import PID
 from controller.plate import LatencyPredictor
+from controller.network import Network
 from controller.policy import LAYOUT, OBSERVATION_SIZE, PolicyController
 from controller.ramps import FastRamps
 from simulation.camera import inverse_rotation
 from simulation.config import G, REFERENCE_GAINS, Config, PlateParams, circle
+from simulation.loop import pid_brain
 from simulation.simple_physics import acceleration
 
 P = PlateParams()
@@ -362,24 +364,30 @@ def test_policy_observation():
     assert o[LAYOUT["heights"]] == pytest.approx([0.2, 0.2, 0.2])        # in units of 2 cm
     assert o[LAYOUT["setpoint"]] == pytest.approx([0.5, 0.0])
     assert o[LAYOUT["setpoint_acceleration"]] == pytest.approx([0.3, 0.0])
-    assert o[LAYOUT["latency"]] == pytest.approx(3 / 5) and o[LAYOUT["received"]] == pytest.approx(1 / 3)
+    assert o[LAYOUT["latency"]] == pytest.approx(3 / 5) and o[LAYOUT["received"]] == pytest.approx(1 / 8)
     assert not (o[LAYOUT["speeds"]].any() or o[LAYOUT["commands"]].any() or o[LAYOUT["setpoint_speed"]].any())
     # The action is the command in units of theta_max, saturated at ±1
     assert brain.act((0.5, -3.0)) == pytest.approx((0.5 * theta_max, -theta_max))
     # Second measurement: the ball has moved by 2 mm (0.1 m/s), the setpoint by 1 mm (0.05 m/s)
     o = brain.observe((0.051, 0.0), (0.022, -0.01, 0.0), (0.0, 0.0), T)
-    assert o[LAYOUT["speeds"]] == pytest.approx([0.5, 0.0, 0.0, 0.0])    # in units of 0.2 m/s
+    assert o[LAYOUT["speeds"]] == pytest.approx([0.5, 0.0] + [0.0] * 12)  # in units of 0.2 m/s; 7 speeds (x, y)
     assert o[LAYOUT["setpoint_speed"]] == pytest.approx([0.25, 0.0])
-    assert o[LAYOUT["commands"]] == pytest.approx([0.5, -1.0] + [0.0] * 10)
+    assert o[LAYOUT["commands"]] == pytest.approx([0.5, -1.0] + [0.0] * 22)        # the last 12 commands
     assert o[LAYOUT["heights"]] == pytest.approx([0.0, 0.2, 0.2])
-    assert o[LAYOUT["received"]] == pytest.approx(2 / 3)
+    assert o[LAYOUT["received"]] == pytest.approx(2 / 8)
     # Third measurement: speeds and commands newest first; a jump of the setpoint is bounded
     brain.act((0.1, 0.2))
     o = brain.observe((-0.05, 0.0), (0.022, -0.012, 0.0), (0.0, 0.0), T)
-    assert o[LAYOUT["speeds"]] == pytest.approx([0.0, -0.5, 0.5, 0.0], abs=1e-6)
+    assert o[LAYOUT["speeds"]][:6] == pytest.approx([0.0, -0.5, 0.5, 0.0, 0.0, 0.0], abs=1e-6)
     assert o[LAYOUT["commands"]][:4] == pytest.approx([0.1, 0.2, 0.5, -1.0])
     assert o[LAYOUT["setpoint_speed"]] == pytest.approx([-2.5, 0.0])
-    assert o[LAYOUT["received"]] == 1.0
+    assert o[LAYOUT["received"]] == pytest.approx(3 / 8)
+    # The error compares the ball with the setpoint of the time of its measurement: here, still the first one
+    # (latency of 3 periods), 5 cm - 2.2 cm, bounded at 2 cm
+    assert o[LAYOUT["error"]] == pytest.approx([2.0, 1.2])
+    for _ in range(5):
+        o = brain.observe((-0.05, 0.0), (-0.045, 0.0, 0.0), (0.0, 0.0), T)
+    assert o[LAYOUT["error"]] == pytest.approx([-0.5, 0.0]) and o[LAYOUT["received"]] == 1.0
 
 
 def test_policy_observation_error_and_integral():
@@ -394,6 +402,27 @@ def test_policy_observation_error_and_integral():
     for _ in range(400):
         o = brain.observe((0.0, 0.0), (0.019, 0.0), (0.0, 0.0), T)
     assert o[LAYOUT["error"]] == pytest.approx([-1.9, 0.0]) and o[LAYOUT["integral"]] == pytest.approx([-3.0, 0.0])
+
+
+def test_pid_brain_told_the_command_really_applied():
+    # Imitation: a pupil drives, the PID brain only advises; its memories of the commands hold what was sent
+    brain = pid_brain(Config(latency=2))
+    brain.compute((0.0, 0.0), (0.03, 0.01, 0.0), (0.0, 0.0), 0.02)
+    advice = brain.compute((0.0, 0.0), (0.03, 0.01, 0.0), (0.0, 0.0), 0.02)
+    assert brain.predictors[0].commands[-1] == advice[0] != 0.0
+    brain.applied((0.01, -0.02))
+    assert [predictor.commands[-1] for predictor in brain.predictors] == [0.01, -0.02]
+    assert brain.flight.commands[-1] == brain.estimator.commands[-1] == (0.01, -0.02)
+    assert len(brain.predictors[0].commands) == 3 and brain.predictors[0].commands[-2] == 0.0   # older ones kept
+
+
+def test_network(tmp_path):
+    rng = np.random.default_rng(0)
+    layers = [(rng.normal(size=(4, 3)), rng.normal(size=4)), (rng.normal(size=(2, 4)), rng.normal(size=2))]
+    network, x = Network(layers), np.array([0.2, -1.0, 0.5], dtype=np.float32)
+    assert network(x) == pytest.approx(layers[1][0] @ np.tanh(layers[0][0] @ x + layers[0][1]) + layers[1][1])
+    network.save(tmp_path / "policy.npz")                               # same function once saved and read
+    assert np.array_equal(Network.load(tmp_path / "policy.npz")(x), network(x))
 
 
 def test_policy_brain_has_the_interface_of_the_pid_brain():

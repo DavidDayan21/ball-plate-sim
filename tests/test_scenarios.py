@@ -2,8 +2,12 @@
 import math
 from dataclasses import replace
 
+import numpy as np
 import pytest
 
+from controller.network import Network
+from controller.policy import PolicyController
+from simulation import loop
 from simulation.loop import simulate
 from simulation.config import G, Circle, Config, Point, Step, center, circle, reference
 from simulation.metrics import max_distance, theta_std, tracking_error_rms
@@ -186,3 +190,30 @@ def test_adaptation_learns_the_solid_ball():
     assert not r.fallen and all(g == nominal for t, g in zip(r.t, r.model_gain) if t < 8)
     assert r.model_gain[-1] == pytest.approx(G / (1 + 2 / 5), rel=0.02)
     assert tracking_error_rms(r, 12, 20) < 0.002
+
+
+# --- The AI brain: a learned policy of brains/ ----------------------------------------------------
+def test_ai_brain_meets_the_objectives():
+    # The policy learned by imitation drives alone (no PID brain), sensor with the noise of the camera
+    for latency in (1, 3):
+        sim = loop.Simulation(Config(brain="imitation", latency=latency, sigma=0.0002))
+        assert isinstance(sim.brain, PolicyController)
+        r = simulate(sim.cfg)
+        assert not r.fallen and all(math.isnan(gain) for gain in r.model_gain)
+        assert max_distance(r, 2, 4) < 0.005 and tracking_error_rms(r, 12, 20) < 0.002
+    # The PID brain stays the default one
+    assert Config().brain == "pid" and not isinstance(loop.Simulation(SIMPLE_PLATE).brain, PolicyController)
+
+
+def test_ai_brain_with_the_camera():
+    r = simulate(Config(brain="imitation", sensor="camera"))        # never seen during its training
+    assert not r.fallen and tracking_error_rms(r, 12, 20) < 0.003
+
+
+def test_learned_policy_must_fit_the_observation(tmp_path, monkeypatch):
+    monkeypatch.setattr(loop, "BRAINS", tmp_path)
+    Network([(np.zeros((2, 7)), np.zeros(2))]).save(tmp_path / "old.npz")
+    with pytest.raises(ValueError, match="observation of 7 numbers"):
+        simulate(replace(SIMPLE_PLATE, brain="old"))
+    with pytest.raises(FileNotFoundError):
+        simulate(replace(SIMPLE_PLATE, brain="unknown"))

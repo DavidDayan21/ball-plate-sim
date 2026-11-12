@@ -19,7 +19,7 @@ Building the real robot remains a distant goal: the code will then be ready.
 | 3D sandbox | Throws, drops, bounces, pushes, setpoints, data of every attempt | Done |
 | A. Reliable measurements | Bit-exact regression check, spread over N draws, robust metrics, simple physics → MuJoCo gap | Done |
 | B. PID brain | Objectives in the report, integral limited to the neighborhood of the setpoint, aimed bounce of a dropped ball, thrown ball (start with the speed, fast motor ramps for the large moves), gains tuned by LQR, adaptive control (model gain c·g estimated online), every gap of more than 0.5 mm explained (report, section 12) | Done |
-| C. Local AI brain | A policy (neural network) learned by reinforcement in MuJoCo, same rules as the PID (sensor, motors, ±10°). Done: interchangeable brains, training environment, training script. To come: the training itself, comparison with the PID | **In progress** |
+| C. Local AI brain | A policy (neural network) learned by reinforcement in MuJoCo, same rules as the PID (sensor, motors, ±10°). Done: interchangeable brains, training environment, training by reinforcement, imitation of the PID brain (the policy alone then does as well as the PID on the reference scenario). The campaign compares both brains (section 13) and the sandbox can be driven by either. To come: reinforcement from the imitating policy, to go beyond the PID | **In progress** |
 | D. Software for the general public | MuJoCo physics in our interface, choice of brain, comparison | To do |
 | E. Construction (distant) | Design, real-world defects, complete error budget | Later |
 
@@ -31,11 +31,13 @@ no fall in the robustness variants.
 ## Structure
 
 ```text
+brains/                  Learned policies of the AI brain (weights of the network): imitation.npz
 controller/              What would run on the real robot (independent of the simulator)
   pid.py                 PID: derivative filter, saturation, anti-windup, integration zone, feedforward
   plate.py               PID brain: 2 PIDs (x, y axes) + feedforward + latency predictor + aimed bounce
   adaptation.py          Adaptive control: online estimation of the model gain c·g (inertia of the ball)
   policy.py              AI brain: memory and observation of a brain driven by a policy (observation -> action)
+  network.py             Neural network of the AI brain, computed with NumPy alone (no PyTorch needed to use it)
   ramps.py               Rule of the fast ramps of the motors, the same for every brain
   flight.py              Ball in the air: ballistic tracking, prediction of the impact
   kinematics.py          Geometry, inverse (exact) and forward (Newton) kinematics
@@ -52,7 +54,9 @@ simulation/
   parallel.py            Independent simulations spread over several processes
 training/
   environment.py         Training environment of the AI brain: random episodes, reward, speed measurement
+  imitate.py             Imitation: the policy learns to answer like the PID brain, its teacher
   train.py               Training of the policy by reinforcement (PPO), on several robots in parallel
+  evaluation.py          Evaluation of a brain on the reference scenario, for both training scripts
 tests/                   Automated tests, by theme (controller, mechanics, sensors, physics,
                          scenarios, metrics, session, regression check, campaign, training)
 campaign.py              Full measurement campaign over N draws, in parallel -> results/report.md
@@ -84,17 +88,24 @@ python campaign.py            # full measurement campaign, writes results/report
 python campaign.py --draws 1  # same, nominal configuration only (one simulation per case)
 python sandbox.py             # 3D sandbox (see below)
 python sandbox.py --camera                             # same, ball measured by the virtual camera
+python sandbox.py --brain imitation                    # same, driven by the AI brain instead of the PID brain
 python -m simulation.mujoco_physics                    # exports the models to results/
 python -m mujoco.viewer --mjcf=results/robot.xml       # opens the model alone in MuJoCo
 python regression_check.py --record       # before a change: reference of all the results
 python regression_check.py --compare      # after: checks that they are bit-identical
 python regression_check.py --compare --by-position    # same after a renaming (changed names, same order)
 python -m training.environment            # speed of the training environment on this machine (1 minute)
-python -m training.train --name first --periods 2e5    # training of the AI brain: a trial of a few minutes
+python -m training.imitate --name pupil   # the policy of the AI brain learns to imitate the PID brain (20 minutes)
+python -m training.train --name first --periods 2e5    # training by reinforcement: a trial of a few minutes
 python -m training.train --name first --periods 5e7    # same training, continued up to 50 million periods
 ```
 
-Training: `--periods` is the total of control periods (20 ms of the robot each), over all the robots simulated
+Imitation: 6 rounds of 1000 episodes of 10 s (`--rounds`, `--episodes`), on half of the logical cores
+(`--processes`). After every round, the pupil alone is compared with the PID brain alone, on the reference
+scenario and on 300 episodes that are never learned. The network is written in
+`results/training/<name>/policy.npz` (ignored by git).
+
+Reinforcement: `--periods` is the total of control periods (20 ms of the robot each), over all the robots simulated
 in parallel: `--processes` processes (half of the logical cores by default) of `--per-process` robots each (4 by
 default). Every million periods (`--every`), the training is saved in `results/training/<name>/` (ignored by
 git) and the policy is evaluated on the reference scenario: one line printed, one row in `progress.csv`, and a
@@ -111,7 +122,8 @@ to 0.01 m/s. The report opens with the objectives of the brain (met or not); sec
 the simulator with a frozen reference controller (`simulation/config.py`: the hand-tuned PID without
 latency compensation, error integrated everywhere, with the motors of the first robot), over 4 times more
 draws (the noise of the synthetic sensor makes their return vary by more than 1 mm); section 12 explains
-every other gap of more than 0.5 mm.
+every other gap of more than 0.5 mm; section 13 puts the AI brain next to the PID brain, on the same objectives,
+cases and draws.
 
 Regression check: any refactoring must leave the results bit-identical. The reference
 (`results/reference/`, ignored by git) covers the main cases of the campaign, the physics validation
@@ -136,14 +148,36 @@ r = simulate(Config(start_height=0.305))                           # ball droppe
 
 A brain receives, every 20 ms, the measurement of the ball (late by the latency), the setpoint and its
 acceleration, and answers with the two tilts of the plate. The loop (`simulation/loop.py`) accepts any brain:
-`simulate(cfg)` uses the PID brain, `simulate(cfg, brain=policy_brain(policy))` a brain driven by a policy.
+`Config(brain="pid")`, the default, chooses the PID brain; `Config(brain="imitation")` the AI brain, driven by
+the learned policy `brains/imitation.npz`; `simulate(cfg, brain=policy_brain(policy))` any other policy.
 The motors, their ramps and the rule of the fast ramps are the same for both.
 
-The policy of the AI brain is a function from an observation to an action, to be learned by reinforcement
-(phase C, in progress). The observation holds what the PID brain also knows (`controller/policy.py`): the last
-3 measurements, the last 6 commands, the setpoint with its speed and its acceleration, the latency, the error
-to the setpoint and its integral (the only long memory of the brain, kept like the PID keeps its own). The action
-is the command (θx, θy) in units of the maximum tilt. The training environment (`training/environment.py`)
+The policy of the AI brain is a function from an observation to an action: a neural network of 2 layers of
+128 neurons (`controller/network.py`), learned in simulation (phase C, in progress). The observation holds what
+the PID brain also knows (`controller/policy.py`): the last 8 measurements and the last 12 commands, raw (the
+network filters their noise and predicts the ball despite the latency by itself), the setpoint with its speed
+and its acceleration, the latency, the error to the setpoint and its integral (the only long memory of the
+brain, kept like the PID keeps its own). The action is the command (θx, θy) in units of the maximum tilt. Once
+learned, the network drives alone: the PID brain is no longer there.
+
+Learned in two ways. By imitation first (`training/imitate.py`): the PID brain is the teacher. It drives
+episodes while the observations of the pupil and its own commands are recorded, and the network learns to give
+these commands; then the pupil drives, the teacher only telling what it would have done, so that the pupil also
+learns to recover from its own errors. Measured after 6 rounds (2.8 million periods, 19 minutes on 11 processes),
+the pupil alone next to the PID brain alone:
+
+| | PID brain | Imitating policy |
+|---|---|---|
+| Return to the center, 20 ms / 60 ms of latency | 1.21 / 1.15 mm | 0.97 / 0.66 mm |
+| Circle error, 20 ms / 60 ms | 0.79 / 1.00 mm | 1.11 / 1.07 mm |
+| Tremor of the command on the circle, 20 ms / 60 ms | 0.11° / 0.19° | 0.11° / 0.19° |
+| Falls over 300 episodes of the training, never learned | 8.7 % | 8.3 % |
+
+(one draw of the sensor noise; section 13 of the campaign compares them over all its draws, with the camera.)
+This policy is saved in `brains/imitation.npz`. Then by reinforcement, where the
+policy improves by itself, by trial. From scratch, 10 million periods of reinforcement had left it far from the
+PID (return 3 to 8 mm, circle 3 to 10 mm, a command trembling 3 to 5 times more): it starts again from the imitating
+policy. The training environment of the reinforcement (`training/environment.py`)
 plays episodes of 10 s on the MuJoCo robot, each with another robot, ball, sensor and scenario drawn at random
 (inertia, mass and friction of the ball, calibration error, latency, noise; ball placed, thrown or pushed;
 setpoint fixed, jumping or circling), and rewards every period, from the distance d to the setpoint: half for
@@ -151,14 +185,15 @@ staying near it, 1 - (d / 10 cm)², half for the last millimeters, 1 / (1 + d / 
 command, and a penalty if the ball falls. A policy sees exactly the same robot in the environment and in a
 simulation (checked bit for bit in the tests).
 
-The training (`training/train.py`) uses PPO (proximal policy optimization, from Stable-Baselines3). The policy
-is a neural network of 2 layers of 128 neurons; during the training, a random deviation is added to its action,
-to try. The robots play 20 s each, then the actions that brought more reward than expected are made more likely,
+The reinforcement (`training/train.py`) uses PPO (proximal policy optimization, from Stable-Baselines3):
+during the training, a random deviation is added to the action of the policy, to try. The robots play 20 s each, then the actions that brought more reward than expected are made more likely,
 by small steps, millions of times.
 
 ## 3D sandbox
 
-Two windows: the MuJoCo 3D view and a control panel with a top view and live curves.
+Two windows: the MuJoCo 3D view and a control panel with a top view and live curves. `--brain imitation`: the
+robot is driven by the AI brain (it was not taught the ball dropped from above, and has no latency compensation
+to switch off).
 
 | Control | Effect |
 |---|---|

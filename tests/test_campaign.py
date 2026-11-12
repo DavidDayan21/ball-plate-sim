@@ -68,7 +68,7 @@ def test_campaign_end_to_end(tmp_path, monkeypatch):
     report = tmp_path / "report.md"
     cp.write_report(data, str(report))
     text = report.read_text(encoding="utf-8")
-    assert all(f"## {i}." in text for i in range(13)) and "| 0/2 |" in text and " ± " in text
+    assert all(f"## {i}." in text for i in range(14)) and "| 0/2 |" in text and " ± " in text
     assert "| MuJoCo: 3-arm robot, sensor without noise |" in text and "| noise |" in text   # section 0
     assert "| hand-tuned | 1.00, 1.00, 0.58 |" in text                # gains (section 8)
     assert "| LQR | {:.2f}, {:.2f}, {:.2f} |".format(*cp.BASE.pid_gains()) in text
@@ -80,5 +80,8 @@ def test_campaign_end_to_end(tmp_path, monkeypatch):
     assert "| 3-arm robot, ramps and speed of its motors ×2 |" in text and "below the 5 mm of the arrival" in text
     assert "## Objectives of the brain" in text and "| No fall in the robustness variants | 0/18 falls |" in text
     assert "(calibration error: " in text
+    # Section 13: the AI brain next to the PID brain, on the same cases and draws
+    assert "| Objective | PID brain | Met | AI brain | Met | Target |" in text and "| Latency 60 ms: circle | 0/2 |" in text
+    assert all(len(data["runs"][f"{name}_ai"]) == 2 for name in cp.AI_CASES) and len(data["limits"]["throw_10deg_ai"]) == 2
     cp.show_figures(data)
     cp.plt.close("all")

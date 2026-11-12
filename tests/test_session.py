@@ -1,10 +1,12 @@
 """Sandbox session, without display: actions, end of attempts, files written."""
 import csv
 import math
+from dataclasses import replace
 
 import pytest
 
-from simulation.session import Session
+from controller.policy import PolicyController
+from simulation.session import Session, sandbox_config
 
 
 def advance(s: Session, duration: float) -> None:
@@ -77,3 +79,17 @@ def test_files_written(session):
     # The circle setpoint starts at its starting point: 6 cm at 45°
     x, y = float(measurements[0]["x_setpoint_mm"]), float(measurements[0]["y_setpoint_mm"])
     assert math.isclose(x, 60 * math.cos(math.pi / 4), abs_tol=0.01) and math.isclose(y, x, abs_tol=0.01)
+
+
+def test_session_with_the_ai_brain(tmp_path):
+    # The sandbox driven by the learned policy (python sandbox.py --brain imitation)
+    s = Session(replace(sandbox_config(), brain="imitation"), folder=tmp_path)
+    assert isinstance(s.sim.brain, PolicyController)
+    advance(s, 1.0)
+    s.throw(0.10, 180, speed=0.4)
+    advance(s, 4.0)
+    s.set_latency(3)                                       # the brain is created again, still the AI one
+    assert isinstance(s.sim.brain, PolicyController) and s.sim.brain.latency == 3
+    advance(s, 1.0)
+    summary = s.close()
+    assert summary[0]["result"] == "stabilized" and math.hypot(*s.sim.phys.ball()) < 0.005

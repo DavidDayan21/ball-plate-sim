@@ -10,17 +10,21 @@ The first measurement arrives one latency after the start: until then, the plate
 A brain is an object with:
     compute(setpoint, measurement, setpoint_acc, dt) -> (θx, θy) in rad, called at every control period;
     model_gain: the c·g of its model of the ball ((m/s²)/rad), NaN if it has none.
-The PID brain (pid_brain) is the default one; controller/policy.py holds the brain driven by a policy.
+cfg.brain chooses it: the PID brain (pid_brain, the default one) or the AI brain, a policy learned and saved in
+brains/ (learned_brain). controller/policy.py holds the brain driven by a policy.
 The motors, their ramps and the rule of the fast ramps (controller/ramps.py) are the same for every brain.
 """
 from dataclasses import dataclass, field
+from functools import lru_cache
 import math
+from pathlib import Path
 import time
 
 from controller.adaptation import ModelGainEstimator
 from controller.flight import FlightEstimator
+from controller.network import Network
 from controller.plate import PlateController
-from controller.policy import PolicyController
+from controller.policy import OBSERVATION_SIZE, PolicyController
 from controller.ramps import FastRamps
 from simulation.sensor import Sensor
 from simulation.config import G, Config
@@ -77,16 +81,35 @@ def pid_brain(cfg: Config) -> PlateController:
                            wait_for_speed=cfg.wait_for_speed, estimator=estimator)
 
 
+BRAINS = Path(__file__).resolve().parent.parent / "brains"       # the learned policies: <name>.npz
+
+
+@lru_cache
+def learned_policy(name: str) -> Network:
+    """The policy brains/<name>.npz."""
+    network = Network.load(BRAINS / f"{name}.npz")
+    inputs = network.layers[0][0].shape[1]
+    if inputs != OBSERVATION_SIZE:
+        raise ValueError(f"The policy {name} was learned with an observation of {inputs} numbers: the AI brain now "
+                         f"observes {OBSERVATION_SIZE} (controller/policy.py). It has to be learned again.")
+    return network
+
+
+def learned_brain(cfg: Config) -> PolicyController:
+    """The AI brain: driven by the learned policy cfg.brain."""
+    return PolicyController(learned_policy(cfg.brain), cfg.theta_max, cfg.latency)
+
+
 class Simulation:
     """Step-by-step simulation (one step = dt_physics).
 
     simulate() runs it over the whole scenario duration; the sandbox drives it live.
-    brain: function cfg -> brain (the PID brain by default), called again at every reset_control().
+    brain: function cfg -> brain, called again at every reset_control(). None: the brain chosen by cfg.brain.
     """
 
-    def __init__(self, cfg: Config, brain=pid_brain):
+    def __init__(self, cfg: Config, brain=None):
         self.cfg = cfg
-        self.create_brain = brain
+        self.create_brain = brain or (pid_brain if cfg.brain == "pid" else learned_brain)
         self.phys = create_physics(cfg)
         self.camera = None
         if cfg.sensor == "camera":
@@ -209,7 +232,7 @@ def policy_brain(policy=None):
     return lambda cfg: PolicyController(policy, cfg.theta_max, cfg.latency)
 
 
-def simulate(cfg: Config, view: bool = False, brain=pid_brain) -> Results:
+def simulate(cfg: Config, view: bool = False, brain=None) -> Results:
     """Simulates the scenario of cfg. view=True (MuJoCo): real-time 3D window. brain: see Simulation."""
     sim = Simulation(cfg, brain)
     viewer = None

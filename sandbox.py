@@ -20,8 +20,10 @@ Each attempt is recorded in results/attempts/<date_time>/ (see simulation/sessio
 Run (from ball-plate-sim, environment activated):
     python sandbox.py
     python sandbox.py --camera      # measurement by the virtual camera instead of the synthetic sensor
+    python sandbox.py --brain imitation     # the AI brain (learned policy of brains/) instead of the PID brain
 """
 import argparse
+from dataclasses import replace
 import math
 import queue
 import threading
@@ -293,8 +295,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="3D sandbox of the balancing robot")
     parser.add_argument("--camera", action="store_true", help="measurement by the virtual camera")
     parser.add_argument("--max-duration", type=float, default=30.0, help="maximum duration of an attempt (s)")
+    parser.add_argument("--brain", default="pid", help='"pid" (default) or a learned policy of brains/ '
+                        '("imitation"): the AI brain, which has no latency compensation to switch off')
     args = parser.parse_args()
-    session = Session(sandbox_config(), max_duration=args.max_duration)
+    session = Session(replace(sandbox_config(), brain=args.brain), max_duration=args.max_duration)
     print("Sandbox started. Close one of the two windows to stop.")
     try:
         Sandbox(session, camera=args.camera).run()

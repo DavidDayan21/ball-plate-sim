@@ -17,7 +17,7 @@ Everything is written in results/training/<name>/ (ignored by git):
                      (Ctrl+C saves before stopping)
     rewards.pkl      scale of the rewards (they are divided by a running standard deviation of their sum)
     progress.csv     one row per evaluation: periods, hours, rewards and falls of the training episodes, and the
-                     evaluation of the policy without random deviation (evaluate)
+                     evaluation of the policy without random deviation (training/evaluation.py)
 
 A second line printed at every evaluation tells where the time went since the previous one:
     simulation       the robots computing their periods (mean time of a robot)
@@ -28,7 +28,6 @@ A second line printed at every evaluation tells where the time went since the pr
 """
 import argparse
 import csv
-import math
 import multiprocessing
 import os
 import signal
@@ -43,10 +42,9 @@ from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.vec_env import VecEnv, VecMonitor, VecNormalize
 
 from controller.policy import OBSERVATION_SIZE
-from simulation.config import Config
-from simulation.loop import policy_brain, simulate
-from simulation.metrics import max_distance, tracking_error_rms
+from simulation.loop import policy_brain
 from training.environment import BallPlateEnv
+from training.evaluation import evaluate
 
 FOLDER = Path("results") / "training"
 SETTINGS = dict(                     # of PPO (Stable-Baselines3)
@@ -63,7 +61,6 @@ SETTINGS = dict(                     # of PPO (Stable-Baselines3)
 ROLLOUT = 11264                      # periods played by all the robots together between two updates (about:
                                      # each robot plays the same whole number of periods)
 PER_PROCESS = 4                      # robots played by each process
-EVALUATION_SIGMA = 0.0002            # (m) synthetic sensor with the mean error of the camera
 
 
 class Group:
@@ -184,19 +181,6 @@ def policy_of(model):
     return lambda observation: model.predict(observation, deterministic=True)[0]
 
 
-def evaluate(policy) -> dict:
-    """The policy on the reference scenario of the campaign (MuJoCo robot, sensor with the noise of the camera),
-    at 20 and 60 ms of latency: return to the center (max distance between 2 s and 4 s, objective ≤ 5 mm) and
-    circle error (12 s to 20 s, objective < 2 mm at 60 ms), in mm; NaN if the ball falls."""
-    out = {}
-    for latency in (1, 3):
-        r = simulate(Config(latency=latency, sigma=EVALUATION_SIGMA), brain=policy_brain(policy))
-        ms = 20 * latency
-        out[f"return_{ms}ms_mm"] = math.nan if r.fallen and r.t[-1] < 4 else 1000 * max_distance(r, 2, 4)
-        out[f"circle_{ms}ms_mm"] = math.nan if r.fallen else 1000 * tracking_error_rms(r, 12, 20)
-    return out
-
-
 class Progress(BaseCallback):
     """Every `every` periods: saves the training, evaluates the policy, adds a row to progress.csv and prints it."""
 
@@ -247,7 +231,7 @@ class Progress(BaseCallback):
                                      if episodes else ""),
                "falls_percent": round(100 * float(np.mean([e["fallen"] for e in episodes])), 1) if episodes else "",
                "deviation": round(float(self.model.policy.log_std.detach().exp().mean()), 3),
-               **{k: round(v, 2) for k, v in evaluate(policy_of(self.model)).items()}}
+               **{k: round(v, 2) for k, v in evaluate(policy_brain(policy_of(self.model))).items()}}
         path = self.folder / "progress.csv"
         new = not path.exists()
         with open(path, "a", newline="", encoding="utf-8") as f:
@@ -260,7 +244,7 @@ class Progress(BaseCallback):
         print(f"{self.num_timesteps / 1e6:7.2f} M periods ({speed:5.0f}/s, {left:4.1f} h left) | training: reward "
               f"{row['reward_per_period']} per period, falls {row['falls_percent']} %, deviation {row['deviation']} | "
               f"evaluation: return {row['return_20ms_mm']} mm, circle {row['circle_20ms_mm']} mm; at 60 ms: "
-              f"{row['return_60ms_mm']} and {row['circle_60ms_mm']} mm", flush=True)
+              f"{row['return_60ms_mm']} and {row['circle_60ms_mm']} mm, tremor {row['tremor_60ms_deg']}°", flush=True)
         self.spent["evaluation"] += time.perf_counter() - start
         print(" " * 18 + f"time: {self.time_shares()}", flush=True)
 

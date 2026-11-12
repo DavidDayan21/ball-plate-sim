@@ -6,26 +6,32 @@ brain which is not learned: its memory and the layout of its observation, the sa
 
 It plays by the rules of the PID brain and knows what the PID knows: the measurements as they arrive, N periods
 late (N is known), the commands it has sent, the setpoint and its acceleration, the maximum tilt. It knows neither
-the ball (inertia, mass, friction) nor the calibration error of the plate. The policy itself has no memory: the
-only long one of this brain is the integral of the error, kept here like the PID keeps its own (a calibration
-error shows in nothing else).
+the ball (inertia, mass, friction) nor the calibration error of the plate. The policy itself has no memory: this
+class keeps the last measurements and commands, raw (filtering their noise and predicting the ball despite the
+latency is left to the policy), and one long memory, the integral of the error, like the PID keeps its own (a
+calibration error shows in nothing else).
 
 Observation: OBSERVATION_SIZE numbers of comparable sizes (LAYOUT gives the place of each group).
     position               newest measured (x, y), in units of LENGTH
-    speeds                 displacements between the last 3 measurements, newest first, as speeds (x, y) in units of
-                           SPEED: the 3 measurements themselves, written so that the policy gets numbers of
-                           comparable sizes (0 while a measurement is missing)
-    heights                last 3 measured heights of the ball, newest first, in units of HEIGHT
+    speeds                 displacements between the last MEASUREMENTS measurements, newest first, as speeds
+                           (x, y) in units of SPEED: the measurements themselves, written so that the policy gets
+                           numbers of comparable sizes (0 while a measurement is missing). One speed alone is
+                           mostly noise (0.2 mm of noise on each position: 14 mm/s); the PID filters its own over
+                           about as many periods
+    heights                last HEIGHTS measured heights of the ball, newest first, in units of HEIGHT
     commands               last COMMANDS actions, newest first: a measurement N periods late does not show yet the
-                           effect of the last N commands (the predictor of the PID uses N + 1 of them)
+                           effect of the last N commands, and the older ones explain the measurements kept
     setpoint               (x, y), in units of LENGTH
     setpoint_speed         its displacement since the previous period, as a speed in units of SPEED, bounded at
                            ±SETPOINT_SPEED_LIMIT (a jump of the setpoint is not a speed)
     setpoint_acceleration  in units of ACCELERATION
     latency                N / MAX_LATENCY
-    received               measurements received so far, min(count, 3) / 3: no speed is known at the first one
-    error                  setpoint - newest measurement (x, y), in units of ERROR and bounded at ±ERROR_LIMIT: the
-                           last millimeters, which position and setpoint only show as a small difference
+    received               measurements received so far, min(count, MEASUREMENTS) / MEASUREMENTS: no speed is
+                           known at the first one
+    error                  setpoint - newest measurement (x, y), with the setpoint of the time of that measurement
+                           (N periods ago: where the ball should have been then), in units of ERROR and bounded at
+                           ±ERROR_LIMIT: the last millimeters, which position and setpoint only show as a small
+                           difference
     integral               integral of that error (x, y), in units of INTEGRAL and bounded at ±INTEGRAL_LIMIT; each
                            axis only integrates within ZONE of its setpoint, like the PID (controller/pid.py)
 
@@ -36,9 +42,10 @@ import math
 
 import numpy as np
 
-MEASUREMENTS = 3
+MEASUREMENTS = 8
+HEIGHTS = 3
 MAX_LATENCY = 5                  # (control periods) 100 ms
-COMMANDS = MAX_LATENCY + 1
+COMMANDS = MAX_LATENCY + MEASUREMENTS - 1
 LENGTH = 0.1                     # (m)
 SPEED = 0.2                      # (m/s)
 HEIGHT = 0.02                    # (m) radius of the ball
@@ -60,7 +67,7 @@ def _layout(**sizes):
     return slices, start
 
 
-LAYOUT, OBSERVATION_SIZE = _layout(position=2, speeds=2 * (MEASUREMENTS - 1), heights=MEASUREMENTS,
+LAYOUT, OBSERVATION_SIZE = _layout(position=2, speeds=2 * (MEASUREMENTS - 1), heights=HEIGHTS,
                                    commands=2 * COMMANDS, setpoint=2, setpoint_speed=2, setpoint_acceleration=2,
                                    latency=1, received=1, error=2, integral=2)
 
@@ -81,7 +88,7 @@ class PolicyController:
         self.measurements = deque(maxlen=MEASUREMENTS)                    # (x, y, height), oldest first
         self.commands = deque([(0.0, 0.0)] * COMMANDS, maxlen=COMMANDS)   # actions, oldest first
         self.received = 0
-        self.previous_setpoint = None
+        self.setpoints = deque(maxlen=latency + 1)                        # (x, y), oldest first
         self.integral = [0.0, 0.0]                                        # of the error (m·s)
 
     def observe(self, setpoint, measurement, setpoint_acc, dt: float) -> np.ndarray:
@@ -90,12 +97,12 @@ class PolicyController:
         self.received += 1
         m = list(self.measurements)[::-1]                                 # newest first
         m += [m[-1]] * (MEASUREMENTS - len(m))                            # missing ones: no displacement
-        previous = setpoint if self.previous_setpoint is None else self.previous_setpoint
-        self.previous_setpoint = (setpoint[0], setpoint[1])
+        previous = self.setpoints[-1] if self.setpoints else setpoint
+        self.setpoints.append((setpoint[0], setpoint[1]))
         observation = np.empty(OBSERVATION_SIZE, dtype=np.float32)
         observation[LAYOUT["position"]] = (m[0][0] / LENGTH, m[0][1] / LENGTH)
         observation[LAYOUT["speeds"]] = [(a[k] - b[k]) / dt / SPEED for a, b in zip(m, m[1:]) for k in range(2)]
-        observation[LAYOUT["heights"]] = [p[2] / HEIGHT for p in m]
+        observation[LAYOUT["heights"]] = [p[2] / HEIGHT for p in m[:HEIGHTS]]
         observation[LAYOUT["commands"]] = [a for command in reversed(self.commands) for a in command]
         observation[LAYOUT["setpoint"]] = (setpoint[0] / LENGTH, setpoint[1] / LENGTH)
         observation[LAYOUT["setpoint_speed"]] = [_bounded((setpoint[k] - previous[k]) / dt / SPEED,
@@ -104,7 +111,8 @@ class PolicyController:
                                                         setpoint_acc[1] / ACCELERATION)
         observation[LAYOUT["latency"]] = self.latency / MAX_LATENCY
         observation[LAYOUT["received"]] = min(self.received, MEASUREMENTS) / MEASUREMENTS
-        error = (setpoint[0] - m[0][0], setpoint[1] - m[0][1])
+        then = self.setpoints[0]                                          # setpoint when the ball was measured
+        error = (then[0] - m[0][0], then[1] - m[0][1])
         for k in range(2):
             if abs(error[k]) < ZONE:
                 self.integral[k] = _bounded(self.integral[k] + error[k] * dt, INTEGRAL_LIMIT * INTEGRAL)

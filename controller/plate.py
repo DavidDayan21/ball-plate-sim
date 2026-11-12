@@ -121,6 +121,15 @@ class PlateController:
             self.estimator.command((theta_x, theta_y))
         return theta_x, theta_y
 
+    def applied(self, theta) -> None:
+        """Another command than the one just computed was sent to the plate, (θx, θy): the memories of the
+        commands sent are corrected (imitation, training/imitate.py: a pupil drives, this brain only advises)."""
+        for predictor, command in zip(self.predictors or (), theta):
+            predictor.commands[-1] = command
+        for memory in (self.flight, self.estimator):
+            if memory is not None:
+                memory.commands[-1] = tuple(theta)
+
     def aimed_tilt(self, impact, setpoint):
         """Tilt of the plate at the impact so that the bounce sends the ball back toward the setpoint.
 

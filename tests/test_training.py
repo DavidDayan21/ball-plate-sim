@@ -9,8 +9,9 @@ import pytest
 
 from controller.policy import LAYOUT, MAX_LATENCY
 from simulation.config import G, Circle, Config, Point, Step
-from simulation.loop import policy_brain, simulate
+from simulation.loop import pid_brain, policy_brain, simulate
 from simulation.metrics import stoppable_speed
+from training.evaluation import evaluate
 from training.environment import (EPISODE, BallPlateEnv, Reward, draw_episode, edge_distance, measure_speed,
                                   pd_policy)
 
@@ -92,7 +93,7 @@ def test_environment_interface():
     observation, info = env.reset()
     assert observation.shape == (env.observation_size,) and observation.dtype == np.float32 and info == {}
     # The first observation comes with the first measurement, one latency after the start
-    assert observation[LAYOUT["received"]] == pytest.approx(1 / 3)
+    assert observation[LAYOUT["received"]] == pytest.approx(1 / 8)
     assert observation[LAYOUT["latency"]] == pytest.approx(env.sim.cfg.latency / MAX_LATENCY)
     assert env.sim.t == pytest.approx(env.sim.cfg.latency * 0.02)
     observation, reward, terminated, truncated, info = env.step((0.3, -2.0))
@@ -126,7 +127,7 @@ def test_fall_ends_the_episode():
     assert terminated and not truncated and reward == -100.0 and env.sim.r.fallen and math.isnan(info["distance"])
     assert np.array_equal(observation, previous)                # no measurement after the fall: the last one
     observation, _ = env.reset()                                # a new episode follows
-    assert observation[LAYOUT["received"]] == pytest.approx(1 / 3) and not env.sim.r.fallen
+    assert observation[LAYOUT["received"]] == pytest.approx(1 / 8) and not env.sim.r.fallen
 
 
 def test_hand_written_policy_keeps_the_ball_of_the_mujoco_robot():
@@ -152,6 +153,20 @@ def test_training_and_use_see_the_same_robot():
     assert used.theta_x[:len(trained.theta_x)] == trained.theta_x
     assert used.actual_tilt[:len(trained.actual_tilt)] == trained.actual_tilt
     assert all(math.isnan(g) for g in used.model_gain)                # no model of the ball in this brain
+
+
+def test_evaluation_on_the_reference_scenario():
+    # The hand-written PD keeps the ball, without the precision of the PID brain (no integral, no feedforward)
+    marks = evaluate(policy_brain(pd_policy))
+    assert list(marks) == ["return_20ms_mm", "circle_20ms_mm", "tremor_20ms_deg", "return_60ms_mm",
+                           "circle_60ms_mm", "tremor_60ms_deg"]
+    assert all(1.0 < mark < 50.0 for name, mark in marks.items() if "tremor" not in name)
+    # The PID brain: within the objectives (return ≤ 5 mm, circle < 2 mm), with a steadier command
+    pid = evaluate(pid_brain)
+    assert pid["return_60ms_mm"] < 5 and pid["circle_60ms_mm"] < 2
+    assert 0.0 < pid["tremor_60ms_deg"] < marks["tremor_60ms_deg"]
+    # Without command, the ball falls: no mark
+    assert all(math.isnan(mark) for mark in evaluate(policy_brain(lambda observation: (0.0, 0.0))).values())
 
 
 def test_speed_measurement():

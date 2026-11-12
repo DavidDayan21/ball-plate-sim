@@ -176,7 +176,9 @@ class Config:
     airborne_height: float = 0.015     # (m) above this measured height, the ball is in the air: the camera takes
                                        # its center on the light ray, at the distance given by its size, and the
                                        # brain aims the bounce (controller/flight.py). math.inf: never in the air
-    # Controller (the PID brain)
+    # Controller
+    brain: str = "pid"                 # "pid": the PID brain, with the settings below; or the name of a learned
+                                       # policy of brains/ ("imitation"): the AI brain (controller/policy.py)
     control_period: float = 0.02       # 50 Hz
     # Gains of the PID by LQR (controller/lqr.py, Bryson's rule): a position error of lqr_position, an integral
     # of the error of lqr_position·lqr_integral_time and a tilt of lqr_tilt cost as much as one another.

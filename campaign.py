@@ -17,6 +17,7 @@ The 160×120 camera is as accurate as 320×240, and faster to simulate.
         angle-driven plate and on the robot
     11. Adaptive control: the model gain c·g estimated online, for a hollow and a solid ball
     12. The remaining gaps of more than 0.5 mm, reproduced by our equations or traced to their cause
+    13. The AI brain (learned policy) next to the PID brain: same objectives, same cases, same draws
 
 Every case is simulated over N draws, so that each result comes with its spread:
     - draw 0 is the nominal configuration (noise seed 0, nominal start position);
@@ -193,6 +194,11 @@ CASES = {
     "throw_0.55_no_wait": throw_config(replace(BASE, wait_for_speed=False), 0.55),
 }
 # The validation of the simulator (sections 0 and 10, and the effect of the noise in section 12) is simulated over
+# The AI brain (section 13): the learned policy brains/<AI>.npz, on the cases of the objectives of the PID brain
+AI = "imitation"
+AI_CASES = ("camera", "solid_ball", "heavy_ball", "friction_0.2", "friction_0.02", "heavy_plate", "dropped",
+            "no_calibration_error", "calibration_error_x2", "latency_60ms", "latency_100ms")
+CASES.update({f"{name}_ai": replace(CASES[name], brain=AI) for name in AI_CASES})
 # 4 times more draws: with the reference controller, the noise of the synthetic sensor makes the return vary by
 # more than 1 mm from one draw to the next, and a share of 80 % would be uncertain by ±15 % over 10 draws
 DRAWS_FACTOR = {name: 4 for name in CASES if name.startswith(("simple_plate", "simple_robot"))
@@ -211,7 +217,8 @@ CALIBRATION_HAND_GAINS = {"none": "no_calibration_error_hand_gains", "nominal": 
 LIMITS = {"throw_10deg": ("throw", 10, {}), "throw_20deg": ("throw", 20, {}), "push": ("push", 10, {}),
           "throw_10deg_no_wait": ("throw", 10, {"wait_for_speed": False}),
           "throw_10deg_slow_motors": ("throw", 10, {"fast_move": math.inf}),
-          "throw_10deg_hand_gains": ("throw", 10, {"gains": REFERENCE_GAINS})}
+          "throw_10deg_hand_gains": ("throw", 10, {"gains": REFERENCE_GAINS}),
+          "throw_10deg_ai": ("throw", 10, {"brain": AI}), "push_ai": ("push", 10, {"brain": AI})}
 
 
 # --- Draws and statistics ------------------------------------------------------------------------
@@ -481,25 +488,26 @@ def run_campaign(draws: int, processes: int = None) -> dict:
     return {"draws": draws, "runs": runs, "limits": limits, "checks": checks}
 
 
-def worst_return(runs: dict, calibration: dict) -> tuple:
+def worst_return(runs: dict, calibration: dict, suffix: str = "") -> tuple:
     """(label, return distances over the draws) of the calibration error whose mean return is the worst
-    (a calibration error where every draw fell counts as the worst)."""
-    backs = {label: [return_distance(r) for r in runs[case]] for label, case in calibration.items()}
+    (a calibration error where every draw fell counts as the worst). suffix: see objectives."""
+    backs = {label: [return_distance(r) for r in runs[case + suffix]] for label, case in calibration.items()}
     means = {label: mean_std(values)[0] for label, values in backs.items()}
     worst = max(backs, key=lambda label: math.inf if math.isnan(means[label]) else means[label])
     return worst, backs[worst]
 
 
-def objectives(data: dict) -> list:
+def objectives(data: dict, suffix: str = "") -> list:
     """Quantified objectives of the brain, judged on the mean over the draws: rows [objective, measured,
     target, met]. Thrown ball at ±10°, circle at 60 ms of latency, return to the center (worst of the
-    calibration errors), robustness."""
+    calibration errors), robustness. suffix: "" for the PID brain, "_ai" for the AI brain (same cases)."""
     runs = data["runs"]
-    shares = [math.nan if v is None else v / physical_limit("throw_10deg") for v, _, _ in data["limits"]["throw_10deg"]]
-    circle = [circle_error(r) for r in runs["latency_60ms"]]
-    worst, back = worst_return(runs, CALIBRATION)
-    falls = sum(r.fallen for case in ROBUSTNESS.values() for r in runs[case])
-    total = sum(len(runs[case]) for case in ROBUSTNESS.values())
+    shares = [math.nan if v is None else v / physical_limit("throw_10deg")
+              for v, _, _ in data["limits"]["throw_10deg" + suffix]]
+    circle = [circle_error(r) for r in runs["latency_60ms" + suffix]]
+    worst, back = worst_return(runs, CALIBRATION, suffix)
+    falls = sum(r.fallen for case in ROBUSTNESS.values() for r in runs[case + suffix])
+    total = sum(len(runs[case + suffix]) for case in ROBUSTNESS.values())
     met = lambda ok: "yes" if ok else "**no**"
     return [
         ["Thrown ball caught (±10°)", fmt(shares, " %", 0, 100), "≥ 90 % of the physical limit",
@@ -823,6 +831,7 @@ def write_report(data: dict, path: str = os.path.join("results", "report.md")) -
              "the latency predictor; the gains of the PID stay those of the nominal model.")
 
     write_gaps(rep, runs, data)
+    write_brains(rep, runs, data)
     rep.save(path)
     print(f"\nReport written to {path}")
 
@@ -935,6 +944,36 @@ def write_gaps(rep: Report, runs: dict, data: dict) -> None:
 
 
 # --- Figures (draw 0) ----------------------------------------------------------------------------------
+def write_brains(rep: Report, runs: dict, data: dict) -> None:
+    """Section 13: the AI brain next to the PID brain."""
+    rep.section(f"13. The AI brain (learned policy \"{AI}\") next to the PID brain (full chain with the camera)")
+    rep.table(["Objective", "PID brain", "Met", "AI brain", "Met", "Target"],
+              [[name, pid, pid_met, ai, ai_met, target] for (name, pid, target, pid_met), (_, ai, _, ai_met)
+               in zip(objectives(data), objectives(data, "_ai"))])
+    rows = []
+    for label, name in (("Thrown ball (±10°), share of the physical limit", "throw_10deg"),
+                        ("Push at the center, share of the physical limit", "push")):
+        pid, ai = ([math.nan if v is None else v / physical_limit(name) for v, _, _ in data["limits"][name + suffix]]
+                   for suffix in ("", "_ai"))
+        rows.append([label, "-", fmt(pid, " %", 0, 100), "-", fmt(ai, " %", 0, 100), fmt_delta(pid, ai, " %", 1, 100)])
+    cases = {"Nominal": "camera", "Latency 60 ms": "latency_60ms", "Latency 100 ms": "latency_100ms",
+             **{label: case for label, case in ROBUSTNESS.items() if case != "camera"}}
+    for label, case in cases.items():
+        for what, indicator in (("return", return_distance), ("circle", circle_error)):
+            pid, ai = ([indicator(r) for r in runs[case + suffix]] for suffix in ("", "_ai"))
+            rows.append([f"{label}: {what}", fallen(runs[case]), fmt(pid, " mm", scale=1000), fallen(runs[case + "_ai"]),
+                         fmt(ai, " mm", scale=1000), fmt_delta(pid, ai, " mm", scale=1000)])
+    rep.table(["Case", "Fallen (PID)", "PID brain", "Fallen (AI)", "AI brain", "Δ AI - PID"], rows)
+    tremor = {suffix: [jitter(r) for r in runs["latency_60ms" + suffix]] for suffix in ("", "_ai")}
+    rep.text("Same cases, same draws, same rules for both brains (sensor, motors, maximum tilt). Return: max "
+             "distance between 2 s and 4 s; circle: error from 12 s to 20 s. The AI brain is a neural network of 2 "
+             "layers of 128 neurons that drives alone; it learned by imitating the PID brain (training/imitate.py), "
+             "on the synthetic sensor, never with the camera nor with a dropped ball (it has no estimate of the "
+             "flight: the PID aims its bounces). Command at rest at the center (standard deviation of θx from 2.5 s to "
+             f"4 s), 60 ms of latency: {fmt(tremor[''], '°', 3, math.degrees(1))} for the PID, "
+             f"{fmt(tremor['_ai'], '°', 3, math.degrees(1))} for the AI.")
+
+
 def show_figures(data: dict) -> None:
     runs = data["runs"]
     fig, ((a1, a2), (a3, a4)) = plt.subplots(2, 2, figsize=(11, 7.5))
