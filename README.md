@@ -19,7 +19,7 @@ Building the real robot remains a distant goal: the code will then be ready.
 | 3D sandbox | Throws, drops, bounces, pushes, setpoints, data of every attempt | Done |
 | A. Reliable measurements | Bit-exact regression check, spread over N draws, robust metrics, simple physics → MuJoCo gap | Done |
 | B. PID brain | Objectives in the report, integral limited to the neighborhood of the setpoint, aimed bounce of a dropped ball, thrown ball (start with the speed, fast motor ramps for the large moves), gains tuned by LQR, adaptive control (model gain c·g estimated online), every gap of more than 0.5 mm explained (report, section 12) | Done |
-| C. Local AI brain | A policy (neural network) learned by reinforcement in MuJoCo, same rules as the PID (sensor, motors, ±10°). Done: interchangeable brains, training environment, training by reinforcement, imitation of the PID brain: the policy alone then meets the four objectives, dropped ball included (campaign section 13, which compares both brains: return to the center better than the PID, circle about 0.3 mm behind). The sandbox can be driven by either brain. To come: the gaps of more than 0.5 mm between the two brains explained, then reinforcement from the imitating policy, to go beyond the PID | **In progress** |
+| C. Local AI brain | A policy (neural network) learned by reinforcement in MuJoCo, same rules as the PID (sensor, motors, ±10°). Done: interchangeable brains, training environment, training by reinforcement, imitation of the PID brain: the policy alone then meets the four objectives, dropped ball included (campaign section 13, which compares both brains: return to the center better than the PID, circle about 0.2 mm behind). The sandbox can be driven by either brain. To come: the gaps of more than 0.5 mm between the two brains explained, then reinforcement from the imitating policy, to go beyond the PID | **In progress** |
 | D. Software for the general public | MuJoCo physics in our interface, choice of brain, comparison | To do |
 | E. Construction (distant) | Design, real-world defects, complete error budget | Later |
 
@@ -161,8 +161,10 @@ the PID brain also knows (`controller/policy.py`): the last 8 measurements and t
 network filters their noise and predicts the ball despite the latency by itself; the measured heights show a
 ball in the air falling, and count as 0 below 15 mm, where they are only the error of the sensor), the setpoint
 with its speed
-and its acceleration, the latency, the error to the setpoint and its integral (the only long memory of the
-brain, kept like the PID keeps its own). The action is the command (θx, θy) in units of the maximum tilt. Once
+and its acceleration, the latency, and two long memories kept like the PID keeps its own: the integral of the
+error to the setpoint (a calibration error of the plate shows in nothing else) and an estimate of the response
+of the ball, c·g (`controller/adaptation.py`: 8 measurements are too short to tell a solid ball from a hollow
+one, and the plate must not be tilted the same for both). The action is the command (θx, θy) in units of the maximum tilt. Once
 learned, the network drives alone: the PID brain is no longer there.
 
 Learned in two ways. By imitation first (`training/imitate.py`): the PID brain is the teacher. It drives
@@ -175,15 +177,17 @@ pupil alone next to the PID brain alone:
 
 | | PID brain | Imitating policy |
 |---|---|---|
-| Return to the center, 20 ms / 60 ms of latency | 1.21 / 1.15 mm | 0.64 / 0.66 mm |
-| Circle error, 20 ms / 60 ms | 0.79 / 1.00 mm | 1.10 / 1.11 mm |
+| Return to the center, 20 ms / 60 ms of latency | 1.21 / 1.15 mm | 0.66 / 0.64 mm |
+| Circle error, 20 ms / 60 ms | 0.79 / 1.00 mm | 0.89 / 0.98 mm |
 | Tremor of the command on the circle, 20 ms / 60 ms | 0.11° / 0.19° | 0.11° / 0.19° |
-| Falls over 600 episodes of the training, never learned | 6.7 % | 7.0 % |
-| of which the 149 balls dropped from above | 0 | 1 |
+| Falls over 600 episodes of the training, never learned | 6.7 % | 6.5 % |
+| of which the 149 balls dropped from above | 0 | 0 |
 
 (one draw of the sensor noise; section 13 of the campaign compares them over all its draws, with the camera:
-the four objectives are met by both.) This policy is saved in `brains/imitation.npz`. A network of 2 layers of
-256 neurons does not imitate better (circle at 60 ms: 1.25 mm). Then by reinforcement, where the
+the four objectives are met by both.) This policy is saved in `brains/imitation.npz`. Without the estimate of
+the ball, the policy tilted the plate for an average ball: on the circle, 0.7 mm too far out with the hollow
+ball, 1.1 mm too far in with the solid one (1.10 and 1.49 mm of circle error in the campaign, 0.97 and 0.87 mm
+with the estimate; PID: 0.78 and 0.68 mm). A network of 2 layers of 256 neurons did not imitate better. Then by reinforcement, where the
 policy improves by itself, by trial. From scratch, 10 million periods of reinforcement had left it far from the
 PID (return 3 to 8 mm, circle 3 to 10 mm, a command trembling 3 to 5 times more): it starts again from the imitating
 policy. The training environment of the reinforcement (`training/environment.py`)
