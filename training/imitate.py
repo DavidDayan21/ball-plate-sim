@@ -38,7 +38,7 @@ import torch
 from controller.network import Network
 from controller.policy import OBSERVATION_SIZE, PolicyController
 from simulation.config import Config
-from simulation.loop import Simulation, pid_brain, policy_brain, simulate
+from simulation.loop import Simulation, gain_estimator, pid_brain, policy_brain, simulate
 from simulation.metrics import theta_std, tracking_error_rms
 from simulation.parallel import execute
 from training.environment import draw_episode
@@ -64,7 +64,7 @@ class Lesson:
 
     def __init__(self, cfg: Config, policy=None, deviation: float = 0.0, rng: random.Random = None):
         self.teacher = pid_brain(cfg)
-        self.pupil = PolicyController(policy, cfg.theta_max, cfg.latency, cfg.airborne_height)
+        self.pupil = PolicyController(policy, cfg.theta_max, cfg.latency, cfg.airborne_height, gain_estimator(cfg))
         self.deviation, self.rng = deviation, rng
         self.observations, self.targets = [], []
 

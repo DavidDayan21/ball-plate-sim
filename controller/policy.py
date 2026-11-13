@@ -8,8 +8,9 @@ It plays by the rules of the PID brain and knows what the PID knows: the measure
 late (N is known), the commands it has sent, the setpoint and its acceleration, the maximum tilt. It knows neither
 the ball (inertia, mass, friction) nor the calibration error of the plate. The policy itself has no memory: this
 class keeps the last measurements and commands, raw (filtering their noise and predicting the ball despite the
-latency is left to the policy), and one long memory, the integral of the error, like the PID keeps its own (a
-calibration error shows in nothing else).
+latency is left to the policy), and two long memories, kept like the PID keeps its own: the integral of the
+error (a calibration error shows in nothing else) and an estimate of how much the ball accelerates per radian
+of tilt (the last 8 measurements are too short to tell a solid ball from a hollow one).
 
 Observation: OBSERVATION_SIZE numbers of comparable sizes (LAYOUT gives the place of each group).
     position               newest measured (x, y), in units of LENGTH
@@ -39,6 +40,11 @@ Observation: OBSERVATION_SIZE numbers of comparable sizes (LAYOUT gives the plac
                            difference
     integral               integral of that error (x, y), in units of INTEGRAL and bounded at ±INTEGRAL_LIMIT; each
                            axis only integrates within ZONE of its setpoint, like the PID (controller/pid.py)
+    ball                   estimate of c·g, the acceleration of the ball per radian of tilt
+                           (controller/adaptation.py), as its relative gap to the value assumed at the start, in
+                           units of BALL: 0 for the ping-pong ball, about 1 for a solid ball once estimated.
+                           Without it, the policy tilts the plate for an average ball: on the reference circle,
+                           0.7 mm too far out with the hollow ball, 1.1 mm too far in with the solid one (measured)
 
 Action: (ax, ay) in [-1, 1], the command (θx, θy) in units of theta_max; beyond, it is saturated.
 """
@@ -46,6 +52,8 @@ from collections import deque
 import math
 
 import numpy as np
+
+from controller.adaptation import ModelGainEstimator
 
 MEASUREMENTS = 8
 MAX_LATENCY = 5                  # (control periods) 100 ms
@@ -60,6 +68,7 @@ ERROR_LIMIT = 2.0                # (units of ERROR) 2 cm
 ZONE = 0.02                      # (m) integration zone, the one of the PID brain
 INTEGRAL = 0.01                  # (m·s) what the PID brain accumulates to cancel a calibration error of 1°
 INTEGRAL_LIMIT = 3.0             # (units of INTEGRAL)
+BALL = 0.2                       # relative gap of c·g: 0.19 from the hollow ball (k = 2/3) to the solid one (2/5)
 
 
 def _layout(**sizes):
@@ -73,7 +82,7 @@ def _layout(**sizes):
 
 LAYOUT, OBSERVATION_SIZE = _layout(position=2, speeds=2 * (MEASUREMENTS - 1), heights=MEASUREMENTS,
                                    commands=2 * COMMANDS, setpoint=2, setpoint_speed=2, setpoint_acceleration=2,
-                                   latency=1, received=1, error=2, integral=2)
+                                   latency=1, received=1, error=2, integral=2, ball=1)
 
 
 def _bounded(value: float, limit: float) -> float:
@@ -82,14 +91,17 @@ def _bounded(value: float, limit: float) -> float:
 
 class PolicyController:
     """policy: function observation -> action. None: the brain is driven from outside (training), which calls
-    observe() then act() instead of compute()."""
-    model_gain = math.nan            # no model of the ball (simulation/loop.py)
+    observe() then act() instead of compute(). estimator: of the model gain c·g (controller/adaptation.py);
+    None: the policy observes the ball assumed at the start."""
 
-    def __init__(self, policy, theta_max: float, latency: int, airborne_height: float = 0.015):
+    def __init__(self, policy, theta_max: float, latency: int, airborne_height: float = 0.015,
+                 estimator: ModelGainEstimator = None):
         if not 0 <= latency <= MAX_LATENCY:
             raise ValueError(f"Latency of {latency} periods: the policy knows 0 to {MAX_LATENCY}")
         self.policy, self.theta_max, self.latency = policy, theta_max, latency
         self.airborne_height = airborne_height                            # (m) see heights
+        self.estimator = estimator
+        self.nominal_gain = estimator.gain if estimator is not None else math.nan
         self.measurements = deque(maxlen=MEASUREMENTS)                    # (x, y, height), oldest first
         self.commands = deque([(0.0, 0.0)] * COMMANDS, maxlen=COMMANDS)   # actions, oldest first
         self.received = 0
@@ -123,6 +135,10 @@ class PolicyController:
                 self.integral[k] = _bounded(self.integral[k] + error[k] * dt, INTEGRAL_LIMIT * INTEGRAL)
         observation[LAYOUT["error"]] = [_bounded(e / ERROR, ERROR_LIMIT) for e in error]
         observation[LAYOUT["integral"]] = [i / INTEGRAL for i in self.integral]
+        observation[LAYOUT["ball"]] = 0.0
+        if self.estimator is not None:
+            self.estimator.update((m[0][0], m[0][1]), setpoint, m[0][2] > self.airborne_height)
+            observation[LAYOUT["ball"]] = (self.estimator.gain / self.nominal_gain - 1.0) / BALL
         return observation
 
     def act(self, action):
@@ -132,7 +148,15 @@ class PolicyController:
             raise ValueError(f"Action of the policy: {action}")
         ax, ay = _bounded(ax, 1.0), _bounded(ay, 1.0)
         self.commands.append((ax, ay))
-        return ax * self.theta_max, ay * self.theta_max
+        command = (ax * self.theta_max, ay * self.theta_max)
+        if self.estimator is not None:
+            self.estimator.command(command)
+        return command
+
+    @property
+    def model_gain(self) -> float:
+        """Estimate of c·g observed by the policy ((m/s²)/rad); NaN without estimator."""
+        return self.estimator.gain if self.estimator is not None else math.nan
 
     def compute(self, setpoint, measurement, setpoint_acc, dt: float):
         """Same interface as the PID brain (controller/plate.py). Returns (θx, θy) in rad."""

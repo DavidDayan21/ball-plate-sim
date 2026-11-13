@@ -199,7 +199,9 @@ def test_ai_brain_meets_the_objectives():
         sim = loop.Simulation(Config(brain="imitation", latency=latency, sigma=0.0002))
         assert isinstance(sim.brain, PolicyController)
         r = simulate(sim.cfg)
-        assert not r.fallen and all(math.isnan(gain) for gain in r.model_gain)
+        # It observes an estimate of c·g, which starts from the ball assumed (and stays near it: it is that ball)
+        assert not r.fallen and r.model_gain[0] == Config().plate.coefficient * G
+        assert all(gain == pytest.approx(r.model_gain[0], rel=0.03) for gain in r.model_gain)
         assert max_distance(r, 2, 4) < 0.005 and tracking_error_rms(r, 12, 20) < 0.002
     # The PID brain stays the default one
     assert Config().brain == "pid" and not isinstance(loop.Simulation(SIMPLE_PLATE).brain, PolicyController)

@@ -160,7 +160,7 @@ def test_training_and_use_see_the_same_robot():
     assert len(trained.theta_x) >= 150 and used.x[:len(trained.x)] == trained.x
     assert used.theta_x[:len(trained.theta_x)] == trained.theta_x
     assert used.actual_tilt[:len(trained.actual_tilt)] == trained.actual_tilt
-    assert all(math.isnan(g) for g in used.model_gain)                # no model of the ball in this brain
+    assert used.model_gain[:len(trained.model_gain)] == trained.model_gain and trained.model_gain[0] == CG
 
 
 def test_evaluation_on_the_reference_scenario():

@@ -401,6 +401,33 @@ def test_policy_observation_of_a_ball_in_the_air():
     assert not brain.observe((0.0, 0.0), (0.0, 0.0, 0.30), (0.0, 0.0), 0.02)[LAYOUT["heights"]].any()
 
 
+def test_policy_observation_of_the_ball():
+    # The estimate of c·g, as its relative gap to the value assumed at the start, in units of 0.2
+    class Estimator:
+        gain, seen, sent = 6.0, [], []
+
+        def update(self, measured, setpoint, airborne):
+            self.seen.append((measured, setpoint, airborne))
+
+        def command(self, theta):
+            self.sent.append(theta)
+
+    estimator = Estimator()
+    brain = PolicyController(lambda observation: (0.5, -2.0), 0.1, latency=1, estimator=estimator)
+    o = brain.observe((0.01, 0.0), (0.02, 0.03, 0.0), (0.0, 0.0), 0.02)
+    assert o[LAYOUT["ball"]] == pytest.approx([0.0]) and brain.model_gain == 6.0
+    estimator.gain = 7.2                                # the estimator has learned a ball 20 % more lively
+    o = brain.observe((0.01, 0.0), (0.02, 0.03, 0.1), (0.0, 0.0), 0.02)
+    assert o[LAYOUT["ball"]] == pytest.approx([1.0]) and brain.model_gain == 7.2
+    # The estimator is given every measurement (in the air or not) and every command really sent
+    assert estimator.seen == [((0.02, 0.03), (0.01, 0.0), False), ((0.02, 0.03), (0.01, 0.0), True)]
+    brain.compute((0.01, 0.0), (0.02, 0.03, 0.0), (0.0, 0.0), 0.02)
+    assert estimator.sent == [(pytest.approx(0.05), pytest.approx(-0.1))]
+    # Without estimator: the ball assumed
+    brain = PolicyController(None, 0.1, latency=1)
+    assert brain.observe((0.0, 0.0), (0.0, 0.0, 0.0), (0.0, 0.0), 0.02)[LAYOUT["ball"]] == 0.0
+
+
 def test_policy_observation_error_and_integral():
     T = 0.02
     brain = PolicyController(None, 0.1, latency=1)

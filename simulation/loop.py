@@ -9,7 +9,7 @@ The first measurement arrives one latency after the start: until then, the plate
 
 A brain is an object with:
     compute(setpoint, measurement, setpoint_acc, dt) -> (θx, θy) in rad, called at every control period;
-    model_gain: the c·g of its model of the ball ((m/s²)/rad), NaN if it has none.
+    model_gain: the c·g of its model of the ball ((m/s²)/rad), nominal or estimated online; NaN if it has none.
 cfg.brain chooses it: the PID brain (pid_brain, the default one) or the AI brain, a policy learned and saved in
 brains/ (learned_brain). controller/policy.py holds the brain driven by a policy.
 The motors, their ramps and the rule of the fast ramps (controller/ramps.py) are the same for every brain.
@@ -66,13 +66,17 @@ def create_physics(cfg: Config):
     raise ValueError(f"Unknown physics: {cfg.physics}")
 
 
+def gain_estimator(cfg: Config) -> ModelGainEstimator:
+    """Estimator of the model gain c·g, from the value of the ball assumed by cfg."""
+    return ModelGainEstimator(cfg.plate.coefficient * G, cfg.control_period, cfg.latency, cfg.theta_max)
+
+
 def pid_brain(cfg: Config) -> PlateController:
     """The PID brain, with the settings of cfg."""
     flight = (FlightEstimator(cfg.geometry.height, cfg.plate.ball_radius, cfg.control_period, cfg.latency,
                               cfg.airborne_height, G) if cfg.airborne_height < math.inf else None)
     model_gain = cfg.plate.coefficient * G
-    estimator = (ModelGainEstimator(model_gain, cfg.control_period, cfg.latency, cfg.theta_max)
-                 if cfg.adapt_model_gain else None)
+    estimator = gain_estimator(cfg) if cfg.adapt_model_gain else None
     return PlateController(*cfg.pid_gains(), cfg.theta_max, cfg.tau_d,
                            model_gain=model_gain, feedforward=cfg.feedforward,
                            latency_compensation=cfg.latency if cfg.latency_compensation else 0,
@@ -97,7 +101,8 @@ def learned_policy(name: str) -> Network:
 
 def learned_brain(cfg: Config) -> PolicyController:
     """The AI brain: driven by the learned policy cfg.brain."""
-    return PolicyController(learned_policy(cfg.brain), cfg.theta_max, cfg.latency, cfg.airborne_height)
+    return PolicyController(learned_policy(cfg.brain), cfg.theta_max, cfg.latency, cfg.airborne_height,
+                            gain_estimator(cfg))
 
 
 class Simulation:
@@ -229,7 +234,8 @@ class Simulation:
 
 def policy_brain(policy=None):
     """Brain driven by `policy` (controller/policy.py), as a function cfg -> brain for Simulation and simulate."""
-    return lambda cfg: PolicyController(policy, cfg.theta_max, cfg.latency, cfg.airborne_height)
+    return lambda cfg: PolicyController(policy, cfg.theta_max, cfg.latency, cfg.airborne_height,
+                                        gain_estimator(cfg))
 
 
 def simulate(cfg: Config, view: bool = False, brain=None) -> Results:
