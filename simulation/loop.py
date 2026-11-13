@@ -105,16 +105,23 @@ def learned_brain(cfg: Config) -> PolicyController:
                             gain_estimator(cfg))
 
 
+def chosen_brain(cfg: Config):
+    """The brain chosen by cfg.brain: "pid", the PID brain; otherwise the AI brain, driven by the learned policy
+    brains/<cfg.brain>.npz."""
+    return pid_brain(cfg) if cfg.brain == "pid" else learned_brain(cfg)
+
+
 class Simulation:
     """Step-by-step simulation (one step = dt_physics).
 
     simulate() runs it over the whole scenario duration; the sandbox drives it live.
-    brain: function cfg -> brain, called again at every reset_control(). None: the brain chosen by cfg.brain.
+    brain: function cfg -> brain, called again at every reset_control(). None: the brain chosen by cfg.brain, read
+    again at every reset_control() (the sandbox changes it).
     """
 
     def __init__(self, cfg: Config, brain=None):
         self.cfg = cfg
-        self.create_brain = brain or (pid_brain if cfg.brain == "pid" else learned_brain)
+        self.create_brain = brain or chosen_brain
         self.phys = create_physics(cfg)
         self.camera = None
         if cfg.sensor == "camera":

@@ -1,0 +1,3 @@
+# The software for the general public (python -m app), on top of requirements.txt
+-r requirements.txt
+PySide6-Essentials==6.12.0

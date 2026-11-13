@@ -2,8 +2,9 @@
 
 Simulation of a balancing robot ("ball and plate"): a plate tilted by 3 motors keeps
 a ball balanced, catches it when it is thrown, and makes it follow a trajectory.
-Goal: a playful piece of software, usable without any knowledge of code, to play with the robot and
-compare two "brains" that drive it: a PID and a local AI. The physics is computed by MuJoCo.
+Goal: a piece of software for the general public, usable without any knowledge of code: a scientific sandbox
+where one plays with the ball and compares two "brains" that drive the robot, a PID and a local AI. No game:
+the statistics are only informative. The physics is computed by MuJoCo.
 Building the real robot remains a distant goal: the code will then be ready.
 
 ## Progress
@@ -19,8 +20,8 @@ Building the real robot remains a distant goal: the code will then be ready.
 | 3D sandbox | Throws, drops, bounces, pushes, setpoints, data of every attempt | Done |
 | A. Reliable measurements | Bit-exact regression check, spread over N draws, robust metrics, simple physics → MuJoCo gap | Done |
 | B. PID brain | Objectives in the report, integral limited to the neighborhood of the setpoint, aimed bounce of a dropped ball, thrown ball (start with the speed, fast motor ramps for the large moves), gains tuned by LQR, adaptive control (model gain c·g estimated online), every gap of more than 0.5 mm explained (report, section 12) | Done |
-| C. Local AI brain | A policy (neural network) learned by reinforcement in MuJoCo, same rules as the PID (sensor, motors, ±10°). Done: interchangeable brains, training environment, training by reinforcement, imitation of the PID brain: the policy alone then meets the four objectives, dropped ball included (campaign section 13, which compares both brains: return to the center better than the PID, circle about 0.2 mm behind). The sandbox can be driven by either brain. To come: the gaps of more than 0.5 mm between the two brains explained, then reinforcement from the imitating policy, to go beyond the PID | **In progress** |
-| D. Software for the general public | MuJoCo physics in our interface, choice of brain, comparison | To do |
+| C. Local AI brain | A policy (neural network) learned by reinforcement in MuJoCo, same rules as the PID (sensor, motors, ±10°). Done: interchangeable brains, training environment, training by reinforcement, imitation of the PID brain: the policy alone then meets the four objectives, dropped ball included (campaign section 13, which compares both brains: return to the center better than the PID, circle about 0.2 mm behind). The sandbox can be driven by either brain. Left for later: the gaps of more than 0.5 mm between the two brains explained (circle with a large calibration error of the plate, return to the center), then reinforcement from the imitating policy, to go beyond the PID | Done |
+| D. Software for the general public | An application installed with a double click, for Windows and Mac: the robot in 3D, driven by either brain; throws, drops and pushes with the mouse, drawn trajectories, choice of the ball, latency and friction, both robots side by side; in English and French. Done: prototype (`python -m app`): 3D view in its own window, throw, drop, center, choice of the brain, pause, English and French | **In progress** |
 | E. Construction (distant) | Design, real-world defects, complete error budget | Later |
 
 Quantified goals for both brains: thrown ball caught up to at least 90 % of the physical limit,
@@ -31,6 +32,10 @@ no fall in the robustness variants.
 ## Structure
 
 ```text
+app/                     The software for the general public (interface only, on top of simulation/session.py)
+  window.py              Main window: 3D view, control panel, status bar; one loop in step with real time
+  view3d.py              3D view: rendered off screen by MuJoCo, drawn in the window; mouse: turn, zoom
+  i18n.py, locales/      Texts of the interface, one file per language (English, French)
 brains/                  Learned policies of the AI brain (weights of the network): imitation.npz
 controller/              What would run on the real robot (independent of the simulator)
   pid.py                 PID: derivative filter, saturation, anti-windup, integration zone, feedforward
@@ -50,7 +55,7 @@ simulation/
   sensor.py              Synthetic sensor: noise + latency
   camera.py              Virtual camera: rendering, OpenCV detection, projection, height of the ball
   metrics.py             Metrics: tracking error, return to the center, command jitter
-  session.py             Sandbox: series of attempts, automatic end, CSV recording
+  session.py             Sandbox: series of attempts, automatic end, CSV recording; pace of real time
   parallel.py            Independent simulations spread over several processes
 training/
   environment.py         Training environment of the AI brain: random episodes, reward, speed measurement
@@ -58,9 +63,9 @@ training/
   train.py               Training of the policy by reinforcement (PPO), on several robots in parallel
   evaluation.py          Evaluation of a brain on the reference scenario, for both training scripts
 tests/                   Automated tests, by theme (controller, mechanics, sensors, physics,
-                         scenarios, metrics, session, regression check, campaign, training)
+                         scenarios, metrics, session, regression check, campaign, training, software)
 campaign.py              Full measurement campaign over N draws, in parallel -> results/report.md
-sandbox.py               The robot in 3D and in real time, driven from a control panel
+sandbox.py               The robot in 3D and in real time, driven from a control panel (working tool)
 regression_check.py      Checks that a change leaves all the results bit-identical
 ```
 
@@ -80,12 +85,20 @@ skipped), add the training libraries, PyTorch (about 130 MB to download) and Sta
 pip install -r requirements-train.txt
 ```
 
+To run the software for the general public (not needed for the rest: without it, its tests are skipped), add Qt
+(PySide6, about 80 MB to download):
+
+```powershell
+pip install -r requirements-app.txt
+```
+
 ## Usage
 
 ```powershell
 python -m pytest              # all the tests
 python campaign.py            # full measurement campaign, writes results/report.md (a few minutes)
 python campaign.py --draws 1  # same, nominal configuration only (one simulation per case)
+python -m app                 # the software for the general public (phase D, prototype)
 python sandbox.py             # 3D sandbox (see below)
 python sandbox.py --camera                             # same, ball measured by the virtual camera
 python sandbox.py --brain imitation                    # same, driven by the AI brain instead of the PID brain
@@ -156,7 +169,7 @@ the learned policy `brains/imitation.npz`; `simulate(cfg, brain=policy_brain(pol
 The motors, their ramps and the rule of the fast ramps are the same for both.
 
 The policy of the AI brain is a function from an observation to an action: a neural network of 2 layers of
-128 neurons (`controller/network.py`), learned in simulation (phase C, in progress). The observation holds what
+128 neurons (`controller/network.py`), learned in simulation (phase C). The observation holds what
 the PID brain also knows (`controller/policy.py`): the last 8 measurements and the last 12 commands, raw (the
 network filters their noise and predicts the ball despite the latency by itself; the measured heights show a
 ball in the air falling, and count as 0 below 15 mm, where they are only the error of the sensor), the setpoint
@@ -203,11 +216,26 @@ The reinforcement (`training/train.py`) uses PPO (proximal policy optimization, 
 during the training, a random deviation is added to the action of the policy, to try. The robots play 20 s each, then the actions that brought more reward than expected are made more likely,
 by small steps, millions of times.
 
+## Software for the general public (phase D, in progress)
+
+`python -m app`: one window, the robot in 3D on the left, the control panel on the right. Throw (toward the
+center from 10 cm away, at 0.4 m/s), Drop (from 30.5 cm above the center), Center; the brain, PID or AI
+(changing it ends the current attempt: an attempt has a single brain); Pause; the language, English or French
+(the language of the system at startup). Mouse in the 3D view: left drag turns the view, the wheel zooms. The
+status bar tells what the robot is doing or the result of the last attempt, the simulated time, its speed
+compared with real time and the frames per second. The attempts follow the rules of the sandbox below, without
+being recorded.
+
+A single loop, in the thread of the interface: at every frame (60 per second), the simulation catches up with the
+real time elapsed (at most 50 ms: beyond, it slows down), then MuJoCo renders the 3D view off screen, and the
+image is drawn in the window. The virtual camera, which also renders with MuJoCo, will need it: its OpenGL context
+can only be used in the thread that created it.
+
 ## 3D sandbox
 
-Two windows: the MuJoCo 3D view and a control panel with a top view and live curves. `--brain imitation`: the
-robot is driven by the AI brain (it was not taught the ball dropped from above, and has no latency compensation
-to switch off).
+The working tool of the development, kept until the software does all it does. Two windows: the MuJoCo 3D view
+and a control panel with a top view and live curves. `--brain imitation`: the robot is driven by the AI brain (it
+has no latency compensation to switch off).
 
 | Control | Effect |
 |---|---|
@@ -223,7 +251,7 @@ to switch off).
 An attempt ends when the ball falls, stays within 1 cm of the setpoint for 2 s (stabilized),
 lasts longer than 30 s, or when another one starts. Each attempt is recorded in
 `results/attempts/<date_time>/`: `attempt_001.csv`… (all the measurements at 50 Hz) and `summary.csv`
-(one row per attempt: parameters, result, stabilization time, bounces, edge margin…).
+(one row per attempt: parameters, brain, result, stabilization time, bounces, edge margin…).
 International CSV format: `,` separator, decimal point, UTF-8 encoding (no BOM).
 
 ## Conventions
@@ -248,4 +276,5 @@ International CSV format: `,` separator, decimal point, UTF-8 encoding (no BOM).
 
 ## Technologies
 
-Python, NumPy, Matplotlib, MuJoCo, OpenCV, pytest. For the training of the AI brain only: PyTorch, Stable-Baselines3.
+Python, NumPy, Matplotlib, MuJoCo, OpenCV, pytest. For the software: Qt (PySide6). For the training of the AI brain
+only: PyTorch, Stable-Baselines3.

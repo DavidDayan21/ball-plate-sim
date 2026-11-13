@@ -35,11 +35,10 @@ from matplotlib.widgets import Button, CheckButtons, RadioButtons, Slider
 import mujoco
 import mujoco.viewer
 
-from simulation.session import SETPOINTS, Session, sandbox_config
+from simulation.session import SETPOINTS, RealTime, Session, sandbox_config
 
 SPACE_KEY = 32
 FRAMES_PER_SECOND = 60
-MAX_LAG = 0.05       # (s) beyond this, the simulation slows down instead of catching up with real time
 LATENCIES = {"20 ms": 1, "60 ms": 3, "100 ms": 5}
 
 
@@ -48,10 +47,9 @@ class Sandbox:
         self.s = session
         self.camera = camera
         self.actions = queue.Queue()        # panel actions, executed by the simulation
-        self.pause = False
+        self.clock = RealTime()             # in step with real time; pause
         self.stop_event = threading.Event()
         self.error = None
-        self.speed = 1.0                    # simulated time / real time, measured
         self._build_panel()
 
     # --- Panel -------------------------------------------------------------------------------
@@ -148,7 +146,7 @@ class Sandbox:
         self.actions.put(lambda: self.s.throw(**p))
 
     def _toggle_pause(self) -> None:
-        self.pause = not self.pause
+        self.clock.paused = not self.clock.paused
 
     def _click(self, ev) -> None:
         if ev.inaxes is not self.ax_top or ev.xdata is None:
@@ -203,10 +201,10 @@ class Sandbox:
             self.ball.center = (1000 * data[-1][5], 1000 * data[-1][6])
             self.setpoint_marker.set_data([1000 * data[-1][7]], [1000 * data[-1][8]])
             self.ball.set_visible(self.s.state != "fallen")
-        state = "PAUSE" if self.pause else {"attempt": "recording", "waiting": "waiting",
+        state = "PAUSE" if self.clock.paused else {"attempt": "recording", "waiting": "waiting",
                                            "fallen": "ball fallen"}[self.s.state]
         cfg = self.s.cfg
-        lines = [f"Simulated time: {self.s.t:6.1f} s ({self.speed:.2f} × real time)   State: {state}",
+        lines = [f"Simulated time: {self.s.t:6.1f} s ({self.clock.speed:.2f} × real time)   State: {state}",
                   f"Sensor: {self.s.sensor}",
                   f"Setpoint: {self.s.setpoint}   Latency: {round(1000 * cfg.latency * cfg.control_period)} ms"
                   f"   Compensation: {'yes' if cfg.latency_compensation else 'no'}",
@@ -219,29 +217,19 @@ class Sandbox:
     # --- Simulation (separate thread) --------------------------------------------------------
     def _key(self, code: int) -> None:
         if code == SPACE_KEY:
-            self.pause = not self.pause
+            self._toggle_pause()
 
     def _simulate(self, viewer) -> None:
         """Advances the simulation in step with real time and refreshes the 3D view."""
         try:
             if self.camera:
                 self.s.enable_camera()             # created in this thread, the only one that uses it
-            clock = time.perf_counter()
-            real_mark, sim_mark = clock, self.s.t
+            self.clock.advance(self.s, time.perf_counter())      # starts the clock
             while not self.stop_event.is_set() and viewer.is_running():
                 frame_start = time.perf_counter()
-                elapsed, clock = min(frame_start - clock, MAX_LAG), frame_start
                 while not self.actions.empty():
                     self.actions.get()()
-                if self.pause:
-                    real_mark, sim_mark = frame_start, self.s.t
-                else:
-                    target = self.s.t + elapsed
-                    while self.s.t < target:
-                        self.s.step()
-                    if frame_start - real_mark > 1.0:      # speed measured over 1 s
-                        self.speed = (self.s.t - sim_mark) / (frame_start - real_mark)
-                        real_mark, sim_mark = frame_start, self.s.t
+                self.clock.advance(self.s, frame_start)
                 viewer.sync()
                 remaining = 1 / FRAMES_PER_SECOND - (time.perf_counter() - frame_start)
                 if remaining > 0:

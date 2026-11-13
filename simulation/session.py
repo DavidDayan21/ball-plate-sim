@@ -9,7 +9,9 @@ It ends when:
     - the ball falls;
     - the ball stays within 1 cm of the setpoint, resting on the plate, for 2 s (stabilized);
     - it lasts longer than max_duration (not stabilized);
-    - another attempt starts (interrupted).
+    - another attempt starts, or the brain is changed: an attempt has a single brain (interrupted).
+
+RealTime keeps a live session in step with real time (the sandbox, the software of app/).
 
 Data written to results/attempts/<date_time>/:
     attempt_001.csv ...  all the measurements of the attempt, at 50 Hz
@@ -121,6 +123,17 @@ class Session:
         self._apply_config(latency_compensation=active)
         self.sim.reset_control()
 
+    def set_brain(self, name: str) -> None:
+        """Brain of the robot: "pid" or a learned policy of brains/ ("imitation"). An attempt has a single brain:
+        the current one ends (interrupted). The new brain starts from zero, like after a throw; the ball is not
+        touched."""
+        if name == self.cfg.brain:
+            return
+        if self.attempt is not None:
+            self._finish("interrupted")
+        self._apply_config(brain=name)
+        self.sim.reset_control()
+
     def enable_camera(self) -> None:
         """Measurement by the virtual camera, to be called from the thread that advances the simulation."""
         if self.sim.camera is None:
@@ -182,7 +195,7 @@ class Session:
         self.sim.r = before if before is not None else Results()
         self.attempt = dict(number=self.number, action=action, params=params, t0=self.t,
                               time=datetime.datetime.now().strftime("%H:%M:%S"),
-                              setpoint=self.setpoint, sensor=self.sensor,
+                              setpoint=self.setpoint, brain=self.cfg.brain, sensor=self.sensor,
                               latency_ms=round(1000 * self.cfg.latency * self.cfg.control_period),
                               compensation=self.cfg.latency_compensation,
                               stable_since=None, landings=0, max_bounce=0.0)
@@ -202,7 +215,7 @@ class Session:
         airborne = [r.airborne[i] for i in after] if r.airborne else []
         row = dict(
             number=att["number"], time=att["time"], action=att["action"], **att["params"],
-            setpoint=att["setpoint"], sensor=att["sensor"], latency_ms=att["latency_ms"],
+            setpoint=att["setpoint"], brain=att["brain"], sensor=att["sensor"], latency_ms=att["latency_ms"],
             compensation=att["compensation"],
             result=result, duration_s=self.t - t0,
             stabilized_in_s=(att["stable_since"] - t0) if result == "stabilized" else None,
@@ -343,3 +356,46 @@ class Session:
             self._finish("interrupted")
         self.close_camera()
         return self.summary
+
+
+class RealTime:
+    """Keeps a live session in step with real time. Called once per displayed frame, with the real time `now` (s):
+    the simulation catches up with the real time elapsed since the previous frame, up to max_lag; beyond, it slows
+    down instead of catching up (slow computer, window being moved...). The simulation advances by whole steps: what
+    a frame advances beyond the real time is taken off the next one, otherwise the simulation would run ahead of
+    real time by half a step per frame on average (1.5 % with steps of 0.5 ms at 60 frames per second). Measures,
+    over about 1 s, the speed (simulated time / real time) and the number of frames per second."""
+
+    MEASURE = 1.0       # (s) of real time per measurement of the speed and of the frames per second
+
+    def __init__(self, max_lag: float = 0.05):
+        self.max_lag = max_lag
+        self.paused = False
+        self.speed = 1.0                   # simulated time / real time, measured
+        self.frames_per_second = 0.0       # measured
+        self._clock = None                 # real time of the previous frame
+        self._ahead = 0.0                  # (s) simulated beyond the real time by the previous frame (< one step)
+        self._mark = None                  # (real time, simulated time, frames) at the start of the measurement
+        self._frames = 0
+
+    def advance(self, session, now: float) -> None:
+        """Advances `session` (an object with t and step()) by the real time elapsed since the previous call.
+        The first call only starts the clock."""
+        if self._clock is None:
+            self._clock, self._mark = now, (now, session.t, 0)
+            return
+        elapsed, self._clock = min(now - self._clock, self.max_lag), now
+        self._frames += 1
+        if self.paused:
+            self._ahead = 0.0
+            self._mark = (now, session.t, self._frames)
+            return
+        target = session.t + elapsed - self._ahead
+        while session.t < target:
+            session.step()
+        self._ahead = session.t - target
+        real0, sim0, frames0 = self._mark
+        if now - real0 > self.MEASURE:
+            self.speed = (session.t - sim0) / (now - real0)
+            self.frames_per_second = (self._frames - frames0) / (now - real0)
+            self._mark = (now, session.t, self._frames)

@@ -5,8 +5,9 @@ from dataclasses import replace
 
 import pytest
 
+from controller.plate import PlateController
 from controller.policy import PolicyController
-from simulation.session import Session, sandbox_config
+from simulation.session import RealTime, Session, sandbox_config
 
 
 def advance(s: Session, duration: float) -> None:
@@ -70,6 +71,7 @@ def test_files_written(session):
         f.seek(0)
         rows = list(csv.DictReader(f, delimiter=","))
     assert len(rows) == 2 and rows[0]["action"] == "throw" and rows[1]["setpoint"] == "circle"
+    assert rows[0]["brain"] == "pid"
     assert rows[0]["speed_m_s"] == "0.400"                # decimal point, same number of decimals
     assert rows[0]["stabilized_in_s"] == ""               # missing value: empty cell
 
@@ -93,3 +95,55 @@ def test_session_with_the_ai_brain(tmp_path):
     advance(s, 1.0)
     summary = s.close()
     assert summary[0]["result"] == "stabilized" and math.hypot(*s.sim.phys.ball()) < 0.005
+
+
+def test_brain_changed_between_attempts(tmp_path):
+    s = Session(folder=tmp_path)
+    advance(s, 1.0)
+    s.throw(0.10, 180, speed=0.4)
+    advance(s, 1.0)
+    s.set_brain("pid")                                     # the same brain: nothing changes
+    assert s.attempt["action"] == "throw"
+    s.set_brain("imitation")                               # an attempt has a single brain: the throw ends
+    assert isinstance(s.sim.brain, PolicyController) and s.attempt is None
+    assert s.summary[-1]["brain"] == "pid" and s.summary[-1]["result"] == "interrupted"
+    advance(s, 5.0)                                        # the AI brain takes the ball over, from zero
+    assert s.state != "fallen"
+    s.throw(0.10, 180, speed=0.4)
+    advance(s, 6.0)
+    s.set_brain("pid")
+    assert isinstance(s.sim.brain, PlateController)
+    assert all(l["brain"] == "imitation" for l in s.summary[1:])
+    assert s.summary[-1]["action"] == "throw" and s.summary[-1]["result"] == "stabilized"
+
+
+class Clockwork:
+    """Stands for a session: a time that advances by steps of 0.5 ms."""
+    dt = 0.0005
+
+    def __init__(self):
+        self.n = 0
+
+    @property
+    def t(self) -> float:
+        return self.n * self.dt
+
+    def step(self) -> None:
+        self.n += 1
+
+
+def test_real_time():
+    s, clock = Clockwork(), RealTime(max_lag=0.05)
+    clock.advance(s, 10.0)                                 # starts the clock: no step
+    assert s.n == 0
+    for i in range(1, 181):                                # 3 s of frames, 60 per second
+        clock.advance(s, 10.0 + i / 60)
+    assert abs(s.t - 3.0) < s.dt                           # in step with real time, without drifting
+    assert clock.speed == pytest.approx(1.0, abs=0.001)
+    assert clock.frames_per_second == pytest.approx(60.0, abs=0.1)
+    clock.advance(s, 14.0)                                 # a frame 1 s late: only 50 ms are caught up
+    assert abs(s.t - 3.05) < s.dt
+    clock.paused = True
+    t = s.t
+    clock.advance(s, 14.02)                                # in pause, the simulation waits
+    assert s.t == t
