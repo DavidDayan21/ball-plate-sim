@@ -361,7 +361,7 @@ def test_policy_observation():
     o = brain.observe((0.05, 0.0), (0.02, -0.01, 0.004), (0.3, 0.0), T)
     assert o.shape == (OBSERVATION_SIZE,) and o.dtype == np.float32
     assert o[LAYOUT["position"]] == pytest.approx([0.2, -0.1])           # in units of 10 cm
-    assert o[LAYOUT["heights"]] == pytest.approx([0.2, 0.2, 0.2])        # in units of 2 cm
+    assert o[LAYOUT["heights"]] == pytest.approx([0.0] * 8)              # 4 mm: on the plate
     assert o[LAYOUT["setpoint"]] == pytest.approx([0.5, 0.0])
     assert o[LAYOUT["setpoint_acceleration"]] == pytest.approx([0.3, 0.0])
     assert o[LAYOUT["latency"]] == pytest.approx(3 / 5) and o[LAYOUT["received"]] == pytest.approx(1 / 8)
@@ -373,7 +373,7 @@ def test_policy_observation():
     assert o[LAYOUT["speeds"]] == pytest.approx([0.5, 0.0] + [0.0] * 12)  # in units of 0.2 m/s; 7 speeds (x, y)
     assert o[LAYOUT["setpoint_speed"]] == pytest.approx([0.25, 0.0])
     assert o[LAYOUT["commands"]] == pytest.approx([0.5, -1.0] + [0.0] * 22)        # the last 12 commands
-    assert o[LAYOUT["heights"]] == pytest.approx([0.0, 0.2, 0.2])
+    assert o[LAYOUT["heights"]] == pytest.approx([0.0] * 8)
     assert o[LAYOUT["received"]] == pytest.approx(2 / 8)
     # Third measurement: speeds and commands newest first; a jump of the setpoint is bounded
     brain.act((0.1, 0.2))
@@ -388,6 +388,17 @@ def test_policy_observation():
     for _ in range(5):
         o = brain.observe((-0.05, 0.0), (-0.045, 0.0, 0.0), (0.0, 0.0), T)
     assert o[LAYOUT["error"]] == pytest.approx([-0.5, 0.0]) and o[LAYOUT["received"]] == 1.0
+
+
+def test_policy_observation_of_a_ball_in_the_air():
+    # Heights in units of 2 cm, newest first; 0 up to 15 mm: on the plate, only the error of the sensor
+    brain = PolicyController(None, 0.1, latency=1)
+    for height in (0.30, 0.20, 0.016, 0.014, -0.002):
+        o = brain.observe((0.0, 0.0), (0.0, 0.0, height), (0.0, 0.0), 0.02)
+    assert o[LAYOUT["heights"]] == pytest.approx([0.0, 0.0, 0.8, 10.0, 15.0, 15.0, 15.0, 15.0])
+    # Another threshold, as given by the configuration (infinite: never in the air)
+    brain = PolicyController(None, 0.1, latency=1, airborne_height=math.inf)
+    assert not brain.observe((0.0, 0.0), (0.0, 0.0, 0.30), (0.0, 0.0), 0.02)[LAYOUT["heights"]].any()
 
 
 def test_policy_observation_error_and_integral():

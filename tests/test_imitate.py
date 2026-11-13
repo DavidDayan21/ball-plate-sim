@@ -60,7 +60,9 @@ def test_lessons_in_one_or_several_processes():
     assert together[0].shape == (len(together[1]), OBSERVATION_SIZE) and together[1].shape[1] == 2
     assert together[0].dtype == together[1].dtype == np.float32 and 1500 < len(together[0]) <= 2000
     assert np.array_equal(together[0], spread[0]) and np.array_equal(together[1], spread[1])
-    assert together[2:] == pytest.approx(spread[2:]) and 0.0 <= together[2] <= 1.0 and 0.0 < together[3] < 0.1
+    episodes, falls, dropped, dropped_falls, distance, periods = together[2]
+    assert together[2] == pytest.approx(spread[2]) and episodes == 4 and 0 < periods - len(together[0]) <= 4 * 6
+    assert 0 <= falls <= 4 and dropped == dropped_falls == 0 and 0.0 < distance / periods < 0.1
     # The pupil drives: other lessons
     layers = [(np.zeros((2, OBSERVATION_SIZE)), np.zeros(2))]
     assert not np.array_equal(script.lessons(seeds, layers, 0.0, 1, SIMPLE)[1][:1500], together[1][:1500])
@@ -85,7 +87,8 @@ def test_pupil_learns_and_gives_its_network(monkeypatch):
 def test_imitation(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(script, "FOLDER", tmp_path)
     monkeypatch.setattr(script, "VALIDATION", 20)
-    network = script.imitate("pupil", rounds=2, episodes=100, epochs=20, processes=1, base=SIMPLE)
+    network = script.imitate("pupil", rounds=2, episodes=100, epochs=20, processes=1, base=SIMPLE, neurons=96)
+    assert [w.shape for w, _ in network.layers] == [(96, OBSERVATION_SIZE), (96, 96), (2, 96)]
     out = capsys.readouterr().out
     assert "teacher alone" in out and "round 1" in out and out.count("pupil   alone") == 2
     # The policy saved is the one returned; alone on the MuJoCo robot, it keeps the ball of the reference scenario

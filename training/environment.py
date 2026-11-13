@@ -11,9 +11,9 @@ An episode (draw_episode) lasts 10 s. Drawn for each one:
     - the sensor: latency of 1 to 5 periods (20 to 100 ms, known to the brain), noise of 0.1 to 1 mm (the camera
       has about 0.2 mm, but rendering its images for millions of periods would take too long);
     - the scenario: ball placed, thrown or pushed (up to the physical limit, the speed that the plate can just
-      stop before the edge); setpoint fixed (at the center half of the time), jumping to another point, or
-      following a circle.
-A ball dropped from above is left for a later version.
+      stop before the edge), or, one time out of DROPPED, dropped from above without speed (MuJoCo robot only:
+      the simple physics has no bounce); setpoint fixed (at the center half of the time), jumping to another
+      point, or following a circle.
 
 Reward of a control period (Reward), from the distance d to the setpoint: half for staying near it,
 1 - (d / 10 cm)², half for the last millimeters, 1 / (1 + d / 5 mm); minus the jerk of the command. A fall ends the
@@ -40,6 +40,9 @@ SETPOINT_RADIUS = 0.08            # (m) fixed setpoints: within this distance of
 CIRCLE_RADIUS = (0.03, 0.08)      # (m)
 CIRCLE_PERIOD = (3.0, 6.0)        # (s) the reference circle: 6 cm in 4 s
 CIRCLE_CENTER = 0.02              # (m) center of the circles: within this distance of the center of the plate
+DROPPED = 4                       # one episode out of 4: ball dropped from above
+DROP_HEIGHT = (0.05, 0.35)        # (m) above the plate (the campaign drops it from 10 to 30.5 cm)
+DROP_RADIUS = 0.10                # (m) dropped within this distance of the center (as in the campaign)
 
 
 def edge_distance(x: float, y: float, direction: float, radius: float) -> float:
@@ -96,6 +99,11 @@ def draw_episode(rng: random.Random, base: Config = None, duration: float = EPIS
         t = rng.uniform(0.1, 0.8) * duration
         speed = share * limit(trajectory(t)[:2], direction)
         pushes = ((t, speed * math.cos(direction), speed * math.sin(direction)),)
+    # Dropped instead (drawn last: the other draws do not depend on it)
+    height, drop_position, dropped = rng.uniform(*DROP_HEIGHT), point(DROP_RADIUS), rng.randrange(DROPPED) == 0
+    if dropped and base.physics == "mujoco":
+        return replace(base, mujoco_params=pm, plate=plate, latency=latency, sigma=sigma, seed=seed,
+                       trajectory=trajectory, start_position=drop_position, start_height=height, duration=duration)
     return replace(base, mujoco_params=pm, plate=plate, latency=latency, sigma=sigma, seed=seed,
                    trajectory=trajectory, start_position=position, start_velocity=velocity, pushes=pushes,
                    duration=duration)

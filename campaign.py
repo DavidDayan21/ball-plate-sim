@@ -968,8 +968,8 @@ def write_brains(rep: Report, runs: dict, data: dict) -> None:
     rep.text("Same cases, same draws, same rules for both brains (sensor, motors, maximum tilt). Return: max "
              "distance between 2 s and 4 s; circle: error from 12 s to 20 s. The AI brain is a neural network of 2 "
              "layers of 128 neurons that drives alone; it learned by imitating the PID brain (training/imitate.py), "
-             "on the synthetic sensor, never with the camera nor with a dropped ball (it has no estimate of the "
-             "flight: the PID aims its bounces). Command at rest at the center (standard deviation of θx from 2.5 s to "
+             "on the synthetic sensor, never with the camera; it has no estimate of the flight of its own: it learned "
+             "from the PID how to tilt the plate under a ball in the air. Command at rest at the center (standard deviation of θx from 2.5 s to "
              f"4 s), 60 ms of latency: {fmt(tremor[''], '°', 3, math.degrees(1))} for the PID, "
              f"{fmt(tremor['_ai'], '°', 3, math.degrees(1))} for the AI.")
 

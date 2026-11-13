@@ -46,7 +46,7 @@ def test_edge_distance():
 
 
 def test_episodes_are_drawn_within_their_ranges():
-    rng, kinds = random.Random(0), set()
+    rng, kinds, kinds_drawn = random.Random(0), set(), []
     for _ in range(400):
         cfg = draw_episode(rng)
         pm, tolerance = cfg.mujoco_params, 1 + 1e-9
@@ -59,18 +59,26 @@ def test_episodes_are_drawn_within_their_ranges():
         assert all(math.hypot(*cfg.trajectory(t)[:2]) <= 0.10 * tolerance for t in np.linspace(0, EPISODE, 21))
         # Thrown or pushed: up to the speed that the plate can just stop before the edge
         ball = "placed"
-        if cfg.start_velocity != (0.0, 0.0):
+        if cfg.start_height > 0:                    # dropped from above, without speed, at most 10 cm from the center
+            ball = "dropped"
+            assert 0.05 <= cfg.start_height <= 0.35 and math.hypot(*cfg.start_position) <= 0.10
+            assert cfg.start_velocity == (0.0, 0.0) and not cfg.pushes
+        elif cfg.start_velocity != (0.0, 0.0):
             ball, origin, (vx, vy) = "thrown", cfg.start_position, cfg.start_velocity
         elif cfg.pushes:
             ((t, vx, vy),), ball = cfg.pushes, "pushed"
             origin = cfg.trajectory(t)[:2]
             assert 0.1 * EPISODE <= t <= 0.8 * EPISODE
-        if ball != "placed":
+        if ball in ("thrown", "pushed"):
             distance = edge_distance(*origin, math.atan2(vy, vx), 0.15)
             assert math.hypot(vx, vy) <= stoppable_speed(distance, math.radians(10), CG) * tolerance
         kinds.add((type(cfg.trajectory), ball))
+        kinds_drawn.append((type(cfg.trajectory), ball))
     assert kinds == {(trajectory, ball) for trajectory in (Point, Step, Circle)
-                     for ball in ("placed", "thrown", "pushed")}
+                     for ball in ("placed", "thrown", "pushed", "dropped")}
+    assert 70 <= sum(ball == "dropped" for _, ball in kinds_drawn) <= 130            # one episode out of 4
+    # The simple physics has no bounce: no dropped ball
+    assert all(draw_episode(rng, SIMPLE).start_height == 0 for _ in range(50))
     # Same state of the generator, same episode
     assert draw_episode(random.Random(5)) == draw_episode(random.Random(5)) != draw_episode(random.Random(6))
 
@@ -133,9 +141,9 @@ def test_fall_ends_the_episode():
 def test_hand_written_policy_keeps_the_ball_of_the_mujoco_robot():
     # MuJoCo robot, 3 episodes: the PD holds the ball near its setpoint (a few mm away: it has no integral);
     # without command, it falls
-    _, rewards, ends = run(BallPlateEnv(seed=3), pd_policy, 1500)
+    _, rewards, ends = run(BallPlateEnv(seed=10), pd_policy, 1500)
     assert (True, False) not in ends and sum(rewards) / len(rewards) > 0.5
-    _, rewards, ends = run(BallPlateEnv(seed=3), do_nothing, 300)
+    _, rewards, ends = run(BallPlateEnv(seed=10), do_nothing, 300)
     assert (True, False) in ends
 
 

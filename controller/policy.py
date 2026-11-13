@@ -18,7 +18,12 @@ Observation: OBSERVATION_SIZE numbers of comparable sizes (LAYOUT gives the plac
                            numbers of comparable sizes (0 while a measurement is missing). One speed alone is
                            mostly noise (0.2 mm of noise on each position: 14 mm/s); the PID filters its own over
                            about as many periods
-    heights                last HEIGHTS measured heights of the ball, newest first, in units of HEIGHT
+    heights                measured heights of the ball above the plate, same measurements, newest first, in
+                           units of HEIGHT: a ball in the air (dropped, bouncing) is seen falling, so that the
+                           plate can be tilted for its next bounce. 0 up to the height where the ball is
+                           considered in the air (15 mm, as for the PID brain): on the plate, a measured height
+                           is only the error of the sensor, which the camera and the synthetic sensor do not
+                           make alike
     commands               last COMMANDS actions, newest first: a measurement N periods late does not show yet the
                            effect of the last N commands, and the older ones explain the measurements kept
     setpoint               (x, y), in units of LENGTH
@@ -43,7 +48,6 @@ import math
 import numpy as np
 
 MEASUREMENTS = 8
-HEIGHTS = 3
 MAX_LATENCY = 5                  # (control periods) 100 ms
 COMMANDS = MAX_LATENCY + MEASUREMENTS - 1
 LENGTH = 0.1                     # (m)
@@ -67,7 +71,7 @@ def _layout(**sizes):
     return slices, start
 
 
-LAYOUT, OBSERVATION_SIZE = _layout(position=2, speeds=2 * (MEASUREMENTS - 1), heights=HEIGHTS,
+LAYOUT, OBSERVATION_SIZE = _layout(position=2, speeds=2 * (MEASUREMENTS - 1), heights=MEASUREMENTS,
                                    commands=2 * COMMANDS, setpoint=2, setpoint_speed=2, setpoint_acceleration=2,
                                    latency=1, received=1, error=2, integral=2)
 
@@ -81,10 +85,11 @@ class PolicyController:
     observe() then act() instead of compute()."""
     model_gain = math.nan            # no model of the ball (simulation/loop.py)
 
-    def __init__(self, policy, theta_max: float, latency: int):
+    def __init__(self, policy, theta_max: float, latency: int, airborne_height: float = 0.015):
         if not 0 <= latency <= MAX_LATENCY:
             raise ValueError(f"Latency of {latency} periods: the policy knows 0 to {MAX_LATENCY}")
         self.policy, self.theta_max, self.latency = policy, theta_max, latency
+        self.airborne_height = airborne_height                            # (m) see heights
         self.measurements = deque(maxlen=MEASUREMENTS)                    # (x, y, height), oldest first
         self.commands = deque([(0.0, 0.0)] * COMMANDS, maxlen=COMMANDS)   # actions, oldest first
         self.received = 0
@@ -102,7 +107,7 @@ class PolicyController:
         observation = np.empty(OBSERVATION_SIZE, dtype=np.float32)
         observation[LAYOUT["position"]] = (m[0][0] / LENGTH, m[0][1] / LENGTH)
         observation[LAYOUT["speeds"]] = [(a[k] - b[k]) / dt / SPEED for a, b in zip(m, m[1:]) for k in range(2)]
-        observation[LAYOUT["heights"]] = [p[2] / HEIGHT for p in m[:HEIGHTS]]
+        observation[LAYOUT["heights"]] = [p[2] / HEIGHT if p[2] > self.airborne_height else 0.0 for p in m]
         observation[LAYOUT["commands"]] = [a for command in reversed(self.commands) for a in command]
         observation[LAYOUT["setpoint"]] = (setpoint[0] / LENGTH, setpoint[1] / LENGTH)
         observation[LAYOUT["setpoint_speed"]] = [_bounded((setpoint[k] - previous[k]) / dt / SPEED,

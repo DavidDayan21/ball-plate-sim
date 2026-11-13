@@ -18,8 +18,10 @@ observation (a regression). Rounds:
 The policy of the last round is the brain: it drives alone, without the teacher.
 
 After every round, the pupil alone is compared with the teacher alone: on the reference scenario of the campaign
-(training/evaluation.py), and on VALIDATION episodes that are never learned, the same for both (share of the
-episodes where the ball falls, mean distance to the setpoint).
+(training/evaluation.py), on VALIDATION episodes that are never learned, the same for both (share of the
+episodes where the ball falls, among the dropped balls and among the others; mean distance to the setpoint), and
+on the reference scenario seen by the camera, which no lesson uses (circle error, standard deviation of the
+command at rest from 2.5 s to 4 s).
 
 Written in results/training/<name>/ (ignored by git): policy.npz, the network after the last round finished.
 """
@@ -36,14 +38,15 @@ import torch
 from controller.network import Network
 from controller.policy import OBSERVATION_SIZE, PolicyController
 from simulation.config import Config
-from simulation.loop import Simulation, pid_brain, policy_brain
+from simulation.loop import Simulation, pid_brain, policy_brain, simulate
+from simulation.metrics import theta_std, tracking_error_rms
 from simulation.parallel import execute
 from training.environment import draw_episode
 from training.evaluation import evaluate
 
 FOLDER = Path("results") / "training"
-HIDDEN = (128, 128)                  # neurons of the two hidden layers, as in training/train.py
-VALIDATION = 300                     # episodes
+NEURONS = 128                        # in each of the two hidden layers, as in training/train.py
+VALIDATION = 600                     # episodes
 DEVIATION = 0.1                      # round 0: standard deviation added to the commands of the teacher, in units
                                      # of the maximum tilt (1°)
 BATCH = 4096
@@ -61,7 +64,7 @@ class Lesson:
 
     def __init__(self, cfg: Config, policy=None, deviation: float = 0.0, rng: random.Random = None):
         self.teacher = pid_brain(cfg)
-        self.pupil = PolicyController(policy, cfg.theta_max, cfg.latency)
+        self.pupil = PolicyController(policy, cfg.theta_max, cfg.latency, cfg.airborne_height)
         self.deviation, self.rng = deviation, rng
         self.observations, self.targets = [], []
 
@@ -82,10 +85,11 @@ class Lesson:
 def play(job):
     """Lessons of several episodes. job = (seeds, layers, deviation, base): one episode per seed, drawn from the
     Config `base`; layers: weights of the network of the pupil, which drives (None: the teacher drives).
-    Returns (observations, targets, falls, mean distance to the setpoint in m over the periods played)."""
+    Returns (observations, targets, counts); counts: episodes, falls, episodes with a dropped ball, falls among
+    them, sum of the distances to the setpoint (m) over the periods played, periods played."""
     seeds, layers, deviation, base = job
     policy = None if layers is None else Network(layers)
-    observations, targets, falls, distance, periods = [], [], 0, 0.0, 0
+    observations, targets, counts = [], [], np.zeros(6)
     for seed in seeds:
         rng = random.Random(seed)
         sim = Simulation(draw_episode(rng, base), lambda cfg: Lesson(cfg, policy, deviation, rng))
@@ -95,34 +99,32 @@ def play(job):
         r = sim.finish()
         observations += sim.brain.observations
         targets += sim.brain.targets
-        falls += r.fallen
-        distance += sum(math.hypot(x - xr, y - yr) for x, y, xr, yr in zip(r.x, r.y, r.x_ref, r.y_ref))
-        periods += len(r.x)
+        dropped = sim.cfg.start_height > 0
+        distance = sum(math.hypot(x - xr, y - yr) for x, y, xr, yr in zip(r.x, r.y, r.x_ref, r.y_ref))
+        counts += (1, r.fallen, dropped, dropped and r.fallen, distance, len(r.x))
     return (np.array(observations, dtype=np.float32).reshape(-1, OBSERVATION_SIZE),
-            np.array(targets, dtype=np.float32).reshape(-1, 2), falls, distance / max(1, periods))
+            np.array(targets, dtype=np.float32).reshape(-1, 2), counts)
 
 
 def lessons(seeds, layers, deviation: float, processes: int, base: Config = None):
-    """play() over all the seeds, spread over the processes. Returns (observations, targets, share of the
-    episodes where the ball fell, mean distance to the setpoint)."""
+    """play() over all the seeds, spread over the processes. Returns (observations, targets, counts), the
+    counts summed over the episodes."""
     seeds = list(seeds)
     chunk = max(1, math.ceil(len(seeds) / (4 * processes)))
     jobs = [(seeds[k:k + chunk], layers, deviation, base) for k in range(0, len(seeds), chunk)]
     out = execute(play, jobs, processes)
-    weights = [len(job[0]) for job in jobs]
-    return (np.concatenate([o[0] for o in out]), np.concatenate([o[1] for o in out]),
-            sum(o[2] for o in out) / len(seeds), float(np.average([o[3] for o in out], weights=weights)))
+    return np.concatenate([o[0] for o in out]), np.concatenate([o[1] for o in out]), sum(o[2] for o in out)
 
 
 class Pupil:
     """The network being learned (PyTorch). Its inputs are centered and scaled with the statistics of the first
     lessons; layers() gives the weights of the same function for controller/network.py."""
 
-    def __init__(self, observations: np.ndarray, seed: int = 0):
+    def __init__(self, observations: np.ndarray, neurons: int = NEURONS, seed: int = 0):
         torch.manual_seed(seed)
         self.mean = torch.as_tensor(observations.mean(axis=0))
         self.scale = torch.as_tensor(np.maximum(observations.std(axis=0), 0.01))
-        sizes = (OBSERVATION_SIZE, *HIDDEN, 2)
+        sizes = (OBSERVATION_SIZE, neurons, neurons, 2)
         modules = []
         for inputs, outputs in zip(sizes, sizes[1:]):
             modules += [torch.nn.Linear(inputs, outputs), torch.nn.Tanh()]
@@ -159,29 +161,37 @@ class Pupil:
 
 def report(who: str, layers, processes: int, base: Config, seed: int) -> None:
     """Prints how the brain alone does (layers: the pupil with these weights; None: the teacher)."""
-    marks = evaluate(pid_brain if layers is None else policy_brain(Network(layers)))
+    brain = pid_brain if layers is None else policy_brain(Network(layers))
+    marks = evaluate(brain)
+    camera = simulate(Config(sensor="camera", latency=3), brain=brain)
+    seen = ("the ball falls" if camera.fallen else f"circle {1000 * tracking_error_rms(camera, 12, 20):.2f} mm, "
+            f"command at rest {math.degrees(theta_std(camera, 2.5, 4)):.3f}°")
     seeds = range(seed * 10_000_000 + 9_000_000, seed * 10_000_000 + 9_000_000 + VALIDATION)
-    _, _, falls, distance = lessons(seeds, layers, 0.0, processes, base)
+    episodes, falls, dropped, dropped_falls, distance, periods = lessons(seeds, layers, 0.0, processes, base)[2]
     print(f"  {who} alone | return {marks['return_20ms_mm']:.2f} mm, circle {marks['circle_20ms_mm']:.2f} mm, tremor "
           f"{marks['tremor_20ms_deg']:.2f}°; at 60 ms: {marks['return_60ms_mm']:.2f} mm, "
           f"{marks['circle_60ms_mm']:.2f} mm, {marks['tremor_60ms_deg']:.2f}° | validation: falls "
-          f"{100 * falls:.1f} %, mean distance {1000 * distance:.2f} mm", flush=True)
+          f"{100 * falls / episodes:.1f} % ({dropped_falls:.0f} of the {dropped:.0f} dropped balls, "
+          f"{falls - dropped_falls:.0f} of the {episodes - dropped:.0f} others), mean distance "
+          f"{1000 * distance / periods:.2f} mm | with the camera, 60 ms: {seen}", flush=True)
 
 
 def imitate(name: str, rounds: int, episodes: int, epochs: int, processes: int, base: Config = None,
-            seed: int = 0) -> Network:
-    """Rounds of `episodes` lessons each (see the top of the file), learned during `epochs` epochs per round."""
+            neurons: int = NEURONS, seed: int = 0) -> Network:
+    """Rounds of `episodes` lessons each (see the top of the file), learned during `epochs` epochs per round by
+    a network of 2 hidden layers of `neurons` neurons."""
     folder = FOLDER / name
     folder.mkdir(parents=True, exist_ok=True)
     torch.set_num_threads(processes)
     start, first = time.time(), seed * 10_000_000
-    print(f"Imitation {folder}: {rounds} rounds of {episodes} episodes on {processes} processes.")
+    print(f"Imitation {folder}: {rounds} rounds of {episodes} episodes on {processes} processes, network of "
+          f"2 layers of {neurons} neurons.")
     report("teacher", None, processes, base, seed)
     half = episodes // 2
     plain = lessons(range(first, first + half), None, 0.0, processes, base)
     disturbed = lessons(range(first + half, first + episodes), None, DEVIATION, processes, base)
     observations, targets = (np.concatenate(pair) for pair in zip(plain[:2], disturbed[:2]))
-    pupil, network = Pupil(observations, seed), None
+    pupil, network = Pupil(observations, neurons, seed), None
     for k in range(rounds):
         if k > 0:                                       # the pupil drives
             seeds = range(first + k * episodes, first + (k + 1) * episodes)
@@ -203,5 +213,6 @@ if __name__ == "__main__":
     parser.add_argument("--episodes", type=int, default=1000, help="episodes of 10 s per round")
     parser.add_argument("--epochs", type=int, default=30, help="passes over all the lessons at every round")
     parser.add_argument("--processes", type=int, default=max(1, (os.cpu_count() or 2) // 2))
+    parser.add_argument("--neurons", type=int, default=NEURONS, help="neurons in each of the two hidden layers")
     args = parser.parse_args()
-    imitate(args.name, args.rounds, args.episodes, args.epochs, args.processes)
+    imitate(args.name, args.rounds, args.episodes, args.epochs, args.processes, neurons=args.neurons)

@@ -97,7 +97,7 @@ def learned_policy(name: str) -> Network:
 
 def learned_brain(cfg: Config) -> PolicyController:
     """The AI brain: driven by the learned policy cfg.brain."""
-    return PolicyController(learned_policy(cfg.brain), cfg.theta_max, cfg.latency)
+    return PolicyController(learned_policy(cfg.brain), cfg.theta_max, cfg.latency, cfg.airborne_height)
 
 
 class Simulation:
@@ -229,7 +229,7 @@ class Simulation:
 
 def policy_brain(policy=None):
     """Brain driven by `policy` (controller/policy.py), as a function cfg -> brain for Simulation and simulate."""
-    return lambda cfg: PolicyController(policy, cfg.theta_max, cfg.latency)
+    return lambda cfg: PolicyController(policy, cfg.theta_max, cfg.latency, cfg.airborne_height)
 
 
 def simulate(cfg: Config, view: bool = False, brain=None) -> Results:

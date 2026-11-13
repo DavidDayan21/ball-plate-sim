@@ -251,36 +251,36 @@ Other gaps, traced to their cause:
 | Objective | PID brain | Met | AI brain | Met | Target |
 |---|---|---|---|---|---|
 | Thrown ball caught (±10°) | 93 ± 1 % | yes | 93 ± 1 % | yes | ≥ 90 % of the physical limit |
-| Circle with 60 ms of latency | 0.90 ± 0.02 mm | yes | 1.03 ± 0.02 mm | yes | < 2 mm |
-| Back to the center in less than 2 s | 3.39 ± 0.03 mm (calibration error: none) | yes | 3.12 ± 0.03 mm (calibration error: none) | yes | ≤ 5 mm between 2 s and 4 s |
-| No fall in the robustness variants | 0/90 falls | yes | 10/90 falls | **no** | 0 |
+| Circle with 60 ms of latency | 0.90 ± 0.02 mm | yes | 1.15 ± 0.02 mm | yes | < 2 mm |
+| Back to the center in less than 2 s | 3.39 ± 0.03 mm (calibration error: none) | yes | 2.65 ± 0.03 mm (calibration error: none) | yes | ≤ 5 mm between 2 s and 4 s |
+| No fall in the robustness variants | 0/90 falls | yes | 0/90 falls | yes | 0 |
 
 | Case | Fallen (PID) | PID brain | Fallen (AI) | AI brain | Δ AI - PID |
 |---|---|---|---|---|---|
-| Thrown ball (±10°), share of the physical limit | - | 93 ± 1 % | - | 93 ± 1 % | -0.3 ± 0.3 % |
-| Push at the center, share of the physical limit | - | 93 ± 1 % | - | 92 ± 0 % | **-0.7 ± 0.3 %** |
-| Nominal: return | 0/10 | 1.28 ± 0.05 mm | 0/10 | 1.09 ± 0.03 mm | **-0.18 ± 0.02 mm** |
-| Nominal: circle | 0/10 | 0.78 ± 0.01 mm | 0/10 | 1.08 ± 0.01 mm | **+0.30 ± 0.00 mm** |
-| Latency 60 ms: return | 0/10 | 1.36 ± 0.05 mm | 0/10 | 0.81 ± 0.05 mm | **-0.55 ± 0.03 mm** |
-| Latency 60 ms: circle | 0/10 | 0.90 ± 0.02 mm | 0/10 | 1.03 ± 0.02 mm | **+0.13 ± 0.01 mm** |
-| Latency 100 ms: return | 0/10 | 1.06 ± 0.07 mm | 0/10 | 0.88 ± 0.11 mm | **-0.18 ± 0.04 mm** |
-| Latency 100 ms: circle | 0/10 | 1.17 ± 0.03 mm | 0/10 | 1.14 ± 0.04 mm | -0.03 ± 0.02 mm |
-| Solid ball (k = 2/5): return | 0/10 | 2.74 ± 0.08 mm | 0/10 | 1.93 ± 0.14 mm | **-0.81 ± 0.04 mm** |
-| Solid ball (k = 2/5): circle | 0/10 | 0.68 ± 0.01 mm | 0/10 | 1.71 ± 0.01 mm | **+1.03 ± 0.00 mm** |
-| Ball 10× heavier (27 g): return | 0/10 | 1.27 ± 0.05 mm | 0/10 | 1.11 ± 0.04 mm | **-0.16 ± 0.02 mm** |
+| Thrown ball (±10°), share of the physical limit | - | 93 ± 1 % | - | 93 ± 1 % | -0.6 ± 0.3 % |
+| Push at the center, share of the physical limit | - | 93 ± 1 % | - | 94 ± 1 % | **+0.7 ± 0.3 %** |
+| Nominal: return | 0/10 | 1.28 ± 0.05 mm | 0/10 | 0.78 ± 0.03 mm | **-0.50 ± 0.02 mm** |
+| Nominal: circle | 0/10 | 0.78 ± 0.01 mm | 0/10 | 1.10 ± 0.01 mm | **+0.33 ± 0.00 mm** |
+| Latency 60 ms: return | 0/10 | 1.36 ± 0.05 mm | 0/10 | 0.78 ± 0.05 mm | **-0.58 ± 0.02 mm** |
+| Latency 60 ms: circle | 0/10 | 0.90 ± 0.02 mm | 0/10 | 1.15 ± 0.02 mm | **+0.25 ± 0.01 mm** |
+| Latency 100 ms: return | 0/10 | 1.06 ± 0.07 mm | 0/10 | 0.90 ± 0.09 mm | **-0.15 ± 0.05 mm** |
+| Latency 100 ms: circle | 0/10 | 1.17 ± 0.03 mm | 0/10 | 1.34 ± 0.02 mm | **+0.17 ± 0.01 mm** |
+| Solid ball (k = 2/5): return | 0/10 | 2.74 ± 0.08 mm | 0/10 | 1.07 ± 0.06 mm | **-1.67 ± 0.03 mm** |
+| Solid ball (k = 2/5): circle | 0/10 | 0.68 ± 0.01 mm | 0/10 | 1.49 ± 0.01 mm | **+0.81 ± 0.00 mm** |
+| Ball 10× heavier (27 g): return | 0/10 | 1.27 ± 0.05 mm | 0/10 | 0.78 ± 0.05 mm | **-0.49 ± 0.02 mm** |
 | Ball 10× heavier (27 g): circle | 0/10 | 0.78 ± 0.01 mm | 0/10 | 1.15 ± 0.01 mm | **+0.37 ± 0.00 mm** |
-| Friction μ = 0.2: return | 0/10 | 1.27 ± 0.04 mm | 0/10 | 1.09 ± 0.03 mm | **-0.18 ± 0.02 mm** |
-| Friction μ = 0.2: circle | 0/10 | 0.77 ± 0.01 mm | 0/10 | 1.09 ± 0.01 mm | **+0.31 ± 0.00 mm** |
-| Friction μ = 0.02: return | 0/10 | 3.14 ± 0.08 mm | 0/10 | 2.53 ± 0.13 mm | **-0.60 ± 0.05 mm** |
-| Friction μ = 0.02: circle | 0/10 | 0.77 ± 0.01 mm | 0/10 | 1.08 ± 0.01 mm | **+0.31 ± 0.00 mm** |
-| Plate 2× heavier (0.5 kg): return | 0/10 | 1.26 ± 0.04 mm | 0/10 | 1.09 ± 0.05 mm | **-0.17 ± 0.02 mm** |
-| Plate 2× heavier (0.5 kg): circle | 0/10 | 0.78 ± 0.01 mm | 0/10 | 1.11 ± 0.01 mm | **+0.33 ± 0.01 mm** |
-| No calibration error (0°, 0°): return | 0/10 | 3.39 ± 0.03 mm | 0/10 | 3.12 ± 0.03 mm | **-0.27 ± 0.01 mm** |
-| No calibration error (0°, 0°): circle | 0/10 | 0.78 ± 0.01 mm | 0/10 | 1.01 ± 0.01 mm | **+0.22 ± 0.01 mm** |
-| Calibration error ×2 (1°, -0.6°): return | 0/10 | 1.80 ± 0.02 mm | 0/10 | 1.84 ± 0.03 mm | **+0.04 ± 0.01 mm** |
-| Calibration error ×2 (1°, -0.6°): circle | 0/10 | 0.78 ± 0.01 mm | 0/10 | 1.25 ± 0.01 mm | **+0.48 ± 0.00 mm** |
-| Ball dropped from 30.5 cm (ITTF height): return | 0/10 | 13.67 ± 1.83 mm | 10/10 | - | - |
-| Ball dropped from 30.5 cm (ITTF height): circle | 0/10 | 0.78 ± 0.01 mm | 10/10 | - | - |
+| Friction μ = 0.2: return | 0/10 | 1.27 ± 0.04 mm | 0/10 | 0.78 ± 0.03 mm | **-0.49 ± 0.02 mm** |
+| Friction μ = 0.2: circle | 0/10 | 0.77 ± 0.01 mm | 0/10 | 1.10 ± 0.01 mm | **+0.33 ± 0.00 mm** |
+| Friction μ = 0.02: return | 0/10 | 3.14 ± 0.08 mm | 0/10 | 1.93 ± 0.02 mm | **-1.21 ± 0.03 mm** |
+| Friction μ = 0.02: circle | 0/10 | 0.77 ± 0.01 mm | 0/10 | 1.12 ± 0.01 mm | **+0.35 ± 0.00 mm** |
+| Plate 2× heavier (0.5 kg): return | 0/10 | 1.26 ± 0.04 mm | 0/10 | 0.68 ± 0.07 mm | **-0.58 ± 0.03 mm** |
+| Plate 2× heavier (0.5 kg): circle | 0/10 | 0.78 ± 0.01 mm | 0/10 | 1.12 ± 0.02 mm | **+0.34 ± 0.00 mm** |
+| No calibration error (0°, 0°): return | 0/10 | 3.39 ± 0.03 mm | 0/10 | 2.65 ± 0.03 mm | **-0.73 ± 0.01 mm** |
+| No calibration error (0°, 0°): circle | 0/10 | 0.78 ± 0.01 mm | 0/10 | 1.17 ± 0.01 mm | **+0.39 ± 0.00 mm** |
+| Calibration error ×2 (1°, -0.6°): return | 0/10 | 1.80 ± 0.02 mm | 0/10 | 1.77 ± 0.04 mm | **-0.03 ± 0.01 mm** |
+| Calibration error ×2 (1°, -0.6°): circle | 0/10 | 0.78 ± 0.01 mm | 0/10 | 1.46 ± 0.02 mm | **+0.68 ± 0.01 mm** |
+| Ball dropped from 30.5 cm (ITTF height): return | 0/10 | 13.67 ± 1.83 mm | 0/10 | 16.99 ± 3.72 mm | **+3.32 ± 1.05 mm** |
+| Ball dropped from 30.5 cm (ITTF height): circle | 0/10 | 0.78 ± 0.01 mm | 0/10 | 1.14 ± 0.02 mm | **+0.37 ± 0.01 mm** |
 
-Same cases, same draws, same rules for both brains (sensor, motors, maximum tilt). Return: max distance between 2 s and 4 s; circle: error from 12 s to 20 s. The AI brain is a neural network of 2 layers of 128 neurons that drives alone; it learned by imitating the PID brain (training/imitate.py), on the synthetic sensor, never with the camera nor with a dropped ball (it has no estimate of the flight: the PID aims its bounces). Command at rest at the center (standard deviation of θx from 2.5 s to 4 s), 60 ms of latency: 0.159 ± 0.040° for the PID, 0.091 ± 0.011° for the AI.
+Same cases, same draws, same rules for both brains (sensor, motors, maximum tilt). Return: max distance between 2 s and 4 s; circle: error from 12 s to 20 s. The AI brain is a neural network of 2 layers of 128 neurons that drives alone; it learned by imitating the PID brain (training/imitate.py), on the synthetic sensor, never with the camera; it has no estimate of the flight of its own: it learned from the PID how to tilt the plate under a ball in the air. Command at rest at the center (standard deviation of θx from 2.5 s to 4 s), 60 ms of latency: 0.159 ± 0.040° for the PID, 0.129 ± 0.031° for the AI.
 
