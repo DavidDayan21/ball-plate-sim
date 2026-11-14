@@ -31,7 +31,7 @@ import time
 from controller.policy import LAYOUT, LENGTH, MAX_LATENCY, OBSERVATION_SIZE, SPEED
 from simulation.config import G, Circle, Config, Point, Step
 from simulation.loop import Simulation, policy_brain
-from simulation.metrics import stoppable_speed
+from simulation.metrics import edge_distance, stoppable_speed
 from simulation.parallel import execute
 
 EPISODE = 10.0                    # (s)
@@ -43,13 +43,6 @@ CIRCLE_CENTER = 0.02              # (m) center of the circles: within this dista
 DROPPED = 4                       # one episode out of 4: ball dropped from above
 DROP_HEIGHT = (0.05, 0.35)        # (m) above the plate (the campaign drops it from 10 to 30.5 cm)
 DROP_RADIUS = 0.10                # (m) dropped within this distance of the center (as in the campaign)
-
-
-def edge_distance(x: float, y: float, direction: float, radius: float) -> float:
-    """Distance from (x, y) to the edge of a plate of this radius, along the angle `direction`."""
-    ux, uy = math.cos(direction), math.sin(direction)
-    along = x * ux + y * uy
-    return -along + math.sqrt(along ** 2 + radius ** 2 - x * x - y * y)
 
 
 def draw_episode(rng: random.Random, base: Config = None, duration: float = EPISODE) -> Config:

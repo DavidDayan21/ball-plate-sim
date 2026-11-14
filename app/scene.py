@@ -20,6 +20,9 @@ MAX_SIZE = (2560, 1600)         # (width, height) of the largest image rendered,
 # 13 to 46 % more than with 4; a shadow map of 2048 instead of 4096, or no fog, saves nothing measurable.
 ANTIALIASING = 4                # samples
 SHADOW_MAP = 4096               # (pixels) side of the map of the shadows
+SHADOW_CLIP = 5.0               # (m) half-width of the floor covered by the map; beyond, the floor gets speckled
+                                # (measured: dots beyond 0.6 m with 0.6, none within 5 m with 5, where the camera
+                                # can follow a fallen ball; 2.4 mm per pixel of the map, the shadows stay sharp)
 
 
 @dataclass(frozen=True)
@@ -69,7 +72,7 @@ def display_xml(cfg: Config, style: SceneStyle) -> str:
     <global azimuth="90" elevation="-30" offwidth="{MAX_SIZE[0]}" offheight="{MAX_SIZE[1]}"/>
     <quality shadowsize="{SHADOW_MAP}" offsamples="{ANTIALIASING}"/>
     <headlight ambient="{_rgb([s.ambient] * 3)}" diffuse="{_rgb([0.8 * s.ambient] * 3)}" specular="0.05 0.05 0.05"/>
-    <map fogstart="1.0" fogend="3.0" znear="0.01" zfar="20" haze="0.4" shadowclip="0.6"/>
+    <map fogstart="4" fogend="10" znear="0.01" zfar="30" haze="0.4" shadowclip="{SHADOW_CLIP}"/>
     <rgba fog="{_rgb(s.sky)} 1" haze="{_rgb(s.sky)} 1"/>
   </visual>
   <asset>

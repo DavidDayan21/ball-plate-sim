@@ -99,12 +99,18 @@ class Session:
     # --- Settings ----------------------------------------------------------------------------
     def _enable_ground(self) -> None:
         """The ground stops the fallen ball (without it, the ball would fall forever).
-        Collision bit 2: the ground only touches the ball, never the plate."""
+        Collision bit 2: the ground only touches the ball, never the plate. MuJoCo first sorts the pairs of bodies
+        with masks of the bodies (body_contype, body_conaffinity: the union of those of their geoms, computed when
+        the model is compiled): they are updated too, otherwise the pair world-ball is discarded before the geoms
+        are even compared, and the ball falls through the ground."""
         m = self.phys.model
         ground, ball = m.geom("ground").id, m.geom("ball").id
         m.geom_contype[ground] = 2
         m.geom_conaffinity[ground] = 2
         m.geom_conaffinity[ball] |= 2
+        m.body_contype[m.geom_bodyid[ground]] |= 2
+        m.body_conaffinity[m.geom_bodyid[ground]] |= 2
+        m.body_conaffinity[m.geom_bodyid[ball]] |= 2
 
     def _apply_config(self, **changes) -> None:
         self.cfg = replace(self.cfg, **changes)
@@ -176,6 +182,15 @@ class Session:
     def center_ball(self) -> None:
         """Ball placed motionless at the center."""
         self.throw(0.0, 0.0, action="center")
+
+    def push(self, dvx: float, dvy: float) -> None:
+        """Pushes the ball: adds (Δvx, Δvy) (m/s, horizontal) to its velocity, with the matching rolling. A new
+        attempt starts; the brain keeps its memory, as for a push of the hand."""
+        if self.state == "fallen":
+            self.message = "The ball has fallen: use Throw, Drop or Center."
+            return
+        self._new_attempt("push", dict(dvx_m_s=dvx, dvy_m_s=dvy))
+        self.phys.push(dvx, dvy)
 
     def free_attempt(self) -> None:
         """Records without touching the ball (to push it with the mouse, change the setpoint...)."""

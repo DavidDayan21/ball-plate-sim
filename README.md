@@ -21,7 +21,7 @@ Building the real robot remains a distant goal: the code will then be ready.
 | A. Reliable measurements | Bit-exact regression check, spread over N draws, robust metrics, simple physics → MuJoCo gap | Done |
 | B. PID brain | Objectives in the report, integral limited to the neighborhood of the setpoint, aimed bounce of a dropped ball, thrown ball (start with the speed, fast motor ramps for the large moves), gains tuned by LQR, adaptive control (model gain c·g estimated online), every gap of more than 0.5 mm explained (report, section 12) | Done |
 | C. Local AI brain | A policy (neural network) learned by reinforcement in MuJoCo, same rules as the PID (sensor, motors, ±10°). Done: interchangeable brains, training environment, training by reinforcement, imitation of the PID brain: the policy alone then meets the four objectives, dropped ball included (campaign section 13, which compares both brains: return to the center better than the PID, circle about 0.2 mm behind). The sandbox can be driven by either brain. Left for later: the gaps of more than 0.5 mm between the two brains explained (circle with a large calibration error of the plate, return to the center), then reinforcement from the imitating policy, to go beyond the PID | Done |
-| D. Software for the general public | An application installed with a double click, for Windows and Mac: the robot in 3D, driven by either brain; throws, drops and pushes with the mouse, drawn trajectories, choice of the ball, latency and friction, both robots side by side; in English and French. Done: prototype (`python -m app`): 3D view in its own window, throw, drop, center, choice of the brain, pause, English and French; visual foundations: light and dark themes, robot dressed for display (pedestal, motors), panel of measurements | **In progress** |
+| D. Software for the general public | An application installed with a double click, for Windows and Mac: the robot in 3D, driven by either brain; throws, drops and pushes with the mouse, drawn trajectories, choice of the ball, latency and friction, both robots side by side; in English and French. Done: prototype (`python -m app`): 3D view in its own window, throw, drop, center, choice of the brain, pause, English and French; visual foundations: light and dark themes, robot dressed for display (pedestal, motors), panel of measurements; throws, drops and pushes with the mouse, physical limit of a throw, setpoints (center, circle, square) | **In progress** |
 | E. Construction (distant) | Design, real-world defects, complete error budget | Later |
 
 Quantified goals for both brains: thrown ball caught up to at least 90 % of the physical limit,
@@ -39,6 +39,7 @@ app/                     The software for the general public (interface only, on
   theme.py               Light and dark themes: colors, font, style sheet, colors of the 3D scene
   widgets.py             Building blocks: card, segmented control, readout, curve
   readouts.py            Measurements of the panel, read from the session
+  gestures.py            Mouse gestures on the plate: throws, drops, pushes; physical limit of a throw
   benchmark.py           Cost of a frame on this computer: simulation, 3D rendering, drawing (python -m app.benchmark)
   i18n.py, locales/      Texts of the interface, one file per language (English, French)
   fonts/                 Inter, the font of the interface (SIL Open Font License, OFL.txt)
@@ -60,7 +61,7 @@ simulation/
   motor.py               Stepper motor: max speed, microsteps, limits, ramps
   sensor.py              Synthetic sensor: noise + latency
   camera.py              Virtual camera: rendering, OpenCV detection, projection, height of the ball
-  metrics.py             Metrics: tracking error, return to the center, command jitter
+  metrics.py             Metrics: tracking error, return to the center, command jitter; physical limit of a throw
   session.py             Sandbox: series of attempts, automatic end, CSV recording; pace of real time
   parallel.py            Independent simulations spread over several processes
 training/
@@ -230,14 +231,31 @@ by small steps, millions of times.
 | Panel | Content |
 |---|---|
 | Brain | PID or AI; changing it ends the current attempt (an attempt has a single brain) |
-| Ball | Throw (toward the center from 10 cm away, at 0.4 m/s), Drop (from 30.5 cm above the center), Center, Pause |
+| Ball | Tools Throw, Drop and Push (active until clicked again), Center, Pause; the height of a drop (0 to 40 cm) |
+| Setpoint | Center, circle (6 cm in 4 s) or square (10 cm sides at 5 cm/s): where the brain must hold the ball |
 | Measurements | Distance to the setpoint, speed and height of the ball, tilt of the plate (x, y), largest torque of the 3 motors; the distance over the last 10 s. True values of the simulation, not those measured by the sensor of the robot |
 | Last attempt | Its action, its brain and its result (stabilized in, fell after...) |
 | Settings | Light or dark theme (that of the system at startup), English or French (that of the system) |
 
 Over the 3D view: what the robot is doing, the position of the ball, the simulated time with its speed compared
-with real time and the frames per second, the x and y axes of the plate (they turn with the view). Mouse: left
-drag turns the view, the wheel zooms. The attempts follow the rules of the sandbox below, without being recorded.
+with real time and the frames per second, the x and y axes of the plate (they turn with the view), the setpoint
+and its path. The attempts follow the rules of the sandbox below, without being recorded.
+
+Mouse: the wheel zooms; a drag turns the view, unless a tool is active and the drag starts on the plate:
+
+| Tool | Gesture | Effect |
+|---|---|---|
+| Throw | Drag from where the ball starts | The ball starts there, rolling along the arrow. Speed = length of the arrow / 0.2 s (10 cm: 0.5 m/s), up to 1.5 m/s. While dragging: the speed, and the physical limit of this throw √(2·c·g·sin θmax·d), d the distance to the edge along the arrow (nominal ball); green within it, red beyond (allowed, to see the ball fall) |
+| Drop | Click where the ball falls | The ball is dropped from the height chosen, without speed |
+| Push | Drag from the ball | Its velocity changes by the arrow (same scale); the brain keeps its memory |
+
+When the ball falls, the camera glides to look between the robot and the ball and moves back to keep both in view
+(up to 2.5 m away); after 2 s of simulated time, the ball comes back to the center of the plate, and the camera to
+where it was. The pause stops all of it.
+
+The point under the mouse comes from the camera (`app/view3d.Camera`): the ray of the pixel, computed as MuJoCo
+computes its free camera, meets the plane of the plate surface. A test checks that the pixel computed for the
+center of the ball is where MuJoCo draws it (within 2 pixels).
 
 The robot shown is a copy of the MuJoCo model of the physics, dressed for display (`app/scene.py`): materials,
 lights, a floor that continues the background of the window, a pedestal, stepper motors
@@ -246,8 +264,9 @@ without dynamics. The moving parts keep the sizes of the physics model, so the p
 simulated; the physics, and the virtual camera that renders it, see nothing of this (checked by the tests and
 the bit-exact regression check). Quality of the rendering, from the measurements of `python -m app.benchmark` on
 an integrated graphics card (Intel Arc): antialiasing with 4 samples (8 cost 13 to 46 % more), shadow map of 4096
-pixels and fog (making them cheaper saves nothing measurable). The orange of the ball marks what is selected (brain, theme, language, pause);
-the buttons that act are neutral.
+pixels and fog (making them cheaper saves nothing measurable). The shadow map covers 5 m around the robot: with
+less, the floor got speckled where the camera looked beyond it (measured). The orange of the ball marks what is
+selected (brain, theme, language, pause); the buttons that act are neutral.
 
 `python -m app.benchmark` measures what a frame costs on the computer where it runs: the simulation, the 3D
 rendering (with the image read back) for three sizes of the view and several qualities, the drawing of the image
@@ -277,7 +296,7 @@ has no latency compensation to switch off).
 | Double-click on the ball then Ctrl + right drag (3D view) | Pushes the ball: a "disturbance" attempt starts by itself as soon as the ball moves more than 2 cm away |
 
 An attempt ends when the ball falls, stays within 1 cm of the setpoint for 2 s (stabilized),
-lasts longer than 30 s, or when another one starts. Each attempt is recorded in
+lasts longer than 30 s, or when another one starts. A fallen ball lands on the ground, which touches nothing else. Each attempt is recorded in
 `results/attempts/<date_time>/`: `attempt_001.csv`… (all the measurements at 50 Hz) and `summary.csv`
 (one row per attempt: parameters, brain, result, stabilization time, bounces, edge margin…).
 International CSV format: `,` separator, decimal point, UTF-8 encoding (no BOM).

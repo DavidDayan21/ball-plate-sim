@@ -147,3 +147,29 @@ def test_real_time():
     t = s.t
     clock.advance(s, 14.02)                                # in pause, the simulation waits
     assert s.t == t
+
+
+def test_push(tmp_path):
+    s = Session(folder=tmp_path)
+    s.center_ball()
+    advance(s, 3.0)
+    s.push(0.3, 0.0)
+    assert s.attempt["action"] == "push" and s.attempt["params"] == dict(dvx_m_s=0.3, dvy_m_s=0.0)
+    assert s.phys.ball_velocity()[0] == pytest.approx(0.3, abs=0.02)
+    advance(s, 6.0)
+    assert s.summary[-1]["action"] == "push" and s.summary[-1]["result"] == "stabilized"
+    s.throw(0.10, 180, speed=1.0)                          # too fast: falls
+    advance(s, 3.0)
+    assert s.state == "fallen"
+    s.push(0.3, 0.0)                                       # a fallen ball is not pushed
+    assert s.attempt is None and s.state == "fallen"
+
+
+def test_the_ground_stops_the_fallen_ball(tmp_path):
+    s = Session(folder=tmp_path)
+    s.throw(0.10, 180, speed=1.2)                          # falls beyond the edge, lands on the ground
+    advance(s, 3.0)
+    ground = s.phys.model.geom("ground").id
+    z = s.phys.data.body("ball").xpos[2]
+    assert s.state == "fallen"
+    assert z == pytest.approx(s.phys.model.geom_pos[ground][2] + s.cfg.plate.ball_radius, abs=0.03)

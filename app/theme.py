@@ -2,7 +2,8 @@
 widgets and the colors of the 3D scene. The widgets only name their role (objectName), never a color.
 
 Panel on the side and detailed measurements of an instrument; the orange of the ping-pong ball as the accent
-color, kept for what is selected (brain, theme, language, pause): the buttons that act are neutral. Font: Inter (app/fonts/, SIL Open Font License), shipped with the software so that it looks the same
+color, kept for what is selected (brain, tool, setpoint, theme, language, pause): the buttons that act are
+neutral. Font: Inter (app/fonts/, SIL Open Font License), shipped with the software so that it looks the same
 on Windows and Mac.
 """
 from pathlib import Path
@@ -55,6 +56,11 @@ def stylesheet(mode: str) -> str:
     QWidget {{ font-family: "{FONT}"; font-size: 13px; color: {c['text']}; }}
     QMainWindow, #window {{ background: {c['bg']}; }}
     QScrollArea {{ background: transparent; border: none; }}
+    QScrollBar:vertical {{ background: transparent; width: 8px; margin: 0; }}
+    QScrollBar::handle:vertical {{ background: {c['border']}; border-radius: 4px; min-height: 32px; }}
+    QScrollBar::handle:vertical:hover {{ background: {c['text3']}; }}
+    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+    QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: transparent; }}
     QToolTip {{ background: {c['surface']}; color: {c['text']}; border: 1px solid {c['border']}; padding: 4px; }}
     #card {{ background: {c['surface']}; border: 1px solid {c['border']}; border-radius: {r}px; }}
     #title {{ font-size: 15px; font-weight: 600; }}
@@ -69,6 +75,12 @@ def stylesheet(mode: str) -> str:
     QPushButton:hover {{ border-color: {c['text3']}; }}
     QPushButton#ghost {{ background: transparent; color: {c['text2']}; }}
     QPushButton#ghost:checked {{ color: {c['accent']}; border-color: {c['accent']}; }}
+    QPushButton#tool:checked {{ background: {c['accent']}; color: {c['accent_text']}; border-color: {c['accent']};
+                                font-weight: 600; }}
+    QSlider::groove:horizontal {{ height: 4px; background: {c['border']}; border-radius: 2px; }}
+    QSlider::sub-page:horizontal {{ background: {c['accent']}; border-radius: 2px; }}
+    QSlider::handle:horizontal {{ background: {c['surface']}; border: 2px solid {c['accent']}; width: 12px;
+                                  margin: -6px 0; border-radius: 8px; }}
     #segment {{ background: {c['surface2']}; border: 1px solid {c['border']}; border-radius: {rs}px; }}
     #segment QPushButton {{ background: transparent; border: none; color: {c['text2']}; min-height: 28px;
                             border-radius: {rs - 2}px; }}

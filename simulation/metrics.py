@@ -42,6 +42,13 @@ def overshoot(r, t1: float, fraction: float = 0.05) -> float:
     return max_distance(r, t_arrival, t1)
 
 
+def edge_distance(x: float, y: float, direction: float, radius: float) -> float:
+    """Distance from (x, y) to the edge of a plate of this radius, along the angle `direction`."""
+    ux, uy = math.cos(direction), math.sin(direction)
+    along = x * ux + y * uy
+    return -along + math.sqrt(along ** 2 + radius ** 2 - x * x - y * y)
+
+
 def stoppable_speed(distance: float, theta_max: float, model_gain: float) -> float:
     """Highest speed (m/s) of a ball that the plate can stop over `distance`: tilted by theta_max against it, the
     plate brakes it by a = c·g·sin θmax (model_gain = c·g), hence v = √(2·a·d). The physical limit of any brain."""
