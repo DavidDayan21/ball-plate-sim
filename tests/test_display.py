@@ -4,7 +4,7 @@ import mujoco
 import numpy as np
 
 from app.readouts import distance_history, readouts
-from app.scene import DisplayScene, display_xml
+from app.scene import ANTIALIASING, SHADOW_MAP, DisplayScene, display_xml
 from app.theme import COLORS, MODES, scene_style, stylesheet
 from simulation.mujoco_physics import model_xml
 from simulation.session import Session, sandbox_config
@@ -26,6 +26,7 @@ def test_display_scene_shows_the_simulated_robot():
     mujoco.mj_kinematics(s.phys.model, physics)
     m, d = s.phys.model, scene.model
     assert d.nq == m.nq and d.nbody == m.nbody
+    assert (d.vis.quality.offsamples, d.vis.quality.shadowsize) == (ANTIALIASING, SHADOW_MAP)
     for b in range(1, m.nbody):                           # every moving part: same place, same shapes
         assert d.body(b).name == m.body(b).name
         assert np.allclose(scene.data.xpos[b], physics.xpos[b], rtol=0, atol=1e-12)

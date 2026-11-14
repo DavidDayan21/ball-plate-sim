@@ -16,7 +16,10 @@ from simulation.config import Config
 from simulation.mujoco_physics import model_xml
 
 MAX_SIZE = (2560, 1600)         # (width, height) of the largest image rendered, in pixels
-GRID = 0.1                      # (m) spacing of the lines of the floor
+# Quality, from the measurements of app.benchmark (Intel Arc integrated graphics): antialiasing with 8 samples costs
+# 13 to 46 % more than with 4; a shadow map of 2048 instead of 4096, or no fog, saves nothing measurable.
+ANTIALIASING = 4                # samples
+SHADOW_MAP = 4096               # (pixels) side of the map of the shadows
 
 
 @dataclass(frozen=True)
@@ -24,7 +27,6 @@ class SceneStyle:
     """Colors (r, g, b) in 0..1 of the 3D scene, for one theme."""
     sky: tuple                    # also the color of the fog: the floor fades into the sky
     floor: tuple
-    floor_lines: tuple            # lines of the grid on the floor (= floor: no grid)
     pedestal: tuple
     motor: tuple
     metal: tuple                  # caps of the motors, hubs, rods
@@ -62,21 +64,17 @@ def display_xml(cfg: Config, style: SceneStyle) -> str:
     """The MJCF of the physics model of cfg, dressed with `style`. Only the appearance and the fixed decoration
     change: same bodies, joints and sizes of the moving parts."""
     s = style
-    grid = "edge" if s.floor_lines != s.floor else "none"
     floor_size = 6.0
     visual = f"""<visual>
     <global azimuth="90" elevation="-30" offwidth="{MAX_SIZE[0]}" offheight="{MAX_SIZE[1]}"/>
-    <quality shadowsize="4096" offsamples="8"/>
+    <quality shadowsize="{SHADOW_MAP}" offsamples="{ANTIALIASING}"/>
     <headlight ambient="{_rgb([s.ambient] * 3)}" diffuse="{_rgb([0.8 * s.ambient] * 3)}" specular="0.05 0.05 0.05"/>
     <map fogstart="1.0" fogend="3.0" znear="0.01" zfar="20" haze="0.4" shadowclip="0.6"/>
     <rgba fog="{_rgb(s.sky)} 1" haze="{_rgb(s.sky)} 1"/>
   </visual>
   <asset>
     <texture name="sky" type="skybox" builtin="flat" rgb1="{_rgb(s.sky)}" rgb2="{_rgb(s.sky)}" width="32" height="192"/>
-    <texture name="floor" type="2d" builtin="checker" rgb1="{_rgb(s.floor)}" rgb2="{_rgb(s.floor)}"
-             mark="{grid}" markrgb="{_rgb(s.floor_lines)}" width="512" height="512"/>
-    <material name="floor" texture="floor" texrepeat="{2 * floor_size / GRID:.0f} {2 * floor_size / GRID:.0f}"
-              specular="0.1" shininess="0.2"/>
+    <material name="floor" rgba="{_rgb(s.floor)} 1" specular="0.1" shininess="0.2"/>
     <material name="pedestal" rgba="{_rgb(s.pedestal)} 1" specular="0.3" shininess="0.5"/>
     <material name="motor" rgba="{_rgb(s.motor)} 1" specular="0.4" shininess="0.6"/>
     <material name="metal" rgba="{_rgb(s.metal)} 1" specular="0.9" shininess="0.8"/>

@@ -23,6 +23,7 @@ def test_texts_and_numbers():
     assert tr("result.stabilized", time=tr.number(1.234, 2)) == "stabilisée en 1,23 s"
     tr.set_language("en")
     assert tr("result.stabilized", time=tr.number(1.234, 2)) == "stabilized in 1.23 s"
+    assert tr.number(-0.004, 2) == "0.00" and tr.number(-0.006, 2) == "-0.01"     # no "-0.00"
 
 
 def test_language_of_the_system():

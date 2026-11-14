@@ -1,7 +1,7 @@
 """Main window of the software: the control panel on the left, the robot in 3D on the right.
 
 A single loop, in the thread of the interface: a timer advances the simulation by the real time elapsed
-(simulation.session.RealTime), then renders the 3D view. The panel acts on the session directly, between two frames.
+(simulation.session.RealTime, up to MAX_LAG per frame), then renders the 3D view. The panel acts on the session directly, between two frames.
 Its measurements are refreshed every READOUT_EVERY frames (readable, and cheaper).
 """
 import time
@@ -20,6 +20,8 @@ from app.widgets import Card, Readout, Segmented, Sparkline, label
 from simulation.session import RealTime, Session, sandbox_config
 
 FRAMES_PER_SECOND = 60
+MAX_LAG = 0.1           # (s) of real time caught up per frame at most: the simulation stays in step with real time as
+                        # long as a frame takes less (measured: up to 45 ms on an integrated graphics card)
 READOUT_EVERY = 5                                           # frames
 BRAINS = ("pid", "imitation")                               # the PID brain, the AI brain (brains/imitation.npz)
 THROW = dict(distance=0.10, angle_deg=180, speed=0.4)       # toward the center: the default throw of the sandbox
@@ -41,7 +43,7 @@ class MainWindow(QMainWindow):
         self.mode = mode or system_mode()
         self.clock = clock
         self.session = Session(replace(sandbox_config(), brain=brain), record=False)
-        self.real_time = RealTime()
+        self.real_time = RealTime(MAX_LAG)
         self.view = View3D(DisplayScene(self.session.cfg, scene_style(self.mode)), self.session.phys.data,
                            self.session.cfg.geometry.height - 0.035)
         self._scene_mode = self.mode                        # theme of the display scene
@@ -66,7 +68,7 @@ class MainWindow(QMainWindow):
         self.c_brain.body.addWidget(self.l_brain)
 
         self.c_ball = Card()
-        self.b_throw = QPushButton(clicked=self.throw, objectName="primary")
+        self.b_throw = QPushButton(clicked=self.throw)
         self.b_drop = QPushButton(clicked=self.drop)
         self.b_center = QPushButton(clicked=self.center)
         self.b_pause = QPushButton(checkable=True, toggled=self.set_pause, objectName="ghost")

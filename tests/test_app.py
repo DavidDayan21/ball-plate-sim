@@ -1,5 +1,5 @@
 """The software (app/), without a screen: window, buttons, brain, measurements, language, theme, pause, frames in
-step with real time.
+step with real time, measurement of the cost of a frame (app/benchmark.py).
 
 Skipped if PySide6 is not installed (pip install -r requirements-app.txt). Qt draws off screen; the 3D view is
 rendered by MuJoCo, like the virtual camera.
@@ -59,10 +59,17 @@ def test_frames_in_step_with_real_time(window):
     window.tick()                          # starts the clock
     play(window, 60)                       # 1 s of frames
     s = window.session
-    assert abs(s.t - 1.0) < s.dt
+    assert s.t == pytest.approx(1.0, abs=1.01 * s.dt)
     height, width, _ = window.view.pixels.shape
     assert (width, height) == window.view._physical_size()
     assert window.view.pixels.std() > 10   # an image, not a flat color
+
+
+def test_slow_frames_caught_up(window):
+    window.tick()
+    window.fake_clock.now += 0.09          # a slow frame (90 ms): the simulation stays in step with real time
+    window.tick()
+    assert window.session.t == pytest.approx(0.09, abs=1.01 * window.session.dt)    # whole steps: one beyond at most
 
 
 def test_buttons_act_on_the_session(window):
@@ -141,6 +148,17 @@ def test_pause(window):
     window.b_pause.click()
     play(window, 10)
     assert window.session.t > t
+
+
+def test_benchmark(application):
+    from app.benchmark import QUALITIES, report, run
+    sizes = ((64, 48),)
+    results = run(sizes, frames=2)
+    assert results["simulation"] > 0 and results["drawing"][sizes[0]] > 0
+    assert set(results["rendering"]) == set(QUALITIES)
+    assert all(row[sizes[0]] > 0 for row in results["rendering"].values())
+    text = report(results, sizes)
+    assert "64×48" in text and "look of D1" in text
 
 
 def test_close(window):

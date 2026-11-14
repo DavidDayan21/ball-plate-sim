@@ -37,5 +37,9 @@ class Texts:
         return self._texts[key].format(**values)
 
     def number(self, value: float, decimals: int) -> str:
-        """Number with a fixed number of decimals, with the decimal separator of the language."""
-        return f"{value:.{decimals}f}".replace(".", self._texts["number.decimal_separator"])
+        """Number with a fixed number of decimals, with the decimal separator of the language. No minus sign before
+        a number that rounds to zero ("-0.00")."""
+        text = f"{value:.{decimals}f}"
+        if text.startswith("-") and float(text) == 0:
+            text = text[1:]
+        return text.replace(".", self._texts["number.decimal_separator"])

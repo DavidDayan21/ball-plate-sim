@@ -1,8 +1,8 @@
 """Look of the software, in one place: the colors of the light and dark themes, the font, the style sheet of the
 widgets and the colors of the 3D scene. The widgets only name their role (objectName), never a color.
 
-Panel on the side, detailed measurements and grid floor of an instrument; the orange of the ping-pong ball as the
-accent color. Font: Inter (app/fonts/, SIL Open Font License), shipped with the software so that it looks the same
+Panel on the side and detailed measurements of an instrument; the orange of the ping-pong ball as the accent
+color, kept for what is selected (brain, theme, language, pause): the buttons that act are neutral. Font: Inter (app/fonts/, SIL Open Font License), shipped with the software so that it looks the same
 on Windows and Mac.
 """
 from pathlib import Path
@@ -16,10 +16,10 @@ MODES = ("light", "dark")
 
 COLORS = {
     "light": dict(bg="#EEF1F3", surface="#FFFFFF", surface2="#F1F3F5", border="#DDE1E6", text="#14161A",
-                  text2="#5F6672", text3="#959CA7", accent="#EA580C", accent_hover="#C2410C", accent_text="#FFFFFF",
+                  text2="#5F6672", text3="#959CA7", accent="#EA580C", accent_text="#FFFFFF",
                   good="#16A34A", bad="#DC2626", axis_x="#E5484D", axis_y="#2F9E63"),
     "dark": dict(bg="#0A0D10", surface="#11161B", surface2="#182027", border="#25303A", text="#ECEEF2",
-                 text2="#A3AAB5", text3="#6B7380", accent="#FB7A3C", accent_hover="#FD9A68", accent_text="#1C0D04",
+                 text2="#A3AAB5", text3="#6B7380", accent="#FB7A3C", accent_text="#1C0D04",
                  good="#22C55E", bad="#F87171", axis_x="#F2555A", axis_y="#3DD68C"),
 }
 
@@ -34,15 +34,15 @@ LIT_FLOOR = 1.15        # light theme: the lit floor comes out 1.15 times bright
 
 
 def scene_style(mode: str) -> SceneStyle:
-    """Colors of the 3D scene: the floor continues the background of the window, with a grid every 10 cm."""
+    """Colors of the 3D scene: the floor continues the background of the window."""
     c = COLORS[mode]
     bg = rgb(c["bg"])
     if mode == "light":
         floor = tuple(v / LIT_FLOOR for v in bg)
-        return SceneStyle(sky=bg, floor=floor, floor_lines=tuple(v - 0.08 for v in floor), pedestal=rgb(c["surface"]),
+        return SceneStyle(sky=bg, floor=floor, pedestal=rgb(c["surface"]),
                           motor=(0.14, 0.15, 0.17), metal=(0.85, 0.86, 0.88), arm=(0.32, 0.35, 0.39),
                           plate=(0.86, 0.94, 1.0), plate_alpha=0.42, ambient=0.45)
-    return SceneStyle(sky=bg, floor=bg, floor_lines=tuple(v + 0.06 for v in bg), pedestal=rgb(c["surface2"]),
+    return SceneStyle(sky=bg, floor=bg, pedestal=rgb(c["surface2"]),
                       motor=(0.24, 0.26, 0.30), metal=(0.72, 0.74, 0.78), arm=(0.50, 0.53, 0.58),
                       plate=(0.80, 0.90, 1.0), plate_alpha=0.32, ambient=0.35)
 
@@ -67,8 +67,6 @@ def stylesheet(mode: str) -> str:
     QPushButton {{ background: {c['surface']}; border: 1px solid {c['border']}; border-radius: {rs}px;
                    min-height: 34px; padding: 0 12px; font-weight: 500; }}
     QPushButton:hover {{ border-color: {c['text3']}; }}
-    QPushButton#primary {{ background: {c['accent']}; color: {c['accent_text']}; border: none; }}
-    QPushButton#primary:hover {{ background: {c['accent_hover']}; }}
     QPushButton#ghost {{ background: transparent; color: {c['text2']}; }}
     QPushButton#ghost:checked {{ color: {c['accent']}; border-color: {c['accent']}; }}
     #segment {{ background: {c['surface2']}; border: 1px solid {c['border']}; border-radius: {rs}px; }}

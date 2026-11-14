@@ -21,7 +21,7 @@ Building the real robot remains a distant goal: the code will then be ready.
 | A. Reliable measurements | Bit-exact regression check, spread over N draws, robust metrics, simple physics → MuJoCo gap | Done |
 | B. PID brain | Objectives in the report, integral limited to the neighborhood of the setpoint, aimed bounce of a dropped ball, thrown ball (start with the speed, fast motor ramps for the large moves), gains tuned by LQR, adaptive control (model gain c·g estimated online), every gap of more than 0.5 mm explained (report, section 12) | Done |
 | C. Local AI brain | A policy (neural network) learned by reinforcement in MuJoCo, same rules as the PID (sensor, motors, ±10°). Done: interchangeable brains, training environment, training by reinforcement, imitation of the PID brain: the policy alone then meets the four objectives, dropped ball included (campaign section 13, which compares both brains: return to the center better than the PID, circle about 0.2 mm behind). The sandbox can be driven by either brain. Left for later: the gaps of more than 0.5 mm between the two brains explained (circle with a large calibration error of the plate, return to the center), then reinforcement from the imitating policy, to go beyond the PID | Done |
-| D. Software for the general public | An application installed with a double click, for Windows and Mac: the robot in 3D, driven by either brain; throws, drops and pushes with the mouse, drawn trajectories, choice of the ball, latency and friction, both robots side by side; in English and French. Done: prototype (`python -m app`): 3D view in its own window, throw, drop, center, choice of the brain, pause, English and French; visual foundations: light and dark themes, robot dressed for display (pedestal, motors, grid floor), panel of measurements | **In progress** |
+| D. Software for the general public | An application installed with a double click, for Windows and Mac: the robot in 3D, driven by either brain; throws, drops and pushes with the mouse, drawn trajectories, choice of the ball, latency and friction, both robots side by side; in English and French. Done: prototype (`python -m app`): 3D view in its own window, throw, drop, center, choice of the brain, pause, English and French; visual foundations: light and dark themes, robot dressed for display (pedestal, motors), panel of measurements | **In progress** |
 | E. Construction (distant) | Design, real-world defects, complete error budget | Later |
 
 Quantified goals for both brains: thrown ball caught up to at least 90 % of the physical limit,
@@ -39,6 +39,7 @@ app/                     The software for the general public (interface only, on
   theme.py               Light and dark themes: colors, font, style sheet, colors of the 3D scene
   widgets.py             Building blocks: card, segmented control, readout, curve
   readouts.py            Measurements of the panel, read from the session
+  benchmark.py           Cost of a frame on this computer: simulation, 3D rendering, drawing (python -m app.benchmark)
   i18n.py, locales/      Texts of the interface, one file per language (English, French)
   fonts/                 Inter, the font of the interface (SIL Open Font License, OFL.txt)
 brains/                  Learned policies of the AI brain (weights of the network): imitation.npz
@@ -104,6 +105,7 @@ python -m pytest              # all the tests
 python campaign.py            # full measurement campaign, writes results/report.md (a few minutes)
 python campaign.py --draws 1  # same, nominal configuration only (one simulation per case)
 python -m app                 # the software for the general public (phase D, prototype)
+python -m app.benchmark       # cost of a frame of the software on this computer (about a minute)
 python sandbox.py             # 3D sandbox (see below)
 python sandbox.py --camera                             # same, ball measured by the virtual camera
 python sandbox.py --brain imitation                    # same, driven by the AI brain instead of the PID brain
@@ -238,14 +240,22 @@ with real time and the frames per second, the x and y axes of the plate (they tu
 drag turns the view, the wheel zooms. The attempts follow the rules of the sandbox below, without being recorded.
 
 The robot shown is a copy of the MuJoCo model of the physics, dressed for display (`app/scene.py`): materials,
-lights, a floor with a grid every 10 cm that continues the background of the window, a pedestal, stepper motors
+lights, a floor that continues the background of the window, a pedestal, stepper motors
 (NEMA 17 format). At every frame, the positions of the physics are copied into it and its geometry is computed,
 without dynamics. The moving parts keep the sizes of the physics model, so the picture shows the robot that is
 simulated; the physics, and the virtual camera that renders it, see nothing of this (checked by the tests and
-the bit-exact regression check).
+the bit-exact regression check). Quality of the rendering, from the measurements of `python -m app.benchmark` on
+an integrated graphics card (Intel Arc): antialiasing with 4 samples (8 cost 13 to 46 % more), shadow map of 4096
+pixels and fog (making them cheaper saves nothing measurable). The orange of the ball marks what is selected (brain, theme, language, pause);
+the buttons that act are neutral.
+
+`python -m app.benchmark` measures what a frame costs on the computer where it runs: the simulation, the 3D
+rendering (with the image read back) for three sizes of the view and several qualities, the drawing of the image
+by Qt; then the frames per second they allow together. It serves to choose the quality of the rendering, and to
+check the software on other computers.
 
 A single loop, in the thread of the interface: at every frame (60 per second), the simulation catches up with the
-real time elapsed (at most 50 ms: beyond, it slows down), then MuJoCo renders the 3D view off screen, and the
+real time elapsed (at most 100 ms: beyond, it slows down), then MuJoCo renders the 3D view off screen, and the
 image is drawn in the window. The virtual camera, which also renders with MuJoCo, will need it: its OpenGL context
 can only be used in the thread that created it.
 
