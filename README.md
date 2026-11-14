@@ -21,7 +21,7 @@ Building the real robot remains a distant goal: the code will then be ready.
 | A. Reliable measurements | Bit-exact regression check, spread over N draws, robust metrics, simple physics → MuJoCo gap | Done |
 | B. PID brain | Objectives in the report, integral limited to the neighborhood of the setpoint, aimed bounce of a dropped ball, thrown ball (start with the speed, fast motor ramps for the large moves), gains tuned by LQR, adaptive control (model gain c·g estimated online), every gap of more than 0.5 mm explained (report, section 12) | Done |
 | C. Local AI brain | A policy (neural network) learned by reinforcement in MuJoCo, same rules as the PID (sensor, motors, ±10°). Done: interchangeable brains, training environment, training by reinforcement, imitation of the PID brain: the policy alone then meets the four objectives, dropped ball included (campaign section 13, which compares both brains: return to the center better than the PID, circle about 0.2 mm behind). The sandbox can be driven by either brain. Left for later: the gaps of more than 0.5 mm between the two brains explained (circle with a large calibration error of the plate, return to the center), then reinforcement from the imitating policy, to go beyond the PID | Done |
-| D. Software for the general public | An application installed with a double click, for Windows and Mac: the robot in 3D, driven by either brain; throws, drops and pushes with the mouse, drawn trajectories, choice of the ball, latency and friction, both robots side by side; in English and French. Done: prototype (`python -m app`): 3D view in its own window, throw, drop, center, choice of the brain, pause, English and French | **In progress** |
+| D. Software for the general public | An application installed with a double click, for Windows and Mac: the robot in 3D, driven by either brain; throws, drops and pushes with the mouse, drawn trajectories, choice of the ball, latency and friction, both robots side by side; in English and French. Done: prototype (`python -m app`): 3D view in its own window, throw, drop, center, choice of the brain, pause, English and French; visual foundations: light and dark themes, robot dressed for display (pedestal, motors, grid floor), panel of measurements | **In progress** |
 | E. Construction (distant) | Design, real-world defects, complete error budget | Later |
 
 Quantified goals for both brains: thrown ball caught up to at least 90 % of the physical limit,
@@ -33,9 +33,14 @@ no fall in the robustness variants.
 
 ```text
 app/                     The software for the general public (interface only, on top of simulation/session.py)
-  window.py              Main window: 3D view, control panel, status bar; one loop in step with real time
-  view3d.py              3D view: rendered off screen by MuJoCo, drawn in the window; mouse: turn, zoom
+  window.py              Main window: control panel, 3D view; one loop in step with real time
+  view3d.py              3D view: rendered off screen by MuJoCo, drawn in the window with its texts; mouse: turn, zoom
+  scene.py               The robot as shown: a copy of the physics model, dressed (materials, floor, pedestal, motors)
+  theme.py               Light and dark themes: colors, font, style sheet, colors of the 3D scene
+  widgets.py             Building blocks: card, segmented control, readout, curve
+  readouts.py            Measurements of the panel, read from the session
   i18n.py, locales/      Texts of the interface, one file per language (English, French)
+  fonts/                 Inter, the font of the interface (SIL Open Font License, OFL.txt)
 brains/                  Learned policies of the AI brain (weights of the network): imitation.npz
 controller/              What would run on the real robot (independent of the simulator)
   pid.py                 PID: derivative filter, saturation, anti-windup, integration zone, feedforward
@@ -63,7 +68,7 @@ training/
   train.py               Training of the policy by reinforcement (PPO), on several robots in parallel
   evaluation.py          Evaluation of a brain on the reference scenario, for both training scripts
 tests/                   Automated tests, by theme (controller, mechanics, sensors, physics,
-                         scenarios, metrics, session, regression check, campaign, training, software)
+                         scenarios, metrics, session, regression check, campaign, training, display, software)
 campaign.py              Full measurement campaign over N draws, in parallel -> results/report.md
 sandbox.py               The robot in 3D and in real time, driven from a control panel (working tool)
 regression_check.py      Checks that a change leaves all the results bit-identical
@@ -218,13 +223,26 @@ by small steps, millions of times.
 
 ## Software for the general public (phase D, in progress)
 
-`python -m app`: one window, the robot in 3D on the left, the control panel on the right. Throw (toward the
-center from 10 cm away, at 0.4 m/s), Drop (from 30.5 cm above the center), Center; the brain, PID or AI
-(changing it ends the current attempt: an attempt has a single brain); Pause; the language, English or French
-(the language of the system at startup). Mouse in the 3D view: left drag turns the view, the wheel zooms. The
-status bar tells what the robot is doing or the result of the last attempt, the simulated time, its speed
-compared with real time and the frames per second. The attempts follow the rules of the sandbox below, without
-being recorded.
+`python -m app`: one window, the control panel on the left, the robot in 3D on the right.
+
+| Panel | Content |
+|---|---|
+| Brain | PID or AI; changing it ends the current attempt (an attempt has a single brain) |
+| Ball | Throw (toward the center from 10 cm away, at 0.4 m/s), Drop (from 30.5 cm above the center), Center, Pause |
+| Measurements | Distance to the setpoint, speed and height of the ball, tilt of the plate (x, y), largest torque of the 3 motors; the distance over the last 10 s. True values of the simulation, not those measured by the sensor of the robot |
+| Last attempt | Its action, its brain and its result (stabilized in, fell after...) |
+| Settings | Light or dark theme (that of the system at startup), English or French (that of the system) |
+
+Over the 3D view: what the robot is doing, the position of the ball, the simulated time with its speed compared
+with real time and the frames per second, the x and y axes of the plate (they turn with the view). Mouse: left
+drag turns the view, the wheel zooms. The attempts follow the rules of the sandbox below, without being recorded.
+
+The robot shown is a copy of the MuJoCo model of the physics, dressed for display (`app/scene.py`): materials,
+lights, a floor with a grid every 10 cm that continues the background of the window, a pedestal, stepper motors
+(NEMA 17 format). At every frame, the positions of the physics are copied into it and its geometry is computed,
+without dynamics. The moving parts keep the sizes of the physics model, so the picture shows the robot that is
+simulated; the physics, and the virtual camera that renders it, see nothing of this (checked by the tests and
+the bit-exact regression check).
 
 A single loop, in the thread of the interface: at every frame (60 per second), the simulation catches up with the
 real time elapsed (at most 50 ms: beyond, it slows down), then MuJoCo renders the 3D view off screen, and the
@@ -276,5 +294,5 @@ International CSV format: `,` separator, decimal point, UTF-8 encoding (no BOM).
 
 ## Technologies
 
-Python, NumPy, Matplotlib, MuJoCo, OpenCV, pytest. For the software: Qt (PySide6). For the training of the AI brain
-only: PyTorch, Stable-Baselines3.
+Python, NumPy, Matplotlib, MuJoCo, OpenCV, pytest. For the software: Qt (PySide6), the Inter font. For the training
+of the AI brain only: PyTorch, Stable-Baselines3.

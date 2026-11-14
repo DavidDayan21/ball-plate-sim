@@ -1,4 +1,5 @@
-"""The software (app/), without a screen: window, buttons, brain, language, pause, frames in step with real time.
+"""The software (app/), without a screen: window, buttons, brain, measurements, language, theme, pause, frames in
+step with real time.
 
 Skipped if PySide6 is not installed (pip install -r requirements-app.txt). Qt draws off screen; the 3D view is
 rendered by MuJoCo, like the virtual camera.
@@ -13,7 +14,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")      # before the applicat
 from PySide6.QtWidgets import QApplication
 
 from app.i18n import Texts
-from app.window import MainWindow
+from app.theme import COLORS
+from app.window import READOUT_EVERY, MainWindow
 from controller.policy import PolicyController
 
 FRAME = 1 / 60
@@ -37,9 +39,9 @@ class FakeClock:
 @pytest.fixture
 def window(application):
     clock = FakeClock()
-    w = MainWindow(Texts("en"), clock=clock)
+    w = MainWindow(Texts("en"), mode="light", clock=clock)
     w.timer.stop()                         # the frames are played by the test
-    w.resize(800, 500)
+    w.resize(900, 560)
     w.show()
     application.processEvents()
     w.fake_clock = clock
@@ -68,7 +70,7 @@ def test_buttons_act_on_the_session(window):
     window.b_throw.click()
     play(window, 10)
     assert window.session.attempt["action"] == "throw" and window.session.attempt["brain"] == "pid"
-    assert window.state_text() == "Throw (PID) in progress…"
+    assert window.state_text() == "Throw (PID) in progress"
     window.b_drop.click()
     assert window.session.summary[-1]["result"] == "interrupted"
     assert window.session.attempt["action"] == "drop"
@@ -81,29 +83,58 @@ def test_brain_changed(window):
     window.tick()
     window.b_throw.click()
     play(window, 5)
-    window.brain_buttons["imitation"].click()
+    window.s_brain.buttons["imitation"].click()
     assert isinstance(window.session.sim.brain, PolicyController)
     assert window.session.summary[-1]["brain"] == "pid" and window.session.attempt is None
-    assert window.state_text().startswith("Last attempt: Throw (PID), interrupted after ")
+    assert window.last_attempt_text().startswith("Throw · PID · interrupted after ")
     window.b_throw.click()
-    assert window.state_text() == "Throw (AI) in progress…"
+    assert window.state_text() == "Throw (AI) in progress"
+
+
+def test_measurements(window):
+    window.tick()
+    window.b_center.click()
+    play(window, 2 * READOUT_EVERY)
+    distance = window.readouts["distance_mm"].value.text()
+    assert distance != "—" and float(distance) < 5
+    assert window.readouts["tilt_x_deg"].value.text().endswith("°")
+    assert window.view.overlay.bottom_left.startswith("Ball: x ")
+    window.session.throw(0.10, 180, speed=1.0)            # too fast: falls
+    for _ in range(round(3.0 / window.session.dt)):
+        window.session.step()
+    window.refresh()
+    assert window.readouts["distance_mm"].value.text() == "—" and window.view.overlay.bottom_left == ""
+    assert window.state_text() == "The ball has fallen"
+    assert window.view.overlay.state_color == COLORS["light"]["bad"]
 
 
 def test_language(window):
-    window.c_language.setCurrentIndex(window.c_language.findData("fr"))
+    window.s_language.buttons["fr"].click()
     assert window.b_throw.text() == "Lancer" and window.windowTitle() == "ball-plate-sim : robot équilibriste"
+    assert window.readouts["speed_mm_s"].name.text() == "VITESSE"
     window.b_throw.click()
-    assert window.state_text() == "Lancer (PID) en cours…"
+    assert window.state_text() == "Lancer (PID) en cours"
     window.tick()
     play(window, 6)
-    assert "0,1 s" in window.l_clock.text()
+    assert window.view.overlay.bottom_right.startswith("t = 0,1 s")
+
+
+def test_theme(window):
+    window.tick()
+    play(window, 2)
+    light = window.view.scene
+    window.s_mode.buttons["dark"].click()
+    assert window.mode == "dark" and window.view.scene is not light and window.view.renderer is None
+    assert COLORS["dark"]["bg"] in window.styleSheet() and window.view.overlay.colors is COLORS["dark"]
+    play(window, 2)                        # the new scene is rendered
+    assert window.view.pixels is not None and window.view.renderer is not None
 
 
 def test_pause(window):
     window.tick()
     play(window, 3)
     window.b_pause.click()
-    assert window.b_pause.text() == "Resume"
+    assert window.b_pause.text() == "Resume" and window.view.overlay.state == "Paused"
     t = window.session.t
     play(window, 10)
     assert window.session.t == t
