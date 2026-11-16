@@ -20,9 +20,10 @@ MAX_SIZE = (2560, 1600)         # (width, height) of the largest image rendered,
 # 13 to 46 % more than with 4; a shadow map of 2048 instead of 4096, or no fog, saves nothing measurable.
 ANTIALIASING = 4                # samples
 SHADOW_MAP = 4096               # (pixels) side of the map of the shadows
-SHADOW_CLIP = 5.0               # (m) half-width of the floor covered by the map; beyond, the floor gets speckled
-                                # (measured: dots beyond 0.6 m with 0.6, none within 5 m with 5, where the camera
-                                # can follow a fallen ball; 2.4 mm per pixel of the map, the shadows stay sharp)
+SHADOW_CLIP = 5.0               # half-width of the floor covered by the shadow map, in sizes of the scene
+                                # (MuJoCo: × stat.extent, 1.2 m here: 6 m); beyond, the floor gets speckled
+                                # (measured: dots with 0.6, none where the camera follows a fallen ball with 5).
+                                # Its pixels are then 2.9 mm wide: steps show on the edges of the shadows
 
 
 @dataclass(frozen=True)

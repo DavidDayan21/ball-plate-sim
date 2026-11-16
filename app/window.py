@@ -7,7 +7,8 @@ A single loop, in the thread of the interface: a timer advances the simulation b
 
 The tools of the ball (throw, drop, push) stay active until clicked again; with one active, the mouse acts on the
 plate (app/view3d.py). The physical limit shown while throwing is that of the nominal ball (c = 1/(1+k) of the
-plate parameters), as in the campaign and the training.
+plate parameters), as in the campaign and the training. A drop with a speed shows where the ball lands and its angle
+of arrival; no limit is shown for it (not computed: bounce, then rolling), only whether it lands off the plate.
 
 When the ball falls, the camera glides to look between the robot and the ball, and moves back to keep both in view
 (the ball is followed up to FOLLOW_REACH from the center of the plate), for FALL_SHOW of simulated time; then the
@@ -22,7 +23,7 @@ from PySide6.QtCore import QTimer, Qt
 from PySide6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QMainWindow, QPushButton, QScrollArea, QSlider,
                                QVBoxLayout, QWidget)
 
-from app.gestures import drop_arguments, throw_arguments, throw_limit, velocity
+from app.gestures import MIN_SPEED, drop_arguments, drop_flight, throw_arguments, throw_limit, velocity
 from app.i18n import LANGUAGES, Texts
 from app.readouts import distance_history, readouts
 from app.scene import DisplayScene
@@ -216,6 +217,7 @@ class MainWindow(QMainWindow):
 
     def _show_height(self) -> None:
         self.l_height.setText(self.texts("label.height", height=self.s_height.value()))
+        self.view.drop_height = self.drop_height()
 
     # --- Actions -----------------------------------------------------------------------------
     def set_tool(self, name) -> None:
@@ -230,8 +232,12 @@ class MainWindow(QMainWindow):
     def throw(self, x: float, y: float, vx: float, vy: float) -> None:
         self.session.throw(**throw_arguments((x, y), vx, vy))
 
-    def drop(self, x: float, y: float) -> None:
-        self.session.throw(**drop_arguments((x, y), self.s_height.value() / 100))
+    def drop_height(self) -> float:
+        """(m) Height of a drop: of the bottom of the ball above the plate."""
+        return self.s_height.value() / 100
+
+    def drop(self, x: float, y: float, vx: float, vy: float) -> None:
+        self.session.throw(**drop_arguments((x, y), self.drop_height(), vx, vy))
 
     def push(self, dvx: float, dvy: float) -> None:
         self.session.push(dvx, dvy)
@@ -272,12 +278,21 @@ class MainWindow(QMainWindow):
 
     def describe_gesture(self, kind: str, start, end) -> tuple:
         """Text and color (key of the theme) of the arrow of a gesture: speed, and for a throw its physical limit
-        (good color within it, bad color beyond)."""
+        (good color within it, bad color beyond); for a drop with a speed, the angle of arrival from the vertical
+        (bad color if the ball lands off the plate)."""
         tr, cfg = self.texts, self.session.cfg
         vx, vy = velocity(start, end)
         speed = math.hypot(vx, vy)
-        if kind != "throw":
+        if kind == "push":
             return tr("gesture.push", speed=tr.number(speed, 2)), "accent"
+        if kind == "drop":
+            if speed < MIN_SPEED:
+                return "", "accent"
+            landing, angle, _ = drop_flight(start, vx, vy, self.drop_height(),
+                                            self.session.phys.data.body("plate").xmat)
+            if math.hypot(*landing) > cfg.plate.plate_radius:
+                return tr("gesture.drop_off", speed=tr.number(speed, 2)), "bad"
+            return tr("gesture.drop", speed=tr.number(speed, 2), angle=tr.number(angle, 0)), "accent"
         if speed == 0:
             return "", "accent"
         limit = throw_limit(start, vx, vy, cfg.plate.plate_radius, cfg.theta_max, cfg.plate.coefficient * G)

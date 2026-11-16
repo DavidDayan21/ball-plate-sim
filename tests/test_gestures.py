@@ -8,8 +8,8 @@ import pytest
 
 pytest.importorskip("PySide6")          # app/view3d.py imports Qt (the camera itself does not use it)
 
-from app.gestures import (ARROW_TIME, MAX_SPEED, drop_arguments, plate_hit, throw_arguments, throw_limit,
-                          velocity)
+from app.gestures import (ARROW_TIME, MAX_SPEED, drop_arguments, drop_flight, plate_hit, throw_arguments,
+                          throw_limit, velocity)
 from app.scene import DisplayScene
 from app.theme import scene_style
 from app.view3d import Camera
@@ -99,3 +99,44 @@ def test_throw_and_drop_round_trips():
     assert (x, y) == pytest.approx((-0.05, 0.02), abs=1e-9)
     assert z == pytest.approx(0.2 + s.cfg.plate.ball_radius, abs=1e-9)
     assert s.attempt["action"] == "drop" and s.attempt["params"]["height_cm"] == pytest.approx(20)
+    s.throw(**drop_arguments((0.03, 0.01), 0.15, 0.25, -0.4))                # dropped with a speed
+    assert s.phys.ball_3d() == pytest.approx((0.03, 0.01, 0.15 + s.cfg.plate.ball_radius), abs=1e-9)
+    assert s.phys.ball_velocity() == pytest.approx((0.25, -0.4), abs=1e-9)
+    assert s.attempt["action"] == "drop"
+
+
+def test_drop_flight():
+    """Level plate: the parabola of a ball released with a horizontal speed (no air in the model)."""
+    h, v = 0.3, 0.5
+    t = math.sqrt(2 * h / G)
+    landing, angle, path = drop_flight((-0.05, 0.02), v, 0.0, h)
+    assert landing == pytest.approx((-0.05 + v * t, 0.02))
+    assert angle == pytest.approx(math.degrees(math.atan(v / math.sqrt(2 * G * h))))      # from the vertical
+    assert path[0] == pytest.approx((-0.05, 0.02, h)) and path[-1][2] == pytest.approx(0, abs=1e-12)
+    assert path[12][2] == pytest.approx(h - G * (12 / 23 * t) ** 2 / 2)
+    landing, angle, _ = drop_flight((0.01, 0.0), 0.0, 0.0, h)                 # straight down
+    assert landing == pytest.approx((0.01, 0.0)) and angle == pytest.approx(0.0)
+    landing, angle, _ = drop_flight((0.01, 0.0), v, 0.0, 0.0)                 # on the plate already
+    assert landing == pytest.approx((0.01, 0.0)) and angle == pytest.approx(90.0)
+    tilt = math.radians(5)                                    # plate rising toward +x: the ball drifts toward -x
+    R = np.array([[math.cos(tilt), 0, -math.sin(tilt)], [0, 1, 0], [math.sin(tilt), 0, math.cos(tilt)]])
+    (x, y), _, _ = drop_flight((0.0, 0.0), 0.0, 0.0, h, R)
+    assert x < -0.002 and y == pytest.approx(0, abs=1e-12)
+
+
+def test_drop_flight_matches_mujoco():
+    """With the plate held still, MuJoCo lands the ball where drop_flight says (measured: within 0.2 mm, one step of
+    the physics). When the brain moves the plate during the fall, the ball lands a few mm away (measured: 0.1 to 3 mm
+    on the plate)."""
+    s = Session(sandbox_config(), record=False)
+    assert s.phys.model.opt.gravity == pytest.approx((0, 0, -G))
+    r = s.cfg.plate.ball_radius
+    for start, h, (vx, vy) in (((-0.06, 0.03), 0.30, (0.4, -0.1)), ((0.0, -0.08), 0.10, (0.0, 0.6))):
+        s.throw(**drop_arguments(start, h, vx, vy))
+        s.phys.command(0.0, 0.0)
+        R = s.phys.data.body("plate").xmat.copy()
+        landing, _, _ = drop_flight(start, vx, vy, h, R)
+        while s.phys.ball_3d()[2] - r > 1e-4:
+            s.phys.step(s.dt)                                 # the physics alone: the brain does not move the plate
+        x, y, _ = s.phys.ball_3d()
+        assert math.hypot(x - landing[0], y - landing[1]) < 0.0005

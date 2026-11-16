@@ -5,7 +5,8 @@ axes of the plate.
 Mouse: with no tool, left drag turns the view around the plate; the wheel zooms. With a tool (tool = "throw",
 "drop" or "push"), a press on the plate starts the gesture (app/gestures.py), a press elsewhere turns the view:
 - throw: drag from where the ball starts; on release, thrown(x, y, vx, vy) (frame of the plate);
-- drop: click where the ball falls: dropped(x, y);
+- drop: click where the ball falls, or drag from there to give it a horizontal speed; on release, dropped(x, y,
+  vx, vy) (frame of the plate; no speed for a click); while dragging, its fall from drop_height is drawn;
 - push: drag from the ball; on release, pushed(Δvx, Δvy) (horizontal, frame of the world).
 The image has the size of the widget in physical pixels (high-resolution screens), up to scene.MAX_SIZE. After a
 change of size, the renderer is created again at the new size once the size has stopped changing for RESIZE_DELAY;
@@ -20,7 +21,7 @@ from PySide6.QtCore import QPointF, QRectF, QTimer, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QWidget
 
-from app.gestures import MIN_SPEED, plate_hit, velocity
+from app.gestures import MIN_SPEED, drop_flight, plate_hit, velocity
 from app.scene import MAX_SIZE, DisplayScene
 
 RESIZE_DELAY = 150              # (ms)
@@ -119,7 +120,7 @@ class Overlay:
 
 class View3D(QWidget):
     thrown = Signal(float, float, float, float)
-    dropped = Signal(float, float)
+    dropped = Signal(float, float, float, float)
     pushed = Signal(float, float)
 
     def __init__(self, scene: DisplayScene, physics_data, lookat_height: float, plate_radius: float,
@@ -131,8 +132,9 @@ class View3D(QWidget):
         self.camera = Camera(lookat_height, scene.model.vis.global_.fovy)
         self.overlay = Overlay()
         self.tool = None               # "throw", "drop", "push" or None
-        self.gesture = None            # dict(kind, start, end) while a throw or a push is drawn
+        self.gesture = None            # dict(kind, start, end) while a gesture is drawn
         self.hover = None              # point of the plate under the mouse (drop tool)
+        self.drop_height = 0.0         # (m) height of a drop, for drawing its fall (set by the window)
         self.describe = lambda kind, start, end: ("", "accent")    # text and color of a gesture (set by the window)
         self.renderer = None
         self.pixels = None             # last image (height, width, 3), kept alive for self.image
@@ -200,9 +202,10 @@ class View3D(QWidget):
         return plate_hit(eye, direction, *self._plate())
 
     def to_screen(self, point):
-        """Pixel of a point (x, y) of the plate surface, or None."""
+        """Pixel of a point (x, y) of the plate surface, or (x, y, z) at z above it (frame of the plate), or None."""
         position, R = self._plate()
-        return self.camera.project(position + R @ np.array([point[0], point[1], 0.0]), self.width(), self.height())
+        local = np.array([point[0], point[1], point[2] if len(point) > 2 else 0.0])
+        return self.camera.project(position + R @ local, self.width(), self.height())
 
     def ball_on_plate(self) -> tuple:
         """Position (x, y) of the ball in the frame of the plate."""
@@ -219,15 +222,12 @@ class View3D(QWidget):
         p = self.to_plate(x, y)
         if p is None or math.hypot(*p) > self.plate_radius - self.ball_radius:
             return False
-        if self.tool == "drop":
-            self.dropped.emit(*p)
-            return True
         start = p
         if self.tool == "push":
             start = self.ball_on_plate()
             if math.hypot(p[0] - start[0], p[1] - start[1]) > PUSH_REACH * self.ball_radius:
                 return False
-        self.gesture = dict(kind=self.tool, start=start, end=start)
+        self.gesture, self.hover = dict(kind=self.tool, start=start, end=start), None
         return True
 
     def move(self, x: float, y: float) -> None:
@@ -244,9 +244,12 @@ class View3D(QWidget):
         if g is None:
             return
         vx, vy = velocity(g["start"], g["end"])
-        if math.hypot(vx, vy) < MIN_SPEED:
+        moving = math.hypot(vx, vy) >= MIN_SPEED
+        if g["kind"] == "drop":
+            self.dropped.emit(g["start"][0], g["start"][1], *((vx, vy) if moving else (0.0, 0.0)))
+        elif not moving:
             return
-        if g["kind"] == "throw":
+        elif g["kind"] == "throw":
             self.thrown.emit(g["start"][0], g["start"][1], vx, vy)
         else:
             dv = self._plate()[1] @ np.array([vx, vy, 0.0])       # frame of the plate -> world, horizontal part
@@ -345,7 +348,8 @@ class View3D(QWidget):
                 p.drawEllipse(q, 9, 9)
 
     def _gesture(self, p: QPainter, c: dict) -> None:
-        """The arrow of the gesture being drawn, with its speed (and the physical limit of a throw)."""
+        """The arrow of the gesture being drawn, with its speed (and the physical limit of a throw); for a drop,
+        its fall."""
         g = self.gesture
         if g is None:
             return
@@ -354,6 +358,8 @@ class View3D(QWidget):
             return
         text, color_key = self.describe(g["kind"], g["start"], g["end"])
         color = QColor(c[color_key])
+        if g["kind"] == "drop":
+            self._fall(p, g, a, color)
         p.setPen(QPen(color, 3, Qt.SolidLine, Qt.RoundCap))
         p.drawLine(a, b)
         dx, dy = b.x() - a.x(), b.y() - a.y()
@@ -376,6 +382,31 @@ class View3D(QWidget):
             p.drawRoundedRect(box, 6, 6)
             p.setPen(QColor(c["text"]))
             p.drawText(box, Qt.AlignCenter, text)
+
+    def _fall(self, p: QPainter, g: dict, start: QPointF, color: QColor) -> None:
+        """Fall of a drop (app/gestures.drop_flight, the plate as it is now): from the plate up to the point of
+        release (dotted), the parabola of the bottom of the ball down to the plate (dashed), a ring where it lands."""
+        vx, vy = velocity(g["start"], g["end"])
+        if math.hypot(vx, vy) < MIN_SPEED:
+            vx = vy = 0.0
+        landing, _, flight = drop_flight(g["start"], vx, vy, self.drop_height, self._plate()[1])
+        points = [q for q in (self._point(xyz) for xyz in flight) if q is not None]
+        faint = QColor(color)
+        faint.setAlpha(170)
+        p.setBrush(Qt.NoBrush)
+        if points:
+            p.setPen(QPen(faint, 1.5, Qt.DotLine))
+            p.drawLine(start, points[0])
+        if len(points) > 1:
+            p.setPen(QPen(faint, 2, Qt.DashLine))
+            path = QPainterPath(points[0])
+            for q in points[1:]:
+                path.lineTo(q)
+            p.drawPath(path)
+        q = self._point(landing)
+        if q is not None:
+            p.setPen(QPen(color, 2))
+            p.drawEllipse(q, 9, 9)
 
     def _chip(self, p: QPainter, text: str, dot: str, c: dict) -> None:
         p.setFont(self._font(12, bold=True))

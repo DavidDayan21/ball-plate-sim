@@ -39,7 +39,7 @@ app/                     The software for the general public (interface only, on
   theme.py               Light and dark themes: colors, font, style sheet, colors of the 3D scene
   widgets.py             Building blocks: card, segmented control, readout, curve
   readouts.py            Measurements of the panel, read from the session
-  gestures.py            Mouse gestures on the plate: throws, drops, pushes; physical limit of a throw
+  gestures.py            Mouse gestures on the plate: throws, drops (fall along a parabola), pushes; physical limit of a throw
   benchmark.py           Cost of a frame on this computer: simulation, 3D rendering, drawing (python -m app.benchmark)
   i18n.py, locales/      Texts of the interface, one file per language (English, French)
   fonts/                 Inter, the font of the interface (SIL Open Font License, OFL.txt)
@@ -246,12 +246,17 @@ Mouse: the wheel zooms; a drag turns the view, unless a tool is active and the d
 | Tool | Gesture | Effect |
 |---|---|---|
 | Throw | Drag from where the ball starts | The ball starts there, rolling along the arrow. Speed = length of the arrow / 0.2 s (10 cm: 0.5 m/s), up to 1.5 m/s. While dragging: the speed, and the physical limit of this throw √(2·c·g·sin θmax·d), d the distance to the edge along the arrow (nominal ball); green within it, red beyond (allowed, to see the ball fall) |
-| Drop | Click where the ball falls | The ball is dropped from the height chosen, without speed |
+| Drop | Click where the ball falls, or drag from there | Click: the ball is dropped from the height chosen, without speed. Drag: it is released above the point pressed with the horizontal speed of the arrow (same scale), and falls along a parabola; while dragging, its fall, where it lands and its angle of arrival from the vertical (red if it lands off the plate; no limit shown: not computed, bounce then rolling) |
 | Push | Drag from the ball | Its velocity changes by the arrow (same scale); the brain keeps its memory |
 
 When the ball falls, the camera glides to look between the robot and the ball and moves back to keep both in view
 (up to 2.5 m away); after 2 s of simulated time, the ball comes back to the center of the plate, and the camera to
 where it was. The pause stops all of it.
+
+The fall drawn for a drop is computed for the plate as it is when the arrow is drawn (no air in the model: a
+parabola, `app/gestures.drop_flight`). With the plate held still, MuJoCo lands the ball within 0.2 mm of it (one
+step of the physics); the brain moves the plate during the fall, so the ball actually lands a few mm away (measured:
+0.1 to 3 mm on the plate). Neither brain has learned drops with a speed (the training drops the ball straight down).
 
 The point under the mouse comes from the camera (`app/view3d.Camera`): the ray of the pixel, computed as MuJoCo
 computes its free camera, meets the plane of the plate surface. A test checks that the pixel computed for the
@@ -264,9 +269,10 @@ without dynamics. The moving parts keep the sizes of the physics model, so the p
 simulated; the physics, and the virtual camera that renders it, see nothing of this (checked by the tests and
 the bit-exact regression check). Quality of the rendering, from the measurements of `python -m app.benchmark` on
 an integrated graphics card (Intel Arc): antialiasing with 4 samples (8 cost 13 to 46 % more), shadow map of 4096
-pixels and fog (making them cheaper saves nothing measurable). The shadow map covers 5 m around the robot: with
-less, the floor got speckled where the camera looked beyond it (measured). The orange of the ball marks what is
-selected (brain, theme, language, pause); the buttons that act are neutral.
+pixels and fog (making them cheaper saves nothing measurable). The shadow map covers 6 m around the robot
+(MuJoCo counts it in sizes of the scene, 1.2 m): with less, the floor got speckled where the camera looked beyond it
+(measured); its pixels are then 2.9 mm wide, which shows as steps on the edges of the shadows. The orange of the ball
+marks what is selected (brain, theme, language, pause); the buttons that act are neutral.
 
 `python -m app.benchmark` measures what a frame costs on the computer where it runs: the simulation, the 3D
 rendering (with the image read back) for three sizes of the view and several qualities, the drawing of the image

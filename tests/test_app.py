@@ -106,11 +106,14 @@ def test_drop_and_push_with_the_mouse(window):
     window.tick()
     window.tool_buttons["drop"].click()
     window.s_height.setValue(20)
-    assert window.l_height.text() == "Drop height: 20 cm"
-    assert window.view.press(*window.view.to_screen((0.03, 0.02)))
+    assert window.l_height.text() == "Drop height: 20 cm" and window.view.drop_height == pytest.approx(0.2)
+    view = window.view
+    assert view.press(*view.to_screen((0.03, 0.02)))     # a click: dropped without speed
+    view.release()
     p = window.session.attempt["params"]
     assert window.session.attempt["action"] == "drop" and p["height_cm"] == pytest.approx(20)
     assert p["distance_cm"] == pytest.approx(100 * (0.03 ** 2 + 0.02 ** 2) ** 0.5, abs=0.1)
+    assert p["speed_m_s"] == 0 and p["deviation_deg"] == 0
     window.b_center.click()
     play(window, 30)
     window.tool_buttons["push"].click()
@@ -123,6 +126,29 @@ def test_drop_and_push_with_the_mouse(window):
     assert window.session.attempt["action"] == "push"
     assert p["dvx_m_s"] == pytest.approx(0, abs=0.01) and p["dvy_m_s"] == pytest.approx(0.1, abs=0.01)
     assert not view.press(*view.to_screen((ball[0] + 0.1, ball[1])))     # far from the ball: the view turns
+
+
+def test_drop_with_a_speed(window):
+    window.tick()
+    window.tool_buttons["drop"].click()
+    window.s_height.setValue(30)
+    view = window.view
+    assert view.press(*view.to_screen((-0.06, 0.0)))
+    view.move(*view.to_screen((-0.02, 0.0)))                 # 4 cm: 0.2 m/s toward +x
+    text, color = window.describe_gesture("drop", *[view.gesture[k] for k in ("start", "end")])
+    assert text.startswith("0.20 m/s · arrives ") and text.endswith("° from the vertical") and color == "accent"
+    view.grab()                                              # drawn with its fall
+    view.release()
+    attempt = window.session.attempt
+    p = attempt["params"]
+    assert attempt["action"] == "drop" and p["height_cm"] == pytest.approx(30)
+    assert p["speed_m_s"] == pytest.approx(0.2, abs=0.005) and p["angle_deg"] == pytest.approx(180, abs=0.5)
+    assert p["deviation_deg"] == pytest.approx(0, abs=0.5)
+    assert view.press(*view.to_screen((0.06, 0.0)))
+    view.move(*view.to_screen((0.16, 0.0)))                  # 10 cm: 0.5 m/s from 6 cm, falling for 0.25 s
+    text, color = window.describe_gesture("drop", *[view.gesture[k] for k in ("start", "end")])
+    assert text == "0.50 m/s · lands off the plate" and color == "bad"
+    view.release()
 
 
 def test_setpoint(window):
