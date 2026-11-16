@@ -6,6 +6,7 @@ rendered by MuJoCo, like the virtual camera.
 """
 import os
 
+import numpy as np
 import pytest
 
 pytest.importorskip("PySide6")
@@ -208,6 +209,59 @@ def test_settings(window):
     assert window.l_untrained.text() == "Not seen by the AI brain in training (5 to 35 cm)"
     window.s_height.setValue(35)
     assert not window.l_untrained.isVisibleTo(window)
+
+
+def advance(window, duration: float) -> None:
+    """Advances the sessions together, without rendering (faster than frames)."""
+    for _ in range(round(duration / window.session.dt)):
+        for r in window.robots:
+            r.session.step()
+
+
+def test_new_setpoint(window):
+    window.tick()
+    window.s_setpoint.buttons["circle"].click()                # not a disturbance: an attempt of its own
+    assert window.state_text() == "New setpoint (PID) in progress"
+
+
+def test_side_by_side(window):
+    window.tick()
+    window.s_ball.buttons["solid"].click()
+    window.s_setpoint.buttons["circle"].click()
+    window.b_split.click()
+    pid, ai = window.robots
+    assert window.split and (pid.brain, ai.brain) == ("pid", "imitation") and not window.s_brain.isEnabled()
+    assert isinstance(ai.session.sim.brain, PolicyController) and ai.session.ball == "solid"
+    assert ai.session.setpoint == "circle" and ai.session.t_setpoint == ai.session.t
+    assert [r.session.attempt["action"] for r in window.robots] == ["center", "center"]       # they start together
+    assert window.views.indexOf(pid.view) == 0 and window.views.indexOf(ai.view) == 1          # PID on the left
+    window.s_setpoint.buttons["center"].click()
+    window.throw(-0.10, 0.0, 0.4, 0.0)                         # every action on both
+    assert [r.session.attempt["action"] for r in window.robots] == ["throw", "throw"]
+    window.s_friction.buttons["slippery"].click()
+    assert [r.session.cfg.mujoco_params.friction for r in window.robots] == [0.2, 0.2]
+    pid.view.camera.turn(40, 0)
+    pid.view.turned.emit(40.0, 0.0)                           # the views turn together
+    assert ai.view.camera.azimuth == pid.view.camera.azimuth
+    window.tick()
+    play(window, 3)
+    assert ai.view.pixels is not None and ai.view.overlay.state.startswith("AI · ")
+    before = ai.view.pixels.copy()
+    pid.view._create_renderer()                               # a view resized: the other one keeps its image
+    ai.view.render_frame()
+    assert np.array_equal(ai.view.pixels, before)
+    window.throw(-0.10, 0.0, 0.4, 0.0)
+    advance(window, 5.0)
+    window.refresh()
+    assert window.t_measures.isVisibleTo(window) and not window.w_readouts.isVisibleTo(window)
+    assert window.t_measures.cells[0][1].text() != "—"         # distance to the setpoint, AI
+    lines = window.last_attempt_text().split("\n")
+    assert lines[0].startswith("Throw · PID · stabilized in ") and lines[1].startswith("Throw · AI · stabilized")
+    assert window.t_compare.cells[0][0].text() == "1" and window.t_compare.cells[1][1].text() == "100 %"
+    window.b_split.click()                                    # back to one robot: its comparison stays
+    assert not window.split and window.s_brain.isEnabled() and window.robots == [pid]
+    assert window.t_compare.cells[0][1].text() == "1"
+    assert window.view.overlay.state == window.state_text()
 
 
 def test_measurements(window):

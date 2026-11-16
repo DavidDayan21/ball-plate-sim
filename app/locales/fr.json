@@ -80,5 +80,17 @@
   "tip.latency": "Temps entre l'image de la balle et la commande qui la suit",
   "caption.settings": "Changer un réglage termine l'essai en cours. Tous restent dans ce que le cerveau IA a vu à l'entraînement.",
   "caption.untrained_height": "Hauteur non vue par le cerveau IA à l'entraînement ({low} à {high} cm)",
-  "last.settings": "{ball} · μ = {mu} · {latency} ms"
+  "last.settings": "{ball} · μ = {mu} · {latency} ms",
+  "button.split": "Côte à côte",
+  "tip.split": "Les deux cerveaux à la fois, un robot chacun : chaque action s'applique aux deux",
+  "caption.split": "Côte à côte : PID à gauche, IA à droite. Chaque action s'applique aux deux robots.",
+  "state.robot": "{brain} · {state}",
+  "state.attempt_short": "{action} en cours",
+  "action.setpoint": "Nouvelle consigne",
+  "section.compare": "Comparatif",
+  "compare.attempts": "Essais",
+  "compare.caught": "Balles rattrapées",
+  "compare.stabilized": "Stabilisée en (médiane)",
+  "compare.margin": "Marge au bord (médiane)",
+  "caption.compare": "Essais terminés de cette séance dans les conditions actuelles : {setpoint} · {ball} · μ = {mu} · {latency} ms. Lancers, lâchers, poussées et nouvelles consignes ; côte à côte ou non."
 }

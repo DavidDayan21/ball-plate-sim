@@ -1,6 +1,6 @@
 """Sandbox session: a series of attempts on the same MuJoCo robot, which never stops.
 
-An attempt starts with an action (throw, drop, center, free attempt) or, while waiting,
+An attempt starts with an action (throw, drop, center, push, free attempt, new setpoint) or, while waiting,
 as soon as the ball moves more than 2 cm away from the setpoint (pushed with the mouse, for example).
 When the ball is moved (throw, drop, center), the sensor and the controller restart from zero
 (integral, predictor, latency): the attempts are independent of each other. As at the start of a
@@ -128,8 +128,14 @@ class Session:
         self.sim.cfg = replace(self.cfg, trajectory=_shift(SETPOINTS[self.setpoint], self.t_setpoint))
 
     def set_setpoint(self, name: str) -> None:
+        """Setpoint of SETPOINTS, from its beginning (a circle from its starting point). A new one starts an attempt
+        "setpoint": the ball must reach it (while waiting, its distance to the new setpoint would otherwise start
+        a "disturbance" attempt)."""
+        changed = name != self.setpoint
         self.setpoint, self.t_setpoint = name, self.sim.t
         self._apply_config()
+        if changed and self.state != "fallen":
+            self._new_attempt("setpoint", {})
 
     # A change of setting ends the current attempt (interrupted): an attempt has a single setting of each. The ball
     # is not touched.

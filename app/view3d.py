@@ -2,7 +2,8 @@
 corners, with what is drawn over it: texts (Overlay), the setpoint and its path, the arrow of a gesture, the x and y
 axes of the plate.
 
-Mouse: with no tool, left drag turns the view around the plate; the wheel zooms. With a tool (tool = "throw",
+Mouse: with no tool, left drag turns the view around the plate; the wheel zooms (then turned(dx, dy) or
+zoomed(notches): another view can follow). With a tool (tool = "throw",
 "drop" or "push"), a press on the plate starts the gesture (app/gestures.py), a press elsewhere turns the view:
 - throw: drag from where the ball starts; on release, thrown(x, y, vx, vy) (frame of the plate);
 - drop: click where the ball falls, or drag from there to give it a horizontal speed; on release, dropped(x, y,
@@ -32,6 +33,8 @@ ELEVATION = (-89.0, -5.0)       # (°) from straight above to almost level with 
 RADIUS = 8                      # (pixels) corners of the view
 AXIS_LENGTH = 28                # (pixels) axes of the plate, drawn in the corner
 PUSH_REACH = 3                  # a push starts within this many ball radii of the ball
+FIT_ASPECT = 1.0                # a view narrower than this (width / height; side by side) moves its camera back,
+                                # to keep the width of the scene in sight (the default window is wider: 1.2)
 
 
 class Camera:
@@ -40,6 +43,7 @@ class Camera:
 
     def __init__(self, lookat_height: float, fovy: float = 45.0):
         self.azimuth, self.elevation, self.distance = 90.0, -27.0, VIEW_DISTANCE
+        self.fit = 1.0                  # the camera is that many times farther than `distance` (narrow view)
         self.lookat = (0.0, 0.0, lookat_height)
         self.fovy = fovy
 
@@ -62,17 +66,17 @@ class Camera:
 
     def mujoco(self) -> mujoco.MjvCamera:
         cam = mujoco.MjvCamera()
-        cam.azimuth, cam.elevation, cam.distance = self.azimuth, self.elevation, self.distance
+        cam.azimuth, cam.elevation, cam.distance = self.azimuth, self.elevation, self.fit * self.distance
         cam.lookat[:] = self.lookat
         return cam
 
     def frame(self) -> tuple:
         """Eye and axes (forward f, up u, right r = f × u) of the camera: f = (cos e·cos a, cos e·sin a, sin e),
-        u = (-sin e·cos a, -sin e·sin a, cos e), the eye at `distance` behind the point looked at."""
+        u = (-sin e·cos a, -sin e·sin a, cos e), the eye at fit·distance behind the point looked at."""
         a, e = math.radians(self.azimuth), math.radians(self.elevation)
         f = np.array([math.cos(e) * math.cos(a), math.cos(e) * math.sin(a), math.sin(e)])
         u = np.array([-math.sin(e) * math.cos(a), -math.sin(e) * math.sin(a), math.cos(e)])
-        return np.array(self.lookat) - self.distance * f, f, u, np.cross(f, u)
+        return np.array(self.lookat) - self.fit * self.distance * f, f, u, np.cross(f, u)
 
     def project(self, point, width: float, height: float):
         """Pixel (x, y) of a point of the world in a view of width × height, or None if it is behind the eye."""
@@ -122,6 +126,8 @@ class View3D(QWidget):
     thrown = Signal(float, float, float, float)
     dropped = Signal(float, float, float, float)
     pushed = Signal(float, float)
+    turned = Signal(float, float)       # the view was turned by the mouse, by (dx, dy) pixels
+    zoomed = Signal(float)              # the view was zoomed by the wheel, by this many notches
 
     def __init__(self, scene: DisplayScene, physics_data, lookat_height: float, plate_radius: float,
                  ball_radius: float, parent=None):
@@ -162,16 +168,25 @@ class View3D(QWidget):
         return image_size(round(self.width() * ratio), round(self.height() * ratio))
 
     def _create_renderer(self) -> None:
-        if self.renderer is not None:
-            self.renderer.close()
+        self._free_renderer()
         width, height = self._physical_size()
         self.renderer = mujoco.Renderer(self.scene.model, height, width)
+
+    def _free_renderer(self) -> None:
+        """MuJoCo frees the objects of a renderer in the OpenGL context that is current: its own must be, otherwise
+        those of another view (side by side) would be freed in its place (measured: that view then draws garbage)."""
+        if self.renderer is not None:
+            if self.renderer._gl_context:
+                self.renderer._gl_context.make_current()
+            self.renderer.close()
+            self.renderer = None
 
     def render_frame(self) -> None:
         """Renders the robot as it is now in the physics, then asks Qt to draw it."""
         if self.renderer is None:
             self._create_renderer()
-        self.scene.view(self.renderer._mjr_context, self.camera.lookat, self.camera.distance)
+        self._fit()
+        self.scene.view(self.renderer._mjr_context, self.camera.lookat, self.camera.fit * self.camera.distance)
         self.scene.follow(self.physics_data)
         self.renderer.update_scene(self.scene.data, camera=self.camera.mujoco())
         self.renderer.scene.flags[mujoco.mjtRndFlag.mjRND_FOG] = 1     # the floor fades into the background
@@ -182,9 +197,7 @@ class View3D(QWidget):
 
     def close_renderer(self) -> None:
         self._resize_timer.stop()
-        if self.renderer is not None:
-            self.renderer.close()
-            self.renderer = None
+        self._free_renderer()
 
     def resizeEvent(self, event) -> None:
         if self.renderer is not None:
@@ -197,13 +210,19 @@ class View3D(QWidget):
         b = self.scene.data.body("plate")
         return b.xpos.copy(), b.xmat.reshape(3, 3).copy()
 
+    def _fit(self) -> None:
+        """A view narrower than FIT_ASPECT: the camera moves back, to see the same width of the scene."""
+        self.camera.fit = max(1.0, FIT_ASPECT * self.height() / max(self.width(), 1))
+
     def to_plate(self, x: float, y: float):
         """Point (x, y) of the plane of the plate (frame of the plate) under the pixel (x, y), or None."""
+        self._fit()
         eye, direction = self.camera.ray(x, y, self.width(), self.height())
         return plate_hit(eye, direction, *self._plate())
 
     def to_screen(self, point):
         """Pixel of a point (x, y) of the plate surface, or (x, y, z) at z above it (frame of the plate), or None."""
+        self._fit()
         position, R = self._plate()
         local = np.array([point[0], point[1], point[2] if len(point) > 2 else 0.0])
         return self.camera.project(position + R @ local, self.width(), self.height())
@@ -264,8 +283,10 @@ class View3D(QWidget):
     def mouseMoveEvent(self, event) -> None:
         q = event.position()
         if self._drag is not None:
-            self.camera.turn(q.x() - self._drag.x(), q.y() - self._drag.y())
+            dx, dy = q.x() - self._drag.x(), q.y() - self._drag.y()
+            self.camera.turn(dx, dy)
             self._drag = q
+            self.turned.emit(dx, dy)
         elif self.tool is not None:
             self.move(q.x(), q.y())
 
@@ -279,7 +300,9 @@ class View3D(QWidget):
         self.update()
 
     def wheelEvent(self, event) -> None:
-        self.camera.zoom(event.angleDelta().y() / 120)       # 120 per notch (Qt)
+        notches = event.angleDelta().y() / 120               # 120 per notch (Qt)
+        self.camera.zoom(notches)
+        self.zoomed.emit(notches)
 
     # --- Drawing -----------------------------------------------------------------------------
     def paintEvent(self, event) -> None:
@@ -302,12 +325,19 @@ class View3D(QWidget):
             p.setPen(QPen(QColor(c["border"]), 1))
             p.setBrush(Qt.NoBrush)
             p.drawRoundedRect(rect.adjusted(0.5, 0.5, -0.5, -0.5), RADIUS, RADIUS)
-            self._chip(p, o.state, o.state_color, c)
+            chip = self._chip(p, o.state, o.state_color, c)
             p.setFont(self._font(12))
             p.setPen(QColor(c["text2"]))
             text = rect.adjusted(16, 0, -16, -12)
-            p.drawText(rect.adjusted(16, 22, -16, 0), Qt.AlignTop | Qt.AlignRight, o.hint)
+            if chip.right() + 16 + p.fontMetrics().horizontalAdvance(o.hint) <= rect.width() - 16:
+                p.drawText(rect.adjusted(16, 22, -16, 0), Qt.AlignTop | Qt.AlignRight, o.hint)
+            else:                                           # a narrow view: under the chip
+                p.drawText(QRectF(16, chip.bottom() + 8, rect.width() - 32, 64),
+                           Qt.AlignTop | Qt.AlignRight | Qt.TextWordWrap, o.hint)
             p.drawText(text, Qt.AlignBottom | Qt.AlignLeft, o.bottom_left)
+            metrics = p.fontMetrics()
+            if metrics.horizontalAdvance(o.bottom_left) + 24 + metrics.horizontalAdvance(o.bottom_right) > text.width():
+                text = text.adjusted(0, 0, 0, -metrics.height() - 2)          # a narrow view: one line higher
             p.drawText(text, Qt.AlignBottom | Qt.AlignRight, o.bottom_right)
             self._axes(p, QPointF(rect.width() - 44, rect.height() - 64), c)
         p.end()
@@ -409,7 +439,7 @@ class View3D(QWidget):
             p.setPen(QPen(color, 2))
             p.drawEllipse(q, 9, 9)
 
-    def _chip(self, p: QPainter, text: str, dot: str, c: dict) -> None:
+    def _chip(self, p: QPainter, text: str, dot: str, c: dict) -> QRectF:
         p.setFont(self._font(12, bold=True))
         r = QRectF(16, 16, p.fontMetrics().horizontalAdvance(text) + 36, 28)
         background = QColor(c["surface"])
@@ -422,6 +452,7 @@ class View3D(QWidget):
         p.drawEllipse(QPointF(r.x() + 15, r.center().y()), 4, 4)
         p.setPen(QColor(c["text"]))
         p.drawText(r.adjusted(26, 0, 0, 0), Qt.AlignVCenter | Qt.AlignLeft, text)
+        return r
 
     def _axes(self, p: QPainter, origin: QPointF, c: dict) -> None:
         """The x and y axes of the plate as seen from the camera (they turn with the view)."""

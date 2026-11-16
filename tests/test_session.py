@@ -60,25 +60,39 @@ def test_disturbance_detected_automatically(session):
     assert session.summary[-1]["result"] == "stabilized"
 
 
+def test_new_setpoint_starts_an_attempt(session):
+    session.set_setpoint("circle")                         # the ball is 6 cm away from it: not a disturbance
+    assert session.attempt["action"] == "setpoint" and session.attempt["setpoint"] == "circle"
+    advance(session, 3.0)
+    assert session.attempt["action"] == "setpoint"
+    session.set_setpoint("center")
+    assert session.summary[-1]["result"] == "interrupted" and session.attempt["action"] == "setpoint"
+    advance(session, 6.0)
+    assert session.summary[-1]["action"] == "setpoint" and session.summary[-1]["result"] == "stabilized"
+    session.set_setpoint("center")                         # the same one: no new attempt
+    assert session.attempt is None
+
+
 def test_files_written(session):
     session.throw(0.10, 180, speed=0.4)
     advance(session, 2.0)
-    session.set_setpoint("circle")
-    session.free_attempt()                                 # interrupts the throw
+    session.set_setpoint("circle")                         # interrupts the throw: a new attempt, "setpoint"
+    session.free_attempt()                                 # interrupts it
     advance(session, 2.0)
     summary = session.close()
-    assert [l["result"] for l in summary] == ["interrupted", "interrupted"]
+    assert [l["result"] for l in summary] == ["interrupted"] * 3
 
     with open(session.folder / "summary.csv", encoding="utf-8") as f:
         assert f.read(1) != "﻿"                      # UTF-8 without BOM
         f.seek(0)
         rows = list(csv.DictReader(f, delimiter=","))
-    assert len(rows) == 2 and rows[0]["action"] == "throw" and rows[1]["setpoint"] == "circle"
+    assert len(rows) == 3 and rows[0]["action"] == "throw" and rows[1]["action"] == "setpoint"
+    assert rows[1]["setpoint"] == rows[2]["setpoint"] == "circle"
     assert rows[0]["brain"] == "pid"
     assert rows[0]["speed_m_s"] == "0.400"                # decimal point, same number of decimals
     assert rows[0]["stabilized_in_s"] == ""               # missing value: empty cell
 
-    with open(session.folder / "attempt_002.csv", encoding="utf-8") as f:
+    with open(session.folder / "attempt_003.csv", encoding="utf-8") as f:     # the free attempt
         measurements = list(csv.DictReader(f, delimiter=","))
     assert len(measurements) == 100                                # 2 s at 50 Hz
     # The circle setpoint starts at its starting point: 6 cm at 45°

@@ -18,10 +18,12 @@ MODES = ("light", "dark")
 COLORS = {
     "light": dict(bg="#EEF1F3", surface="#FFFFFF", surface2="#F1F3F5", border="#DDE1E6", text="#14161A",
                   text2="#5F6672", text3="#959CA7", accent="#EA580C", accent_text="#FFFFFF",
-                  good="#16A34A", bad="#DC2626", axis_x="#E5484D", axis_y="#2F9E63"),
+                  good="#16A34A", bad="#DC2626", axis_x="#E5484D", axis_y="#2F9E63",
+                  brain_pid="#2563EB", brain_imitation="#7C3AED"),
     "dark": dict(bg="#0A0D10", surface="#11161B", surface2="#182027", border="#25303A", text="#ECEEF2",
                  text2="#A3AAB5", text3="#6B7380", accent="#FB7A3C", accent_text="#1C0D04",
-                 good="#22C55E", bad="#F87171", axis_x="#F2555A", axis_y="#3DD68C"),
+                 good="#22C55E", bad="#F87171", axis_x="#F2555A", axis_y="#3DD68C",
+                 brain_pid="#60A5FA", brain_imitation="#A78BFA"),
 }
 
 
@@ -70,6 +72,9 @@ def stylesheet(mode: str) -> str:
     #readoutName {{ color: {c['text3']}; font-size: 11px; font-weight: 600; }}
     #readoutValue {{ font-size: 20px; font-weight: 600; }}
     #readoutUnit {{ color: {c['text2']}; font-size: 12px; }}
+    #tableHead {{ font-size: 12px; font-weight: 600; }}
+    #tableName {{ color: {c['text2']}; font-size: 12px; }}
+    #tableValue {{ font-size: 13px; font-weight: 600; }}
     QPushButton {{ background: {c['surface']}; border: 1px solid {c['border']}; border-radius: {rs}px;
                    min-height: 34px; padding: 0 12px; font-weight: 500; }}
     QPushButton:hover {{ border-color: {c['text3']}; }}

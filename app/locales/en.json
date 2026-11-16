@@ -80,5 +80,17 @@
   "tip.latency": "Time between the image of the ball and the command that follows it",
   "caption.settings": "Changing a setting ends the current attempt. All stay within what the AI brain saw in training.",
   "caption.untrained_height": "Not seen by the AI brain in training ({low} to {high} cm)",
-  "last.settings": "{ball} · μ = {mu} · {latency} ms"
+  "last.settings": "{ball} · μ = {mu} · {latency} ms",
+  "button.split": "Side by side",
+  "tip.split": "Both brains at once, a robot each: every action is applied to both",
+  "caption.split": "Side by side: PID on the left, AI on the right. Every action is applied to both robots.",
+  "state.robot": "{brain} · {state}",
+  "state.attempt_short": "{action} in progress",
+  "action.setpoint": "New setpoint",
+  "section.compare": "Comparison",
+  "compare.attempts": "Attempts",
+  "compare.caught": "Balls caught",
+  "compare.stabilized": "Stabilized in (median)",
+  "compare.margin": "Room to the edge (median)",
+  "caption.compare": "Finished attempts of this session in the current conditions: {setpoint} · {ball} · μ = {mu} · {latency} ms. Throws, drops, pushes and new setpoints; side by side or not."
 }

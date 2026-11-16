@@ -1,18 +1,22 @@
-"""Main window of the software: the control panel on the left, the robot in 3D on the right.
+"""Main window of the software: the control panel on the left, the robot in 3D on the right; or two robots side by
+side, one per brain, to compare them.
 
-A single loop, in the thread of the interface: a timer advances the simulation by the real time elapsed
-(simulation.session.RealTime, up to MAX_LAG per frame), then renders the 3D view. The panel and the gestures of the
-3D view act on the session directly, between two frames. The measurements are refreshed every READOUT_EVERY frames
-(readable, and cheaper).
+A single loop, in the thread of the interface: a timer advances the simulations by the real time elapsed
+(simulation.session.RealTime, up to MAX_LAG per frame), then renders the 3D views. The panel and the gestures act on
+the sessions directly, between two frames. The measurements are refreshed every READOUT_EVERY frames (readable, and
+cheaper).
 
 The tools of the ball (throw, drop, push) stay active until clicked again; with one active, the mouse acts on the
-plate (app/view3d.py). The physical limit shown while throwing is that of the ball in play (c = 1/(1+k)). A drop with a speed shows where the ball lands and its angle
-of arrival, in the good color if it lands on the plate, in the bad color if not; no limit is shown for it (not
-computed: bounce, then rolling): on the plate does not mean caught.
+plate (app/view3d.py). The physical limit shown while throwing is that of the ball in play (c = 1/(1+k)). A drop
+with a speed shows where the ball lands and its angle of arrival, in the good color if it lands on the plate, in the
+bad color if not; no limit is shown for it (not computed: bounce, then rolling): on the plate does not mean caught.
 
-When the ball falls, the camera glides to look between the robot and the ball, and moves back to keep both in view
-(the ball is followed up to FOLLOW_REACH from the center of the plate), for FALL_SHOW of simulated time; then the
-ball comes back to the center of the plate, and the camera to where it was. A pause stops all of it.
+Side by side: the PID brain on the left, the AI brain on the right, each robot with its own session. Every action (a
+gesture on either view, the setpoint, a setting, Center) is applied to both, the views turn and zoom together, and the
+sessions advance step by step together. The panel shows the measurements of both. The comparison of the brains
+(app/comparison.py) covers the attempts of the whole session, side by side or not.
+
+When a ball falls, the camera of its view follows it, then the ball comes back to the center (app/robot.py).
 """
 import math
 import time
@@ -23,13 +27,15 @@ from PySide6.QtCore import QTimer, Qt
 from PySide6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QMainWindow, QPushButton, QScrollArea, QSlider,
                                QVBoxLayout, QWidget)
 
+from app.comparison import compare
 from app.gestures import MIN_SPEED, drop_arguments, drop_flight, throw_arguments, throw_limit, velocity
 from app.i18n import LANGUAGES, Texts
 from app.readouts import distance_history, readouts
+from app.robot import Robot
 from app.scene import DisplayScene
 from app.theme import COLORS, MODES, load_fonts, scene_style, stylesheet, system_mode
 from app.view3d import View3D
-from app.widgets import Card, Readout, Segmented, Sparkline, label
+from app.widgets import Card, Readout, Segmented, Sparkline, Table, Wrapped, label
 from controller.policy import MAX_LATENCY
 from simulation.config import G
 from simulation.session import BALLS, FRICTIONS, SETPOINTS, RealTime, Session, sandbox_config
@@ -47,15 +53,29 @@ FRICTION_NAMES = dict(zip(FRICTIONS, ("normal", "slippery", "very_slippery")))
 # The settings stay within what the AI brain saw in training: balls and frictions (simulation/session.py), latency
 # from 1 to MAX_LATENCY control periods (20 to 100 ms), which is also the most it can take.
 PATH_DURATION = 8.0                                         # (s) of setpoint drawn: a square, two circles
-FALL_SHOW = 2.0                                             # (s) of simulated time showing the fallen ball
-FOLLOW_REACH = 2.5                                          # (m) the camera follows the ball this far at most
-                                                            # (a fast ball rolls about 2 m on the floor in 2 s)
-FOLLOW_TIME = 0.3                                           # (s) time constant of the moves of the camera
 PANEL_WIDTH = 300                                           # (pixels)
 # The measurements of the panel: (key of readouts(), key of the text, unit, decimals)
 MEASURES = (("distance_mm", "distance", "mm", 1), ("speed_mm_s", "speed", "mm/s", 0),
             ("tilt_x_deg", "tilt_x", "°", 2), ("tilt_y_deg", "tilt_y", "°", 2),
             ("height_mm", "height", "mm", 1), ("torque_Nm", "torque", "N·m", 3))
+# The comparison of the brains: (key of app.comparison.compare, key of the text, unit, decimals)
+INDICATORS = (("attempts", "attempts", "", 0), ("caught_pct", "caught", "%", 0),
+              ("stabilized_s", "stabilized", "s", 2), ("margin_mm", "margin", "mm", 0))
+
+
+class _Together:
+    """The sessions of the robots, advanced step by step together (for RealTime: the time is that of the first)."""
+
+    def __init__(self, sessions):
+        self.sessions = sessions
+
+    @property
+    def t(self) -> float:
+        return self.sessions[0].t
+
+    def step(self) -> None:
+        for s in self.sessions:
+            s.step()
 
 
 class MainWindow(QMainWindow):
@@ -67,21 +87,16 @@ class MainWindow(QMainWindow):
         self.texts = texts
         self.mode = mode or system_mode()
         self.clock = clock
-        self.session = Session(replace(sandbox_config(), brain=brain), record=False)
         self.real_time = RealTime(MAX_LAG)
-        cfg = self.session.cfg
-        self.view = View3D(DisplayScene(cfg, scene_style(self.mode)), self.session.phys.data,
-                           cfg.geometry.height - 0.035, cfg.plate.plate_radius, cfg.plate.ball_radius)
-        self.view.describe = self.describe_gesture
-        self.view.thrown.connect(self.throw)
-        self.view.dropped.connect(self.drop)
-        self.view.pushed.connect(self.push)
-        self._scene_mode = self.mode                        # theme of the display scene
+        self._scene_mode = self.mode                        # theme of the display scenes
         self.tool = None
-        self.fall_time = None                               # simulated time of the fall, while the ball is down
-        self._home = None                                   # (lookat, distance) of the camera before the fall
-        self._last_t = self.session.t
         self.frames = 0
+        self.robots = []                                    # the first one is always there: its time is the window's
+        self.past_rows = []                                 # attempts of the robots taken away (side by side ended)
+        self.path = []                                      # path of the setpoint, drawn on the plates
+        self.views = QHBoxLayout()
+        self.views.setSpacing(12)
+        self._add_robot(Session(replace(sandbox_config(), brain=brain), record=False))
         self._build()
         self.set_setpoint(self.session.setpoint)
         self.set_mode(self.mode)
@@ -90,16 +105,94 @@ class MainWindow(QMainWindow):
         self.timer.timeout.connect(self.tick)
         self.timer.start()
 
+    @property
+    def session(self) -> Session:
+        """Session of the first robot (the only one, unless side by side)."""
+        return self.robots[0].session
+
+    @property
+    def view(self) -> View3D:
+        return self.robots[0].view
+
+    @property
+    def split(self) -> bool:
+        """Two robots side by side."""
+        return len(self.robots) > 1
+
+    def _ordered(self) -> list:
+        """The robots in the order of BRAINS (side by side: PID on the left)."""
+        return sorted(self.robots, key=lambda r: BRAINS.index(r.brain))
+
+    # --- Robots ------------------------------------------------------------------------------
+    def _add_robot(self, session: Session) -> Robot:
+        cfg = session.cfg
+        view = View3D(DisplayScene(cfg, scene_style(self._scene_mode)), session.phys.data,
+                      cfg.geometry.height - 0.035, cfg.plate.plate_radius, cfg.plate.ball_radius)
+        robot = Robot(session, view)
+        view.describe = lambda kind, start, end: self.describe_gesture(kind, start, end, robot)
+        view.thrown.connect(self.throw)
+        view.dropped.connect(self.drop)
+        view.pushed.connect(self.push)
+        view.turned.connect(lambda dx, dy: [r.view.camera.turn(dx, dy) for r in self.robots if r.view is not view])
+        view.zoomed.connect(lambda notches: [r.view.camera.zoom(notches) for r in self.robots if r.view is not view])
+        if self.robots:                                     # the same point of view as the first one, and its look
+            camera, first = view.camera, self.robots[0]
+            camera.azimuth, camera.elevation = first.view.camera.azimuth, first.view.camera.elevation
+            camera.lookat, camera.distance = first.home()
+            view.set_tool(self.tool)
+            view.drop_height = self.drop_height()
+            view.overlay.colors = COLORS[self.mode]
+            view.overlay.path = self.path
+            view.overlay.hint = self.texts(f"hint.{self.tool or 'view'}")
+        self.robots.append(robot)
+        self._place_views()
+        return robot
+
+    def _place_views(self) -> None:
+        for r in self.robots:
+            self.views.removeWidget(r.view)
+        for r in self._ordered():
+            self.views.addWidget(r.view, 1)
+
+    def set_split(self, on: bool) -> None:
+        """Both brains side by side, or only the first robot. A second robot starts with the settings and the
+        setpoint of the first; both balls are then put at the center, the setpoints from their beginning: they
+        start together."""
+        if on == self.split:
+            return
+        if on:
+            first = self.session
+            other = next(b for b in BRAINS if b != first.cfg.brain)
+            self._add_robot(Session(replace(sandbox_config(), brain=other, latency=first.cfg.latency,
+                                            latency_compensation=first.cfg.latency_compensation,
+                                            mujoco_params=first.cfg.mujoco_params), record=False))
+            for r in self.robots:
+                r.session.set_setpoint(first.setpoint)
+            self.center()
+        else:
+            robot = self.robots.pop()
+            self.past_rows += robot.session.close()
+            robot.view.close_renderer()
+            self.views.removeWidget(robot.view)
+            robot.view.deleteLater()
+        self.b_split.setChecked(on)
+        self.s_brain.setEnabled(not on)
+        self.retranslate()
+
     # --- Layout ------------------------------------------------------------------------------
     def _build(self) -> None:
+        cfg = self.session.cfg
         self.l_title = label("title")
         self.l_subtitle = label("subtitle")
 
         self.c_brain = Card()
-        self.s_brain = Segmented(BRAINS, self.session.cfg.brain)
+        self.s_brain = Segmented(BRAINS, cfg.brain)
         self.s_brain.changed.connect(self.set_brain)
-        self.l_brain = label("caption", wordWrap=True)
+        self.b_split = QPushButton(checkable=True, objectName="ghost")
+        self.b_split.toggled.connect(self.set_split)
+        self.l_brain = Wrapped("caption")
         self.c_brain.body.addWidget(self.s_brain)
+        self.c_brain.body.addWidget(self.b_split)
         self.c_brain.body.addWidget(self.l_brain)
 
         self.c_ball = Card()
@@ -119,7 +212,7 @@ class MainWindow(QMainWindow):
         self.l_height = label("caption")
         self.s_height = QSlider(Qt.Horizontal, minimum=DROP_HEIGHT[0], maximum=DROP_HEIGHT[1], value=DROP_HEIGHT[2])
         self.s_height.valueChanged.connect(lambda _: self._show_height())
-        self.l_untrained = label("caption", wordWrap=True)        # outside the heights of the training
+        self.l_untrained = Wrapped("caption")        # outside the heights of the training
         height.addWidget(self.l_height)
         height.addWidget(self.s_height)
         height.addWidget(self.l_untrained)
@@ -136,12 +229,11 @@ class MainWindow(QMainWindow):
         self.c_setpoint = Card()
         self.s_setpoint = Segmented(tuple(SETPOINTS), self.session.setpoint)
         self.s_setpoint.changed.connect(self.set_setpoint)
-        self.l_setpoint = label("caption", wordWrap=True)
+        self.l_setpoint = Wrapped("caption")
         self.c_setpoint.body.addWidget(self.s_setpoint)
         self.c_setpoint.body.addWidget(self.l_setpoint)
 
         self.c_settings = Card()
-        cfg = self.session.cfg
         self.l_ball = label("caption")
         self.s_ball = Segmented(tuple(BALLS), self.session.ball)
         self.s_ball.changed.connect(self.set_ball)
@@ -151,28 +243,38 @@ class MainWindow(QMainWindow):
         self.l_latency = label("caption")
         self.s_latency = QSlider(Qt.Horizontal, minimum=1, maximum=MAX_LATENCY, value=cfg.latency, pageStep=1)
         self.s_latency.valueChanged.connect(self.set_latency)
-        self.l_settings = label("caption", wordWrap=True)
+        self.l_settings = Wrapped("caption")
         for w in (self.l_ball, self.s_ball, self.l_friction, self.s_friction, self.l_latency, self.s_latency,
                   self.l_settings):
             self.c_settings.body.addWidget(w)
 
         self.c_measures = Card()
-        grid = QGridLayout()
+        self.w_readouts = QWidget()                         # one robot: the values in large
+        grid = QGridLayout(self.w_readouts)
+        grid.setContentsMargins(0, 0, 0, 0)
         grid.setHorizontalSpacing(12)
         grid.setVerticalSpacing(10)
         self.readouts = {}
         for i, (key, *_) in enumerate(MEASURES):
             self.readouts[key] = Readout()
             grid.addWidget(self.readouts[key], i // 2, i % 2)
-        self.c_measures.body.addLayout(grid)
+        self.t_measures = Table(len(MEASURES), len(BRAINS))   # side by side: a column per brain
+        self.c_measures.body.addWidget(self.w_readouts)
+        self.c_measures.body.addWidget(self.t_measures)
         self.sparkline = Sparkline()
         self.l_history = label("caption")
         self.c_measures.body.addWidget(self.sparkline)
         self.c_measures.body.addWidget(self.l_history)
 
         self.c_last = Card(spacing=6)
-        self.l_last = label("body", wordWrap=True)
+        self.l_last = Wrapped("body")
         self.c_last.body.addWidget(self.l_last)
+
+        self.c_compare = Card()
+        self.t_compare = Table(len(INDICATORS), len(BRAINS))
+        self.l_compare = Wrapped("caption")
+        self.c_compare.body.addWidget(self.t_compare)
+        self.c_compare.body.addWidget(self.l_compare)
 
         self.s_mode = Segmented(MODES, self.mode)
         self.s_mode.changed.connect(self.set_mode)
@@ -189,7 +291,8 @@ class MainWindow(QMainWindow):
         header.addWidget(self.l_title)
         header.addWidget(self.l_subtitle)
         column.addLayout(header)
-        for w in (self.c_brain, self.c_ball, self.c_setpoint, self.c_settings, self.c_measures, self.c_last):
+        for w in (self.c_brain, self.c_ball, self.c_setpoint, self.c_settings, self.c_measures, self.c_last,
+                  self.c_compare):
             column.addWidget(w)
         column.addStretch(1)
         settings = QHBoxLayout()
@@ -206,18 +309,20 @@ class MainWindow(QMainWindow):
         row.setContentsMargins(12, 12, 12, 12)
         row.setSpacing(12)
         row.addWidget(scroll)
-        row.addWidget(self.view, 1)
+        row.addLayout(self.views, 1)
         self.setCentralWidget(central)
 
     def retranslate(self) -> None:
-        """Writes all the texts in the current language."""
-        tr = self.texts
+        """Writes all the texts in the current language (and shows what depends on side by side)."""
+        tr, c = self.texts, COLORS[self.mode]
         self.setWindowTitle(tr("window.title"))
         self.l_title.setText(tr("app.name"))
         self.l_subtitle.setText(tr("app.subtitle"))
         self.c_brain.set_title(tr("section.brain"))
         self.s_brain.set_texts({name: tr(f"brain.{name}") for name in BRAINS})
-        self.l_brain.setText(tr("caption.brain"))
+        self.b_split.setText(tr("button.split"))
+        self.b_split.setToolTip(tr("tip.split"))
+        self.l_brain.setText(tr("caption.split" if self.split else "caption.brain"))
         self.c_ball.set_title(tr("section.ball"))
         for name, b in self.tool_buttons.items():
             b.setText(tr(f"button.{name}"))
@@ -245,10 +350,19 @@ class MainWindow(QMainWindow):
         self.c_measures.setToolTip(tr("tip.measures"))
         for key, name, unit, _ in MEASURES:
             self.readouts[key].set_name(tr(f"measure.{name}").upper(), "" if unit == "°" else unit)  # 12,3°
+        self.t_measures.set_names([tr(f"measure.{name}") + ("" if unit == "°" else f" ({unit})")
+                                   for _, name, unit, _ in MEASURES])
+        self.w_readouts.setVisible(not self.split)
+        self.t_measures.setVisible(self.split)
         self.l_history.setText(tr("caption.history"))
         self.c_last.set_title(tr("section.last"))
+        self.c_compare.set_title(tr("section.compare"))
+        self.t_compare.set_names([tr(f"compare.{name}") for _, name, _, _ in INDICATORS])
+        for table in (self.t_measures, self.t_compare):
+            table.set_heads([tr(f"brain.{b}") for b in BRAINS], [c[f"brain_{b}"] for b in BRAINS])
         self.s_mode.set_texts({m: tr(f"theme.{m}") for m in MODES})
-        self.view.overlay.hint = tr(f"hint.{self.tool or 'view'}")
+        for r in self.robots:
+            r.view.overlay.hint = tr(f"hint.{self.tool or 'view'}")
         self.refresh()
 
     def _show_height(self) -> None:
@@ -257,84 +371,106 @@ class MainWindow(QMainWindow):
         low, high = (round(100 * h) for h in TRAINED_HEIGHT)
         self.l_untrained.setText(self.texts("caption.untrained_height", low=low, high=high))
         self.l_untrained.setVisible(not low <= height <= high)
-        self.view.drop_height = self.drop_height()
+        for r in self.robots:
+            r.view.drop_height = self.drop_height()
 
     def _show_latency(self) -> None:
-        self.l_latency.setText(self.texts("label.latency", latency=round(1000 * self.session.cfg.latency
-                                                                         * self.session.cfg.control_period)))
+        self.l_latency.setText(self.texts("label.latency", latency=self.latency_ms()))
 
-    # --- Actions -----------------------------------------------------------------------------
+    def latency_ms(self) -> int:
+        cfg = self.session.cfg
+        return round(1000 * cfg.latency * cfg.control_period)
+
+    # --- Actions (on every robot) ------------------------------------------------------------
     def set_tool(self, name) -> None:
         """Activates the tool `name`, or deactivates it if it is the active one."""
         self.tool = None if name == self.tool else name
         for n, b in self.tool_buttons.items():
             b.setChecked(n == self.tool)
         self.height_row.setVisible(self.tool == "drop")
-        self.view.set_tool(self.tool)
-        self.view.overlay.hint = self.texts(f"hint.{self.tool or 'view'}")
+        for r in self.robots:
+            r.view.set_tool(self.tool)
+            r.view.overlay.hint = self.texts(f"hint.{self.tool or 'view'}")
 
     def throw(self, x: float, y: float, vx: float, vy: float) -> None:
-        self.session.throw(**throw_arguments((x, y), vx, vy))
+        for r in self.robots:
+            r.session.throw(**throw_arguments((x, y), vx, vy))
 
     def drop_height(self) -> float:
         """(m) Height of a drop: of the bottom of the ball above the plate."""
         return self.s_height.value() / 100
 
     def drop(self, x: float, y: float, vx: float, vy: float) -> None:
-        self.session.throw(**drop_arguments((x, y), self.drop_height(), vx, vy))
+        for r in self.robots:
+            r.session.throw(**drop_arguments((x, y), self.drop_height(), vx, vy))
 
     def push(self, dvx: float, dvy: float) -> None:
-        self.session.push(dvx, dvy)
+        for r in self.robots:
+            r.session.push(dvx, dvy)
 
     def center(self) -> None:
-        self.session.center_ball()
+        for r in self.robots:
+            r.session.center_ball()
 
     def set_brain(self, name: str) -> None:
-        self.session.set_brain(name)
+        """The brain of the single robot (side by side, each robot keeps its own)."""
+        if not self.split:
+            self.session.set_brain(name)
 
     def set_ball(self, name: str) -> None:
-        self.session.set_ball(name)
+        for r in self.robots:
+            r.session.set_ball(name)
 
     def set_friction(self, name: str) -> None:
-        self.session.set_friction(next(mu for mu, n in FRICTION_NAMES.items() if n == name))
+        mu = next(mu for mu, n in FRICTION_NAMES.items() if n == name)
+        for r in self.robots:
+            r.session.set_friction(mu)
 
     def set_latency(self, periods: int) -> None:
-        self.session.set_latency(periods)
+        for r in self.robots:
+            r.session.set_latency(periods)
         self._show_latency()
 
     def set_setpoint(self, name: str) -> None:
-        """Center, circle or square, drawn on the plate."""
-        self.session.set_setpoint(name)
+        """Center, circle or square, drawn on the plates."""
+        for r in self.robots:
+            r.session.set_setpoint(name)
         f = SETPOINTS[name]
         path = [f(t)[:2] for t in np.linspace(0.0, PATH_DURATION, 161)]
-        self.view.overlay.path = path if np.ptp(np.array(path), axis=0).max() > 0 else []
+        self.path = path if np.ptp(np.array(path), axis=0).max() > 0 else []
+        for r in self.robots:
+            r.view.overlay.path = self.path
 
     def set_pause(self, paused: bool) -> None:
         self.real_time.paused = paused
         self.b_pause.setText(self.texts("button.resume" if paused else "button.pause"))
-        self._update_overlay()
-        self.view.update()
+        self._update_overlays()
+        for r in self.robots:
+            r.view.update()
 
     def set_language(self, code: str) -> None:
         self.texts.set_language(code)
         self.retranslate()
 
     def set_mode(self, mode: str) -> None:
-        """Light or dark theme: the widgets, and the 3D scene, whose floor continues the background."""
+        """Light or dark theme: the widgets, and the 3D scenes, whose floor continues the background."""
         self.mode = mode
         self.setStyleSheet(stylesheet(mode))
-        if mode != self._scene_mode:
-            self.view.set_scene(DisplayScene(self.session.cfg, scene_style(mode)))
-            self._scene_mode = mode
-        self.view.overlay.colors = COLORS[mode]
-        self.sparkline.set_values(self.sparkline.values, COLORS[mode]["accent"])
-        self.view.update()
+        for r in self.robots:
+            if mode != self._scene_mode:
+                r.view.set_scene(DisplayScene(r.session.cfg, scene_style(mode)))
+            r.view.overlay.colors = COLORS[mode]
+            r.view.update()
+        self._scene_mode = mode
+        self.retranslate()
 
-    def describe_gesture(self, kind: str, start, end) -> tuple:
-        """Text and color (key of the theme) of the arrow of a gesture: speed, and for a throw its physical limit
-        (good color within it, bad color beyond); for a drop with a speed, the angle of arrival from the vertical
-        (good color if the ball lands on the plate, bad color if not)."""
-        tr, cfg = self.texts, self.session.cfg
+    def describe_gesture(self, kind: str, start, end, robot: Robot = None) -> tuple:
+        """Text and color (key of the theme) of the arrow of a gesture on the plate of `robot` (the first one by
+        default): speed, and for a throw its physical limit (good color within it, bad color beyond); for a drop
+        with a speed, the angle of arrival from the vertical (good color if the ball lands on the plate, bad color
+        if not)."""
+        tr, s = self.texts, (robot or self.robots[0]).session
+        cfg = s.cfg
         vx, vy = velocity(start, end)
         speed = math.hypot(vx, vy)
         if kind == "push":
@@ -342,105 +478,115 @@ class MainWindow(QMainWindow):
         if kind == "drop":
             if speed < MIN_SPEED:
                 return "", "accent"
-            landing, angle, _ = drop_flight(start, vx, vy, self.drop_height(),
-                                            self.session.phys.data.body("plate").xmat)
+            landing, angle, _ = drop_flight(start, vx, vy, self.drop_height(), s.phys.data.body("plate").xmat)
             if math.hypot(*landing) > cfg.plate.plate_radius:
                 return tr("gesture.drop_off", speed=tr.number(speed, 2)), "bad"
             return tr("gesture.drop", speed=tr.number(speed, 2), angle=tr.number(angle, 0)), "good"
         if speed == 0:
             return "", "accent"
-        limit = throw_limit(start, vx, vy, cfg.plate.plate_radius, cfg.theta_max, self.session.ball_coefficient * G)
+        limit = throw_limit(start, vx, vy, cfg.plate.plate_radius, cfg.theta_max, s.ball_coefficient * G)
         return (tr("gesture.throw", speed=tr.number(speed, 2), limit=tr.number(limit, 2)),
                 "good" if speed <= limit else "bad")
 
     # --- Loop --------------------------------------------------------------------------------
     def tick(self) -> None:
-        """One frame: the simulation catches up with real time, then the 3D view (and, from time to time, the
+        """One frame: the simulations catch up with real time, then the 3D views (and, from time to time, the
         measurements) are updated."""
-        self.real_time.advance(self.session, self.clock())
-        self._follow_fall()
+        self.real_time.advance(_Together([r.session for r in self.robots]), self.clock())
+        for r in self.robots:
+            r.follow_fall()
         self.frames += 1
         if self.frames % READOUT_EVERY == 0:
             self.refresh()
         else:
-            self._update_overlay()
-        self.view.render_frame()
-
-    def _follow_fall(self) -> None:
-        """While the ball is down: the camera follows it, then the ball comes back to the center after FALL_SHOW.
-        Afterwards, the camera goes back to where it was."""
-        s, camera = self.session, self.view.camera
-        dt, self._last_t = s.t - self._last_t, s.t
-        if s.state == "fallen":
-            if self.fall_time is None:
-                self.fall_time, self._home = s.t, (camera.lookat, camera.distance)
-            home_lookat, home_distance = self._home
-            ball, plate = s.phys.data.body("ball").xpos, s.phys.data.body("plate").xpos
-            dx, dy = ball[0] - plate[0], ball[1] - plate[1]
-            reach = math.hypot(dx, dy)
-            f = min(1.0, FOLLOW_REACH / reach) if reach > 0 else 0.0
-            camera.glide((plate[0] + f * dx / 2, plate[1] + f * dy / 2, home_lookat[2]), home_distance + f * reach,
-                         dt, FOLLOW_TIME)                   # halfway between the robot and the ball
-            if s.t - self.fall_time >= FALL_SHOW:
-                s.center_ball()
-            return
-        self.fall_time = None
-        if self._home is not None:                          # back to the view of before the fall
-            home_lookat, home_distance = self._home
-            camera.glide(home_lookat, home_distance, dt, FOLLOW_TIME)
-            if max(abs(a - b) for a, b in zip(camera.lookat, home_lookat)) < 1e-3:    # 1 mm: there
-                camera.lookat, camera.distance, self._home = home_lookat, home_distance, None
+            self._update_overlays()
+        for r in self.robots:
+            r.view.render_frame()
 
     def refresh(self) -> None:
-        """Measurements, curve, last attempt and texts over the 3D view."""
-        tr = self.texts
-        values = readouts(self.session)
-        for key, _, unit, decimals in MEASURES:
-            v = values[key]
-            text = "—" if v is None else tr.number(v, decimals)
-            self.readouts[key].value.setText(text + "°" if unit == "°" and v is not None else text)
-        self.sparkline.set_values(distance_history(self.session))
+        """Measurements, curves, last attempt, comparison and texts over the 3D views."""
+        tr, c = self.texts, COLORS[self.mode]
+        robots = self._ordered()
+        values = {id(r): readouts(r.session) for r in robots}
+
+        def text(v, unit, decimals):
+            return "—" if v is None else tr.number(v, decimals) + ("°" if unit == "°" else "")
+        if self.split:
+            for row, (key, _, unit, decimals) in enumerate(MEASURES):
+                for column, r in enumerate(robots):
+                    self.t_measures.set_value(row, column, text(values[id(r)][key], unit, decimals))
+            self.sparkline.set_series([(distance_history(r.session), c[f"brain_{r.brain}"]) for r in robots])
+        else:
+            for key, _, unit, decimals in MEASURES:
+                self.readouts[key].value.setText(text(values[id(self.robots[0])][key], unit, decimals))
+            self.sparkline.set_series([(distance_history(self.session), c["accent"])])
         self.l_last.setText(self.last_attempt_text())
-        self._update_overlay(values)
+        self._show_comparison()
+        self._update_overlays(values)
 
-    def _update_overlay(self, values: dict = None) -> None:
-        tr, s, rt, c = self.texts, self.session, self.real_time, COLORS[self.mode]
-        o = self.view.overlay
-        o.state = tr("status.paused") if rt.paused else self.state_text()
-        o.state_color = c["text3"] if rt.paused else c["bad"] if s.state == "fallen" else c["good"]
-        o.bottom_right = tr("overlay.clock", time=tr.number(s.t, 1), speed=tr.number(rt.speed, 2),
-                            fps=tr.number(rt.frames_per_second, 0))
-        o.setpoint = tuple(s.sim.cfg.trajectory(s.t)[:2])
-        if values is not None:
-            o.bottom_left = ("" if values["x_mm"] is None else
-                             tr("overlay.position", x=tr.number(values["x_mm"], 1), y=tr.number(values["y_mm"], 1)))
-
-    def state_text(self) -> str:
-        """What the robot is doing."""
+    def _show_comparison(self) -> None:
         tr, s = self.texts, self.session
+        rows = self.past_rows + [row for r in self.robots for row in r.session.summary]
+        condition = (s.setpoint, s.ball, s.cfg.mujoco_params.friction, self.latency_ms())
+        result = compare(rows, condition, BRAINS)
+        for row, (key, _, unit, decimals) in enumerate(INDICATORS):
+            for column, brain in enumerate(BRAINS):
+                v = result[brain][key]
+                self.t_compare.set_value(row, column, "—" if v is None else
+                                         tr.number(v, decimals) + (f" {unit}" if unit else ""))
+        self.l_compare.setText(tr("caption.compare", setpoint=tr(f"setpoint.{s.setpoint}"), ball=tr(f"ball.{s.ball}"),
+                                  mu=tr.number(s.cfg.mujoco_params.friction, 2), latency=self.latency_ms()))
+
+    def _update_overlays(self, values: dict = None) -> None:
+        tr, rt, c = self.texts, self.real_time, COLORS[self.mode]
+        clock = tr("overlay.clock", time=tr.number(self.session.t, 1), speed=tr.number(rt.speed, 2),
+                   fps=tr.number(rt.frames_per_second, 0))
+        for r in self.robots:
+            s, o = r.session, r.view.overlay
+            state = tr("status.paused") if rt.paused else self.state_text(r, short=self.split)
+            o.state = tr("state.robot", brain=tr(f"brain.{r.brain}"), state=state) if self.split else state
+            o.state_color = c["text3"] if rt.paused else c["bad"] if s.state == "fallen" else c["good"]
+            o.bottom_right = clock
+            o.setpoint = tuple(s.sim.cfg.trajectory(s.t)[:2])
+            if values is not None:
+                v = values[id(r)]
+                o.bottom_left = ("" if v["x_mm"] is None else
+                                 tr("overlay.position", x=tr.number(v["x_mm"], 1), y=tr.number(v["y_mm"], 1)))
+
+    def state_text(self, robot: Robot = None, short: bool = False) -> str:
+        """What the robot (the first one by default) is doing; short: without the name of its brain."""
+        tr = self.texts
+        robot = robot or self.robots[0]
+        s = robot.session
         if s.state == "fallen":
-            left = FALL_SHOW - (s.t - self.fall_time) if self.fall_time is not None else FALL_SHOW
-            return tr("state.fallen", time=tr.number(max(left, 0.0), 1))
+            return tr("state.fallen", time=tr.number(robot.fall_left(), 1))
         if s.attempt is not None:
             a = s.attempt
+            if short:
+                return tr("state.attempt_short", action=tr(f"action.{a['action']}"))
             return tr("state.attempt", action=tr(f"action.{a['action']}"), brain=tr(f"brain.{a['brain']}"))
         return tr("state.ready")
 
     def last_attempt_text(self) -> str:
-        """Result of the last finished attempt."""
+        """Result of the last finished attempt of each robot, then its settings."""
         tr = self.texts
-        if not self.session.summary:
+        rows = [r.session.summary[-1] for r in self._ordered() if r.session.summary]
+        if not rows:
             return tr("last.none")
-        row = self.session.summary[-1]
-        duration = row["stabilized_in_s"] if row["result"] == "stabilized" else row["duration_s"]
-        result = tr("result." + row["result"].replace(" ", "_"), time=tr.number(duration, 2))
-        settings = tr("last.settings", ball=tr(f"ball.{row['ball']}"), mu=tr.number(row["friction"], 2),
-                      latency=row["latency_ms"])
-        return (tr("last.row", action=tr(f"action.{row['action']}"), brain=tr(f"brain.{row['brain']}"), result=result)
-                + "\n" + settings)
+        lines = []
+        for row in rows:
+            duration = row["stabilized_in_s"] if row["result"] == "stabilized" else row["duration_s"]
+            result = tr("result." + row["result"].replace(" ", "_"), time=tr.number(duration, 2))
+            lines.append(tr("last.row", action=tr(f"action.{row['action']}"), brain=tr(f"brain.{row['brain']}"),
+                            result=result))
+        row = rows[-1]
+        lines.append(tr("last.settings", ball=tr(f"ball.{row['ball']}"), mu=tr.number(row["friction"], 2),
+                        latency=row["latency_ms"]))
+        return "\n".join(lines)
 
     def closeEvent(self, event) -> None:
         self.timer.stop()
-        self.view.close_renderer()
-        self.session.close()
+        for r in self.robots:
+            r.view.close_renderer()
+            r.session.close()
         super().closeEvent(event)
