@@ -136,7 +136,7 @@ def test_drop_with_a_speed(window):
     assert view.press(*view.to_screen((-0.06, 0.0)))
     view.move(*view.to_screen((-0.02, 0.0)))                 # 4 cm: 0.2 m/s toward +x
     text, color = window.describe_gesture("drop", *[view.gesture[k] for k in ("start", "end")])
-    assert text.startswith("0.20 m/s · arrives ") and text.endswith("° from the vertical") and color == "accent"
+    assert text.startswith("0.20 m/s · arrives ") and text.endswith("° from the vertical") and color == "good"
     view.grab()                                              # drawn with its fall
     view.release()
     attempt = window.session.attempt
@@ -179,6 +179,35 @@ def test_brain_changed(window):
     assert window.last_attempt_text().startswith("Throw · PID · interrupted after ")
     window.throw(-0.10, 0.0, 0.4, 0.0)
     assert window.state_text() == "Throw (AI) in progress"
+
+
+def test_settings(window):
+    window.tick()
+    start, end = (-0.10, 0.0), (0.0, 0.0)
+    text, _ = window.describe_gesture("throw", start, end)
+    assert text == "0.50 m/s · limit 0.71 m/s"               # the reference throw, ping-pong ball
+    window.throw(-0.10, 0.0, 0.4, 0.0)
+    play(window, 5)
+    window.s_ball.buttons["solid"].click()                   # a setting changed: the attempt ends
+    s = window.session
+    assert s.ball == "solid" and s.attempt is None and s.summary[-1]["result"] == "interrupted"
+    assert window.last_attempt_text().endswith("\nPing-pong · μ = 1.00 · 20 ms")
+    text, _ = window.describe_gesture("throw", start, end)
+    assert text == "0.50 m/s · limit 0.78 m/s"               # the solid ball rolls down faster: √(0.714/0.6) × 0.71
+    window.s_friction.buttons["very_slippery"].click()
+    assert s.cfg.mujoco_params.friction == 0.02
+    window.s_latency.setValue(3)
+    assert s.cfg.latency == 3 and window.l_latency.text() == "Latency of the camera: 60 ms"
+    window.throw(-0.10, 0.0, 0.4, 0.0)
+    window.s_latency.setValue(5)
+    assert s.summary[-1]["latency_ms"] == 60 and s.cfg.latency == 5
+    assert window.last_attempt_text().endswith("\nSolid · μ = 0.02 · 60 ms")
+    window.tool_buttons["drop"].click()
+    window.s_height.setValue(40)
+    assert window.l_untrained.isVisibleTo(window)
+    assert window.l_untrained.text() == "Not seen by the AI brain in training (5 to 35 cm)"
+    window.s_height.setValue(35)
+    assert not window.l_untrained.isVisibleTo(window)
 
 
 def test_measurements(window):

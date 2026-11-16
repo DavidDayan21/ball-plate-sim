@@ -5,9 +5,12 @@ from dataclasses import replace
 
 import pytest
 
+import numpy as np
+
 from controller.plate import PlateController
 from controller.policy import PolicyController
-from simulation.session import RealTime, Session, sandbox_config
+from simulation.mujoco_physics import MujocoPhysics
+from simulation.session import BALLS, RealTime, Session, sandbox_config
 
 
 def advance(s: Session, duration: float) -> None:
@@ -115,6 +118,55 @@ def test_brain_changed_between_attempts(tmp_path):
     assert isinstance(s.sim.brain, PlateController)
     assert all(l["brain"] == "imitation" for l in s.summary[1:])
     assert s.summary[-1]["action"] == "throw" and s.summary[-1]["result"] == "stabilized"
+
+
+def test_settings_end_the_attempt_and_are_recorded(tmp_path):
+    s = Session(folder=tmp_path, record=False)
+    r, m = s.cfg.plate.ball_radius, s.cfg.mujoco_params.ball_mass
+    assert s.ball == "ping_pong" and s.ball_coefficient == pytest.approx(0.6)
+    s.throw(0.05, 180, speed=0.1)
+    s.set_ball("ping_pong")                                # the same ball: nothing changes
+    assert s.attempt is not None
+    s.set_ball("solid")                                    # an attempt has a single ball: it ends
+    assert s.attempt is None and s.summary[-1]["result"] == "interrupted" and s.summary[-1]["ball"] == "ping_pong"
+    ball = s.phys.model.body("ball").id
+    assert s.phys.model.body_inertia[ball] == pytest.approx([0.4 * m * r * r] * 3)
+    assert s.ball_coefficient == pytest.approx(1 / 1.4)
+    s.throw(0.05, 180, speed=0.1)
+    s.set_friction(0.2)
+    assert s.attempt is None and s.summary[-1]["ball"] == "solid" and s.summary[-1]["friction"] == 1.0
+    for name in ("ball", "plate"):
+        assert s.phys.model.geom_friction[s.phys.model.geom(name).id, 0] == 0.2
+    s.throw(0.05, 180, speed=0.1)
+    s.set_latency(3)
+    assert s.attempt is None and s.summary[-1]["friction"] == 0.2 and s.summary[-1]["latency_ms"] == 20
+    s.set_ball("heavy")
+    assert s.phys.model.body_mass[ball] == pytest.approx(10 * m)
+    s.throw(0.05, 180, speed=0.1)
+    advance(s, 4.0)
+    row = s.summary[-1]
+    assert (row["ball"], row["friction"], row["latency_ms"], row["result"]) == ("heavy", 0.2, 60, "stabilized")
+
+
+def test_ball_and_friction_changed_in_place_as_if_built():
+    """A ball and a friction changed in the model in place behave exactly as in a model built with them (measured:
+    the same model constants, and the same motion to the last bit over 1 s of bounces and rolling)."""
+    base = sandbox_config()
+    for name, k in (("solid", 2 / 5), ("heavy", base.plate.k_inertia)):
+        built = MujocoPhysics(replace(base, mujoco_params=replace(base.mujoco_params, friction=0.02, **BALLS[name])))
+        changed = MujocoPhysics(base)
+        changed.set_ball(BALLS[name]["ball_mass"], k)
+        changed.set_friction(0.02)
+        for field in ("body_mass", "body_inertia", "body_subtreemass", "body_invweight0", "dof_invweight0",
+                      "geom_friction"):
+            assert np.array_equal(getattr(built.model, field), getattr(changed.model, field)), (name, field)
+        for p in (built, changed):
+            p.place_ball(0.05, -0.02, 0.10, -0.3, 0.2)
+        for _ in range(2000):
+            for p in (built, changed):
+                p.command(0.02, -0.01)
+                p.step(base.dt_physics)
+        assert np.array_equal(built.data.qpos, changed.data.qpos)
 
 
 class Clockwork:

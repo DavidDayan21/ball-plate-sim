@@ -6,9 +6,9 @@ A single loop, in the thread of the interface: a timer advances the simulation b
 (readable, and cheaper).
 
 The tools of the ball (throw, drop, push) stay active until clicked again; with one active, the mouse acts on the
-plate (app/view3d.py). The physical limit shown while throwing is that of the nominal ball (c = 1/(1+k) of the
-plate parameters), as in the campaign and the training. A drop with a speed shows where the ball lands and its angle
-of arrival; no limit is shown for it (not computed: bounce, then rolling), only whether it lands off the plate.
+plate (app/view3d.py). The physical limit shown while throwing is that of the ball in play (c = 1/(1+k)). A drop with a speed shows where the ball lands and its angle
+of arrival, in the good color if it lands on the plate, in the bad color if not; no limit is shown for it (not
+computed: bounce, then rolling): on the plate does not mean caught.
 
 When the ball falls, the camera glides to look between the robot and the ball, and moves back to keep both in view
 (the ball is followed up to FOLLOW_REACH from the center of the plate), for FALL_SHOW of simulated time; then the
@@ -30,8 +30,10 @@ from app.scene import DisplayScene
 from app.theme import COLORS, MODES, load_fonts, scene_style, stylesheet, system_mode
 from app.view3d import View3D
 from app.widgets import Card, Readout, Segmented, Sparkline, label
+from controller.policy import MAX_LATENCY
 from simulation.config import G
-from simulation.session import SETPOINTS, RealTime, Session, sandbox_config
+from simulation.session import BALLS, FRICTIONS, SETPOINTS, RealTime, Session, sandbox_config
+from training.environment import DROP_HEIGHT as TRAINED_HEIGHT
 
 FRAMES_PER_SECOND = 60
 MAX_LAG = 0.1           # (s) of real time caught up per frame at most: the simulation stays in step with real time as
@@ -40,6 +42,10 @@ READOUT_EVERY = 5                                           # frames
 BRAINS = ("pid", "imitation")                               # the PID brain, the AI brain (brains/imitation.npz)
 TOOLS = ("throw", "drop", "push")
 DROP_HEIGHT = (0, 40, 30)                                   # (cm) range and start value of the drop height
+                                                            # (the AI brain saw TRAINED_HEIGHT: shown when outside)
+FRICTION_NAMES = dict(zip(FRICTIONS, ("normal", "slippery", "very_slippery")))
+# The settings stay within what the AI brain saw in training: balls and frictions (simulation/session.py), latency
+# from 1 to MAX_LATENCY control periods (20 to 100 ms), which is also the most it can take.
 PATH_DURATION = 8.0                                         # (s) of setpoint drawn: a square, two circles
 FALL_SHOW = 2.0                                             # (s) of simulated time showing the fallen ball
 FOLLOW_REACH = 2.5                                          # (m) the camera follows the ball this far at most
@@ -113,8 +119,10 @@ class MainWindow(QMainWindow):
         self.l_height = label("caption")
         self.s_height = QSlider(Qt.Horizontal, minimum=DROP_HEIGHT[0], maximum=DROP_HEIGHT[1], value=DROP_HEIGHT[2])
         self.s_height.valueChanged.connect(lambda _: self._show_height())
+        self.l_untrained = label("caption", wordWrap=True)        # outside the heights of the training
         height.addWidget(self.l_height)
         height.addWidget(self.s_height)
+        height.addWidget(self.l_untrained)
         self.height_row.setVisible(False)
         self.c_ball.body.addWidget(self.height_row)
         self.b_center = QPushButton(clicked=self.center)
@@ -131,6 +139,22 @@ class MainWindow(QMainWindow):
         self.l_setpoint = label("caption", wordWrap=True)
         self.c_setpoint.body.addWidget(self.s_setpoint)
         self.c_setpoint.body.addWidget(self.l_setpoint)
+
+        self.c_settings = Card()
+        cfg = self.session.cfg
+        self.l_ball = label("caption")
+        self.s_ball = Segmented(tuple(BALLS), self.session.ball)
+        self.s_ball.changed.connect(self.set_ball)
+        self.l_friction = label("caption")
+        self.s_friction = Segmented(tuple(FRICTION_NAMES.values()), FRICTION_NAMES.get(cfg.mujoco_params.friction))
+        self.s_friction.changed.connect(self.set_friction)
+        self.l_latency = label("caption")
+        self.s_latency = QSlider(Qt.Horizontal, minimum=1, maximum=MAX_LATENCY, value=cfg.latency, pageStep=1)
+        self.s_latency.valueChanged.connect(self.set_latency)
+        self.l_settings = label("caption", wordWrap=True)
+        for w in (self.l_ball, self.s_ball, self.l_friction, self.s_friction, self.l_latency, self.s_latency,
+                  self.l_settings):
+            self.c_settings.body.addWidget(w)
 
         self.c_measures = Card()
         grid = QGridLayout()
@@ -165,7 +189,7 @@ class MainWindow(QMainWindow):
         header.addWidget(self.l_title)
         header.addWidget(self.l_subtitle)
         column.addLayout(header)
-        for w in (self.c_brain, self.c_ball, self.c_setpoint, self.c_measures, self.c_last):
+        for w in (self.c_brain, self.c_ball, self.c_setpoint, self.c_settings, self.c_measures, self.c_last):
             column.addWidget(w)
         column.addStretch(1)
         settings = QHBoxLayout()
@@ -205,6 +229,18 @@ class MainWindow(QMainWindow):
         self.c_setpoint.set_title(tr("section.setpoint"))
         self.s_setpoint.set_texts({name: tr(f"setpoint.{name}") for name in SETPOINTS})
         self.l_setpoint.setText(tr("caption.setpoint"))
+        self.c_settings.set_title(tr("section.settings"))
+        self.l_ball.setText(tr("label.ball"))
+        self.s_ball.set_texts({name: tr(f"ball.{name}") for name in BALLS})
+        for name, b in self.s_ball.buttons.items():
+            b.setToolTip(tr(f"tip.ball.{name}"))
+        self.l_friction.setText(tr("label.friction"))
+        self.s_friction.set_texts({name: tr(f"friction.{name}") for name in FRICTION_NAMES.values()})
+        for mu, name in FRICTION_NAMES.items():
+            self.s_friction.buttons[name].setToolTip(tr("tip.friction", mu=tr.number(mu, 2)))
+        self.s_latency.setToolTip(tr("tip.latency"))
+        self._show_latency()
+        self.l_settings.setText(tr("caption.settings"))
         self.c_measures.set_title(tr("section.measures"))
         self.c_measures.setToolTip(tr("tip.measures"))
         for key, name, unit, _ in MEASURES:
@@ -216,8 +252,16 @@ class MainWindow(QMainWindow):
         self.refresh()
 
     def _show_height(self) -> None:
-        self.l_height.setText(self.texts("label.height", height=self.s_height.value()))
+        height = self.s_height.value()
+        self.l_height.setText(self.texts("label.height", height=height))
+        low, high = (round(100 * h) for h in TRAINED_HEIGHT)
+        self.l_untrained.setText(self.texts("caption.untrained_height", low=low, high=high))
+        self.l_untrained.setVisible(not low <= height <= high)
         self.view.drop_height = self.drop_height()
+
+    def _show_latency(self) -> None:
+        self.l_latency.setText(self.texts("label.latency", latency=round(1000 * self.session.cfg.latency
+                                                                         * self.session.cfg.control_period)))
 
     # --- Actions -----------------------------------------------------------------------------
     def set_tool(self, name) -> None:
@@ -247,6 +291,16 @@ class MainWindow(QMainWindow):
 
     def set_brain(self, name: str) -> None:
         self.session.set_brain(name)
+
+    def set_ball(self, name: str) -> None:
+        self.session.set_ball(name)
+
+    def set_friction(self, name: str) -> None:
+        self.session.set_friction(next(mu for mu, n in FRICTION_NAMES.items() if n == name))
+
+    def set_latency(self, periods: int) -> None:
+        self.session.set_latency(periods)
+        self._show_latency()
 
     def set_setpoint(self, name: str) -> None:
         """Center, circle or square, drawn on the plate."""
@@ -279,7 +333,7 @@ class MainWindow(QMainWindow):
     def describe_gesture(self, kind: str, start, end) -> tuple:
         """Text and color (key of the theme) of the arrow of a gesture: speed, and for a throw its physical limit
         (good color within it, bad color beyond); for a drop with a speed, the angle of arrival from the vertical
-        (bad color if the ball lands off the plate)."""
+        (good color if the ball lands on the plate, bad color if not)."""
         tr, cfg = self.texts, self.session.cfg
         vx, vy = velocity(start, end)
         speed = math.hypot(vx, vy)
@@ -292,10 +346,10 @@ class MainWindow(QMainWindow):
                                             self.session.phys.data.body("plate").xmat)
             if math.hypot(*landing) > cfg.plate.plate_radius:
                 return tr("gesture.drop_off", speed=tr.number(speed, 2)), "bad"
-            return tr("gesture.drop", speed=tr.number(speed, 2), angle=tr.number(angle, 0)), "accent"
+            return tr("gesture.drop", speed=tr.number(speed, 2), angle=tr.number(angle, 0)), "good"
         if speed == 0:
             return "", "accent"
-        limit = throw_limit(start, vx, vy, cfg.plate.plate_radius, cfg.theta_max, cfg.plate.coefficient * G)
+        limit = throw_limit(start, vx, vy, cfg.plate.plate_radius, cfg.theta_max, self.session.ball_coefficient * G)
         return (tr("gesture.throw", speed=tr.number(speed, 2), limit=tr.number(limit, 2)),
                 "good" if speed <= limit else "bad")
 
@@ -380,7 +434,10 @@ class MainWindow(QMainWindow):
         row = self.session.summary[-1]
         duration = row["stabilized_in_s"] if row["result"] == "stabilized" else row["duration_s"]
         result = tr("result." + row["result"].replace(" ", "_"), time=tr.number(duration, 2))
-        return tr("last.row", action=tr(f"action.{row['action']}"), brain=tr(f"brain.{row['brain']}"), result=result)
+        settings = tr("last.settings", ball=tr(f"ball.{row['ball']}"), mu=tr.number(row["friction"], 2),
+                      latency=row["latency_ms"])
+        return (tr("last.row", action=tr(f"action.{row['action']}"), brain=tr(f"brain.{row['brain']}"), result=result)
+                + "\n" + settings)
 
     def closeEvent(self, event) -> None:
         self.timer.stop()

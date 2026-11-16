@@ -9,7 +9,8 @@ It ends when:
     - the ball falls;
     - the ball stays within 1 cm of the setpoint, resting on the plate, for 2 s (stabilized);
     - it lasts longer than max_duration (not stabilized);
-    - another attempt starts, or the brain is changed: an attempt has a single brain (interrupted).
+    - another attempt starts, or a setting is changed (brain, ball, friction, latency, compensation): an attempt
+      has a single setting of each (interrupted).
 
 RealTime keeps a live session in step with real time (the sandbox, the software of app/).
 
@@ -28,9 +29,16 @@ from pathlib import Path
 import numpy as np
 
 from simulation.loop import Results, Simulation
-from simulation.config import Config, square, center, circle
+from simulation.config import Config, MujocoParams, square, center, circle
 
 SETPOINTS = {"center": center, "circle": circle, "square": square}
+# The balls that can be chosen (same radius): the ping-pong ball of the model, a solid one, a heavy one, as in the
+# robustness variants of the campaign. All within what the AI brain saw in training (k from 2/5 to 2/3, 1 to 10
+# times the mass of the ping-pong ball). k_actual None: the k of the controller, 2/3.
+BALLS = {"ping_pong": dict(ball_mass=MujocoParams.ball_mass, k_actual=None),
+         "solid": dict(ball_mass=MujocoParams.ball_mass, k_actual=2 / 5),
+         "heavy": dict(ball_mass=10 * MujocoParams.ball_mass, k_actual=None)}
+FRICTIONS = (1.0, 0.2, 0.02)    # ball-plate μ that can be chosen, as in the campaign (training: 0.02 to 1)
 STABLE_THRESHOLD = 0.01         # (m) distance to the setpoint
 STABLE_DURATION = 2.0           # (s)
 DISTURBANCE_THRESHOLD = 0.02    # (m) while waiting: beyond this, an attempt starts by itself
@@ -80,6 +88,9 @@ class Session:
         self.setpoint = "center"
         self.t_setpoint = 0.0
         self._apply_config()
+        pm = self.cfg.mujoco_params
+        self.ball = next((name for name, b in BALLS.items()
+                          if all(getattr(pm, key) == value for key, value in b.items())), "other")
         if ground:
             self._enable_ground()
         # Recording
@@ -120,25 +131,64 @@ class Session:
         self.setpoint, self.t_setpoint = name, self.sim.t
         self._apply_config()
 
+    # A change of setting ends the current attempt (interrupted): an attempt has a single setting of each. The ball
+    # is not touched.
+    def _interrupt(self) -> None:
+        if self.attempt is not None:
+            self._finish("interrupted")
+
     def set_latency(self, periods: int) -> None:
         """Measurement latency in control periods (1 = 20 ms). Resets the controller."""
+        if periods == self.cfg.latency:
+            return
+        self._interrupt()
         self._apply_config(latency=periods)
         self.sim.reset_control()
 
     def set_compensation(self, active: bool) -> None:
+        if active == self.cfg.latency_compensation:
+            return
+        self._interrupt()
         self._apply_config(latency_compensation=active)
         self.sim.reset_control()
 
     def set_brain(self, name: str) -> None:
-        """Brain of the robot: "pid" or a learned policy of brains/ ("imitation"). An attempt has a single brain:
-        the current one ends (interrupted). The new brain starts from zero, like after a throw; the ball is not
-        touched."""
+        """Brain of the robot: "pid" or a learned policy of brains/ ("imitation"). The new brain starts from zero,
+        like after a throw."""
         if name == self.cfg.brain:
             return
-        if self.attempt is not None:
-            self._finish("interrupted")
+        self._interrupt()
         self._apply_config(brain=name)
         self.sim.reset_control()
+
+    def set_ball(self, name: str) -> None:
+        """Ball of BALLS, in place of the one in play (it keeps its place and velocity). The brain is not told: the
+        PID estimates the gain c·g of the ball on line, the AI brain saw these balls in training."""
+        if name == self.ball:
+            return
+        self._interrupt()
+        self.ball = name
+        self._apply_config(mujoco_params=replace(self.cfg.mujoco_params, **BALLS[name]))
+        self.phys.set_ball(self.cfg.mujoco_params.ball_mass, self.k_ball)
+
+    def set_friction(self, friction: float) -> None:
+        """Ball-plate friction μ."""
+        if friction == self.cfg.mujoco_params.friction:
+            return
+        self._interrupt()
+        self._apply_config(mujoco_params=replace(self.cfg.mujoco_params, friction=friction))
+        self.phys.set_friction(friction)
+
+    @property
+    def k_ball(self) -> float:
+        """k of the ball in play, J = k·m·r²."""
+        k = self.cfg.mujoco_params.k_actual
+        return self.cfg.plate.k_inertia if k is None else k
+
+    @property
+    def ball_coefficient(self) -> float:
+        """c = 1/(1+k) of the ball in play, in ẍ = c·g·sin θ."""
+        return 1.0 / (1.0 + self.k_ball)
 
     def enable_camera(self) -> None:
         """Measurement by the virtual camera, to be called from the thread that advances the simulation."""
@@ -210,7 +260,8 @@ class Session:
         self.sim.r = before if before is not None else Results()
         self.attempt = dict(number=self.number, action=action, params=params, t0=self.t,
                               time=datetime.datetime.now().strftime("%H:%M:%S"),
-                              setpoint=self.setpoint, brain=self.cfg.brain, sensor=self.sensor,
+                              setpoint=self.setpoint, brain=self.cfg.brain, sensor=self.sensor, ball=self.ball,
+                              friction=self.cfg.mujoco_params.friction,
                               latency_ms=round(1000 * self.cfg.latency * self.cfg.control_period),
                               compensation=self.cfg.latency_compensation,
                               stable_since=None, landings=0, max_bounce=0.0)
@@ -230,7 +281,8 @@ class Session:
         airborne = [r.airborne[i] for i in after] if r.airborne else []
         row = dict(
             number=att["number"], time=att["time"], action=att["action"], **att["params"],
-            setpoint=att["setpoint"], brain=att["brain"], sensor=att["sensor"], latency_ms=att["latency_ms"],
+            setpoint=att["setpoint"], brain=att["brain"], sensor=att["sensor"], ball=att["ball"],
+            friction=att["friction"], latency_ms=att["latency_ms"],
             compensation=att["compensation"],
             result=result, duration_s=self.t - t0,
             stabilized_in_s=(att["stable_since"] - t0) if result == "stabilized" else None,

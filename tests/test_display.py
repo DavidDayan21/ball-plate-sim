@@ -1,5 +1,7 @@
 """What the software shows, without Qt: the display scene (app/scene.py), the themes (app/theme.py) and the
 measurements of the panel (app/readouts.py)."""
+from dataclasses import replace
+
 import mujoco
 import numpy as np
 
@@ -84,6 +86,37 @@ def test_shadows_and_fog_follow_the_view():
     assert np.allclose(scene.data.light_xpos, lights + (0.62, 0.15, 0.0))
     assert dots(image) < 1.0
     renderer.close()
+
+
+def lightness(image):
+    """CIE L* (0 black to 100 white) of sRGB pixels."""
+    c = image / 255.0
+    y = np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4) @ np.array([0.2126, 0.7152, 0.0722])
+    return np.where(y > 216 / 24389, 116 * np.cbrt(y) - 16, y * 24389 / 27)
+
+
+def test_the_plate_stands_out_in_both_themes():
+    """Seen through the plate, the scene changes in lightness by 18 L* at least, in both themes (measured: 23 in
+    the light theme with the smoked plate, 13 with the clear one it replaced; 29 in the dark theme)."""
+    s = Session(sandbox_config(), record=False)
+    camera = mujoco.MjvCamera()
+    camera.azimuth, camera.elevation, camera.distance = 90.0, -27.0, VIEW_DISTANCE
+    camera.lookat[:] = (0.0, 0.0, s.cfg.geometry.height - 0.035)
+
+    def render(style):
+        scene = DisplayScene(s.cfg, style)
+        scene.follow(s.phys.data)
+        renderer = mujoco.Renderer(scene.model, 250, 350)
+        renderer.update_scene(scene.data, camera=camera)
+        image = renderer.render().astype(float)
+        renderer.close()
+        return image
+    for mode in MODES:
+        style = scene_style(mode)
+        without = render(replace(style, plate_alpha=0.0))
+        plate = np.any(np.abs(render(replace(style, plate=(1.0, 0.0, 1.0), plate_alpha=1.0)) - without) > 1, axis=2)
+        change = np.abs(lightness(render(style)) - lightness(without))[plate]
+        assert plate.sum() > 5000 and change.mean() > 18, mode
 
 
 def test_themes():

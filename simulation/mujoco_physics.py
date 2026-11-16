@@ -260,6 +260,21 @@ class MujocoPhysics:
         self.data.qvel[dof + 3:dof + 6] = R @ np.array([-vy / r, vx / r, 0.0])  # ball frame = world frame
         mujoco.mj_forward(self.model, self.data)
 
+    def set_ball(self, mass: float, k: float) -> None:
+        """Another ball of the same radius: mass and inertia J = k·m·r², as if the model had been built with them
+        (the constants of the model that depend on them are computed again). Its position and velocity are kept."""
+        b = self.model.body("ball").id
+        r = self.p.ball_radius
+        self.model.body_mass[b] = mass
+        self.model.body_inertia[b] = k * mass * r * r
+        mujoco.mj_setConst(self.model, mujoco.MjData(self.model))     # on a copy: the state is left alone
+        mujoco.mj_forward(self.model, self.data)
+
+    def set_friction(self, friction: float) -> None:
+        """Ball-plate friction μ, set on both geoms as when the model is built (MuJoCo keeps the larger)."""
+        for name in ("ball", "plate"):
+            self.model.geom_friction[self.model.geom(name).id, 0] = friction
+
     def push(self, dvx: float, dvy: float) -> None:
         """Impulse: adds (Δvx, Δvy) to the ball velocity, with the matching rolling rotation."""
         adr = self.model.jnt_dofadr[self.model.body("ball").jntadr[0]]
