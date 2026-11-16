@@ -5,6 +5,11 @@ a floor, a pedestal and stepper motors added. At every frame, the positions of t
 and its geometry is computed (no dynamics): it never acts on the physics, and the virtual camera, which renders the
 physics model, keeps seeing the scene it has always seen. The moving parts keep the sizes of the physics model: the
 picture shows the robot that is simulated. Without Qt.
+
+Shadows and fog follow the view (DisplayScene.view): the shadow map covers the floor around the point looked at, and
+it and the fog grow with the distance of the camera. In the default view (VIEW_DISTANCE), they are those of the
+model: sharp shadows, a floor without dots, a horizon that fades into the sky. Farther (zoomed out, or following a
+fallen ball), all their lengths grow in proportion, so the floor seen keeps the same look.
 """
 from dataclasses import dataclass
 import math
@@ -20,10 +25,12 @@ MAX_SIZE = (2560, 1600)         # (width, height) of the largest image rendered,
 # 13 to 46 % more than with 4; a shadow map of 2048 instead of 4096, or no fog, saves nothing measurable.
 ANTIALIASING = 4                # samples
 SHADOW_MAP = 4096               # (pixels) side of the map of the shadows
-SHADOW_CLIP = 5.0               # half-width of the floor covered by the shadow map, in sizes of the scene
-                                # (MuJoCo: × stat.extent, 1.2 m here: 6 m); beyond, the floor gets speckled
-                                # (measured: dots with 0.6, none where the camera follows a fallen ball with 5).
-                                # Its pixels are then 2.9 mm wide: steps show on the edges of the shadows
+# Shadows and fog in the default view, in sizes of the scene (MuJoCo: × stat.extent, 1.2 m here). Beyond the floor
+# covered by the shadow map, the floor gets speckled; a larger map has larger pixels, which shows as steps on the
+# edges of the shadows (measured: 6 m wide, 2.9 mm per pixel of the map). A nearer fog hides the far floor sooner.
+VIEW_DISTANCE = 0.68            # (m) distance of the camera in the default view (app/view3d.Camera)
+SHADOW_CLIP = 0.6               # half-width of the floor covered by the shadow map: 0.72 m, 0.35 mm per pixel of it
+FOG = (1.0, 3.0)                # start and end of the fog, from the eye: 1.2 to 3.6 m
 
 
 @dataclass(frozen=True)
@@ -73,7 +80,7 @@ def display_xml(cfg: Config, style: SceneStyle) -> str:
     <global azimuth="90" elevation="-30" offwidth="{MAX_SIZE[0]}" offheight="{MAX_SIZE[1]}"/>
     <quality shadowsize="{SHADOW_MAP}" offsamples="{ANTIALIASING}"/>
     <headlight ambient="{_rgb([s.ambient] * 3)}" diffuse="{_rgb([0.8 * s.ambient] * 3)}" specular="0.05 0.05 0.05"/>
-    <map fogstart="4" fogend="10" znear="0.01" zfar="30" haze="0.4" shadowclip="{SHADOW_CLIP}"/>
+    <map fogstart="{FOG[0]}" fogend="{FOG[1]}" znear="0.01" zfar="20" haze="0.4" shadowclip="{SHADOW_CLIP}"/>
     <rgba fog="{_rgb(s.sky)} 1" haze="{_rgb(s.sky)} 1"/>
   </visual>
   <asset>
@@ -119,6 +126,18 @@ class DisplayScene:
     def __init__(self, cfg: Config, style: SceneStyle):
         self.model = mujoco.MjModel.from_xml_string(display_xml(cfg, style))
         self.data = mujoco.MjData(self.model)
+        self._light_pos = self.model.light_pos.copy()
+
+    def view(self, context, lookat, distance: float) -> None:
+        """Adapts the shadows and the fog to the camera, before rendering: those of the default view, all lengths
+        multiplied by scale = distance / VIEW_DISTANCE (at least 1), the shadow map centered on the point looked at.
+        context: the MuJoCo rendering context (mujoco.MjrContext), which holds them in meters.
+        The lights are directional: moving them moves only the floor covered by the shadow map, not the light."""
+        scale = max(1.0, distance / VIEW_DISTANCE)
+        extent = self.model.stat.extent
+        context.shadowClip = SHADOW_CLIP * extent * scale
+        context.fogStart, context.fogEnd = FOG[0] * extent * scale, FOG[1] * extent * scale
+        self.model.light_pos[:] = self._light_pos + (lookat[0], lookat[1], 0.0)
 
     def follow(self, physics_data) -> None:
         """Copies the positions of the physics and computes the geometry, lights included (no dynamics)."""

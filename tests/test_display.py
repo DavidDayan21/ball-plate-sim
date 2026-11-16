@@ -4,7 +4,7 @@ import mujoco
 import numpy as np
 
 from app.readouts import distance_history, readouts
-from app.scene import ANTIALIASING, SHADOW_MAP, DisplayScene, display_xml
+from app.scene import ANTIALIASING, FOG, SHADOW_CLIP, SHADOW_MAP, VIEW_DISTANCE, DisplayScene, display_xml
 from app.theme import COLORS, MODES, scene_style, stylesheet
 from simulation.mujoco_physics import model_xml
 from simulation.session import Session, sandbox_config
@@ -44,6 +44,46 @@ def test_display_scene_leaves_the_physics_alone():
         DisplayScene(s.cfg, scene_style(mode)).follow(s.phys.data)
     assert model_xml(s.cfg) == xml
     assert s.phys.model.vis.global_.offwidth == mujoco.MjModel.from_xml_string(xml).vis.global_.offwidth
+
+
+def dots(image) -> float:
+    """Share of the pixels (%) that differ by more than 12 levels from the mean of their 4 neighbors."""
+    g = image.astype(float).mean(axis=2)
+    neighbors = (g[:-2, 1:-1] + g[2:, 1:-1] + g[1:-1, :-2] + g[1:-1, 2:]) / 4
+    return 100 * float((np.abs(g[1:-1, 1:-1] - neighbors) > 12).mean())
+
+
+def test_shadows_and_fog_follow_the_view():
+    """Default view: the shadows and the fog of the model, the image does not change. Farther: their lengths grow with
+    the distance of the camera, the shadow map is centered on the point looked at, and the floor keeps its look
+    (measured at 480 × 300: dots on the floor 4.1 % without this, 0.4 % with it, following a fallen ball)."""
+    s = Session(sandbox_config(), record=False)
+    s.phys.place_ball(1.25, 0.3, 0.0)                     # far from the robot, as a fallen ball
+    scene = DisplayScene(s.cfg, scene_style("light"))
+    renderer = mujoco.Renderer(scene.model, 300, 480)
+    context, extent, lights = renderer._mjr_context, scene.model.stat.extent, scene.model.light_pos.copy()
+    camera = mujoco.MjvCamera()
+    camera.azimuth, camera.elevation, camera.distance = 90.0, -27.0, VIEW_DISTANCE
+    camera.lookat[:] = (0.0, 0.0, s.cfg.geometry.height - 0.035)
+
+    def render():
+        scene.follow(s.phys.data)
+        renderer.update_scene(scene.data, camera=camera)
+        renderer.scene.flags[mujoco.mjtRndFlag.mjRND_FOG] = 1
+        return renderer.render().copy()
+    before = render()
+    scene.view(context, camera.lookat, camera.distance)
+    assert np.array_equal(render(), before)
+    assert context.shadowClip == np.float32(SHADOW_CLIP * extent)
+    assert (context.fogStart, context.fogEnd) == (np.float32(FOG[0] * extent), np.float32(FOG[1] * extent))
+    camera.lookat[:2], camera.distance = (0.62, 0.15), 3 * VIEW_DISTANCE     # following the fallen ball
+    scene.view(context, camera.lookat, camera.distance)
+    assert context.shadowClip == np.float32(3 * SHADOW_CLIP * extent)
+    assert context.fogEnd == np.float32(3 * FOG[1] * extent)
+    image = render()
+    assert np.allclose(scene.data.light_xpos, lights + (0.62, 0.15, 0.0))
+    assert dots(image) < 1.0
+    renderer.close()
 
 
 def test_themes():

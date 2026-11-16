@@ -269,10 +269,15 @@ without dynamics. The moving parts keep the sizes of the physics model, so the p
 simulated; the physics, and the virtual camera that renders it, see nothing of this (checked by the tests and
 the bit-exact regression check). Quality of the rendering, from the measurements of `python -m app.benchmark` on
 an integrated graphics card (Intel Arc): antialiasing with 4 samples (8 cost 13 to 46 % more), shadow map of 4096
-pixels and fog (making them cheaper saves nothing measurable). The shadow map covers 6 m around the robot
-(MuJoCo counts it in sizes of the scene, 1.2 m): with less, the floor got speckled where the camera looked beyond it
-(measured); its pixels are then 2.9 mm wide, which shows as steps on the edges of the shadows. The orange of the ball
-marks what is selected (brain, theme, language, pause); the buttons that act are neutral.
+pixels and fog (making them cheaper saves nothing measurable). The shadows and the fog follow the view
+(`DisplayScene.view`): in the default view, the shadow map covers 0.72 m around the robot (0.35 mm per pixel of it:
+sharp edges) and the fog fades the floor into the sky from 1.2 to 3.6 m from the eye; zoomed out, or following a
+fallen ball, these lengths grow with the distance of the camera and the map is centered on the point looked at, so the
+floor keeps its look. Measured: image unchanged in the default view; dots on the floor beyond the map 2.3 % → 0.2 %
+zoomed out, 3.6 % → 0.2 % following a fallen ball (one map 6 m wide for every view gave steps on the edges of the
+shadows, a far fog a sharp horizon). MuJoCo counts these lengths in sizes of the scene (1.2 m); they are changed in its
+rendering context, an internal attribute of `mujoco.Renderer` (a test checks it). The orange of the ball marks what is
+selected (brain, theme, language, pause); the buttons that act are neutral.
 
 `python -m app.benchmark` measures what a frame costs on the computer where it runs: the simulation, the 3D
 rendering (with the image read back) for three sizes of the view and several qualities, the drawing of the image

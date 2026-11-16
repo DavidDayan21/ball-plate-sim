@@ -22,7 +22,7 @@ from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QWidget
 
 from app.gestures import MIN_SPEED, drop_flight, plate_hit, velocity
-from app.scene import MAX_SIZE, DisplayScene
+from app.scene import MAX_SIZE, VIEW_DISTANCE, DisplayScene
 
 RESIZE_DELAY = 150              # (ms)
 DEGREES_PER_PIXEL = 0.3         # turn of the view per pixel of mouse drag
@@ -39,7 +39,7 @@ class Camera:
     view (°). Computes, as MuJoCo does for its free camera, the pixel of a point and the ray of a pixel. Without Qt."""
 
     def __init__(self, lookat_height: float, fovy: float = 45.0):
-        self.azimuth, self.elevation, self.distance = 90.0, -27.0, 0.68
+        self.azimuth, self.elevation, self.distance = 90.0, -27.0, VIEW_DISTANCE
         self.lookat = (0.0, 0.0, lookat_height)
         self.fovy = fovy
 
@@ -171,6 +171,7 @@ class View3D(QWidget):
         """Renders the robot as it is now in the physics, then asks Qt to draw it."""
         if self.renderer is None:
             self._create_renderer()
+        self.scene.view(self.renderer._mjr_context, self.camera.lookat, self.camera.distance)
         self.scene.follow(self.physics_data)
         self.renderer.update_scene(self.scene.data, camera=self.camera.mujoco())
         self.renderer.scene.flags[mujoco.mjtRndFlag.mjRND_FOG] = 1     # the floor fades into the background
