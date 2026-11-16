@@ -12,7 +12,7 @@ from app.gestures import (ARROW_TIME, MAX_SPEED, drop_arguments, drop_flight, pl
                           throw_limit, velocity)
 from app.scene import DisplayScene
 from app.theme import scene_style
-from app.view3d import Camera
+from app.view3d import RENDER_PIXELS, Camera, image_size
 from simulation.config import G
 from simulation.session import Session, sandbox_config
 
@@ -57,6 +57,30 @@ def test_camera_matches_the_rendering():
     ys, xs = np.nonzero(orange)
     x, y = cam.project(scene.data.body("ball").xpos, width, height)
     assert len(xs) > 100 and abs(xs.mean() - x) < 2 and abs(ys.mean() - y) < 2
+
+
+def test_capped_image_keeps_the_gestures_in_place():
+    """A view of more than max_pixels gets a smaller image, of the same proportions, enlarged by Qt: the camera computes
+    in the pixels of the view, so the point under the mouse is where the enlarged image shows it."""
+    assert image_size(2560, 1440) == (1920, 1080) and image_size(1920, 1080) == (1920, 1080)
+    assert image_size(1280, 1440, RENDER_PIXELS // 2) == (960, 1080)                # side by side, half each
+    s = Session(sandbox_config(), record=False)
+    s.throw(**drop_arguments((0.06, -0.04), 0.0))
+    scene = DisplayScene(s.cfg, scene_style("light"))
+    scene.follow(s.phys.data)
+    cam = Camera(s.cfg.geometry.height - 0.035, scene.model.vis.global_.fovy)
+    cam.azimuth, cam.elevation = 60.0, -35.0
+    width, height = 640, 400                                                         # the view
+    w, h = image_size(width, height, width * height // 4)                             # the image: half as wide
+    renderer = mujoco.Renderer(scene.model, h, w)
+    renderer.enable_segmentation_rendering()                 # the pixels where MuJoCo draws the ball
+    renderer.update_scene(scene.data, camera=cam.mujoco())
+    ids = renderer.render()
+    renderer.close()
+    ys, xs = np.nonzero((ids[..., 0] == scene.model.geom("ball").id) & (ids[..., 1] == mujoco.mjtObj.mjOBJ_GEOM))
+    x, y = cam.project(scene.data.body("ball").xpos, width, height)
+    assert (w, h) == (320, 200) and len(xs) > 50
+    assert abs((xs.mean() + 0.5) * width / w - 0.5 - x) < 2 and abs((ys.mean() + 0.5) * height / h - 0.5 - y) < 2
 
 
 def test_plate_hit():

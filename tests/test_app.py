@@ -12,11 +12,14 @@ import pytest
 pytest.importorskip("PySide6")
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")      # before the application is created
 
+from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import QApplication
 
 from app import NAME
 from app.i18n import Texts
+from app.settings import remembered, restore_geometry
 from app.theme import COLORS
+from app.view3d import RENDER_PIXELS
 from app.window import READOUT_EVERY, MainWindow
 from controller.policy import PolicyController
 
@@ -298,6 +301,39 @@ def test_side_by_side(window):
     assert not window.split and window.s_brain.isEnabled() and window.robots == [pid]
     assert window.t_compare.cells[0][1].text() == "1"
     assert window.view.overlay.state == window.state_text()
+    assert window.view.max_pixels == RENDER_PIXELS                 # side by side, each view had half of them
+
+
+def test_views_share_the_pixels_rendered(window):
+    """At most RENDER_PIXELS rendered, all views together: a view larger gets a smaller image, enlarged by Qt."""
+    assert window.view.max_pixels == RENDER_PIXELS
+    window.b_split.click()
+    assert [r.view.max_pixels for r in window.robots] == [RENDER_PIXELS // 2] * 2
+    window.view.resize(2000, 1400)
+    window.view._create_renderer()
+    assert window.view.renderer.width * window.view.renderer.height <= RENDER_PIXELS // 2
+
+
+def test_choices_remembered(application, tmp_path):
+    """The theme and the language once chosen, the size of the window at its closing: found at the next launch.
+    Until chosen, those of the system; the setting of the robot is not kept."""
+    kept = QSettings(str(tmp_path / "settings.ini"), QSettings.IniFormat)
+    w = MainWindow(Texts("en"), mode="light", clock=FakeClock(), settings=kept)
+    w.timer.stop()
+    assert remembered(kept) == (None, None)                   # nothing chosen: the next launch follows the system
+    w.s_language.buttons["fr"].click()
+    w.s_mode.buttons["dark"].click()
+    w.s_ball.buttons["heavy"].click()
+    w.resize(760, 560)
+    w.close()
+    assert remembered(kept) == ("fr", "dark") and set(kept.allKeys()) == {"language", "theme", "geometry"}
+    again = MainWindow(Texts("fr"), mode="dark", clock=FakeClock(), settings=kept)
+    again.timer.stop()
+    assert restore_geometry(again, kept) and (again.width(), again.height()) == (760, 560)
+    again.close()
+    kept.setValue("language", "de")                           # unknown to this version: that of the system
+    assert remembered(kept) == (None, "dark")
+    assert not restore_geometry(again, QSettings(str(tmp_path / "none.ini"), QSettings.IniFormat))
 
 
 def test_measurements(window):
@@ -410,8 +446,9 @@ def test_benchmark(application):
     assert results["simulation"] > 0 and results["drawing"][sizes[0]] > 0
     assert set(results["rendering"]) == set(QUALITIES)
     assert all(row[sizes[0]] > 0 for row in results["rendering"].values())
+    assert results["rendered"][sizes[0]] == sizes[0] and results["enlarged"][sizes[0]] > 0     # under the cap
     text = report(results, sizes)
-    assert "64×48" in text and "look of D1" in text
+    assert "64×48" in text and "look of D1" in text and "software, as it runs" in text
 
 
 def test_close(window):

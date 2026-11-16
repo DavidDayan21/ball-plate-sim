@@ -21,7 +21,7 @@ Building the real robot remains a distant goal: the code will then be ready.
 | A. Reliable measurements | Bit-exact regression check, spread over N draws, robust metrics, simple physics → MuJoCo gap | Done |
 | B. PID brain | Objectives in the report, integral limited to the neighborhood of the setpoint, aimed bounce of a dropped ball, thrown ball (start with the speed, fast motor ramps for the large moves), gains tuned by LQR, adaptive control (model gain c·g estimated online), every gap of more than 0.5 mm explained (report, section 12) | Done |
 | C. Local AI brain | A policy (neural network) learned by reinforcement in MuJoCo, same rules as the PID (sensor, motors, ±10°). Done: interchangeable brains, training environment, training by reinforcement, imitation of the PID brain: the policy alone then meets the four objectives, dropped ball included (campaign section 13, which compares both brains: return to the center better than the PID, circle about 0.2 mm behind). The sandbox can be driven by either brain. Left for later: the gaps of more than 0.5 mm between the two brains explained (circle with a large calibration error of the plate, return to the center), then reinforcement from the imitating policy, to go beyond the PID | Done |
-| D. Software for the general public | An application installed with a double click, for Windows and Mac: the robot in 3D, driven by either brain; throws, drops and pushes with the mouse, drawn trajectories, choice of the ball, latency and friction, both robots side by side; in English and French. Done: prototype (`python -m app`): 3D view in its own window, throw, drop, center, choice of the brain, pause, English and French; visual foundations: light and dark themes, panel of measurements; throws, drops and pushes with the mouse, physical limit of a throw, setpoints (center, circle, square); choice of the ball, friction and latency; both brains side by side, comparison of the brains; drawn trajectories; the robot shown as a lab prototype (motors, arms, rod ends, electronics, battery, camera under the plate, front panel with the LED of the brain), the ball printed according to its kind, the name PABLO | **In progress** |
+| D. Software for the general public | An application installed with a double click, for Windows and Mac: the robot in 3D, driven by either brain; throws, drops and pushes with the mouse, drawn trajectories, choice of the ball, latency and friction, both robots side by side; in English and French. Done: prototype (`python -m app`): 3D view in its own window, throw, drop, center, choice of the brain, pause, English and French; visual foundations: light and dark themes, panel of measurements; throws, drops and pushes with the mouse, physical limit of a throw, setpoints (center, circle, square); choice of the ball, friction and latency; both brains side by side, comparison of the brains; drawn trajectories; the robot shown as a lab prototype (motors, arms, rod ends, electronics, battery, camera under the plate, front panel with the LED of the brain), the ball printed according to its kind, the name PABLO; the 3D capped at 1920 × 1080 pixels (large screens), theme, language and window remembered between launches | **In progress** |
 | E. Construction (distant) | Design, real-world defects, complete error budget; first, simulate what the software shows and the campaign does not: the camera under the transparent plate (the campaign: 50 cm above it), the ball joints of the rods 1 cm under the plate surface (the physics: on it) | Later |
 
 Quantified goals for both brains: thrown ball caught up to at least 90 % of the physical limit,
@@ -46,6 +46,7 @@ app/                     The software for the general public (interface only, on
   gestures.py            Mouse gestures on the plate: throws, drops (fall along a parabola), pushes; physical limit of a throw
   benchmark.py           Cost of a frame on this computer: simulation, 3D rendering, drawing (python -m app.benchmark)
   i18n.py, locales/      Texts of the interface, one file per language (English, French)
+  settings.py            What is remembered from one launch to the next: theme, language, size of the window
   fonts/                 Inter, the font of the interface (SIL Open Font License, OFL.txt)
 brains/                  Learned policies of the AI brain (weights of the network): imitation.npz
 controller/              What would run on the real robot (independent of the simulator)
@@ -244,7 +245,7 @@ simulations advance step by step together.
 | Measurements | Distance to the setpoint, speed and height of the ball, tilt of the plate (x, y), largest torque of the 3 motors; the distance over the last 10 s. True values of the simulation, not those measured by the sensor of the robot. Side by side: a column per brain, a curve per brain, in its color |
 | Last attempt | Its action, its brain and its result (stabilized in, fell after...); its ball, friction and latency. Side by side: that of each robot |
 | Comparison | By brain, over the finished attempts of the session made in the current conditions (setpoint, the same drawn path at the same speed, ball, friction, latency), side by side or not: number of attempts, share of the balls caught, median time to stabilize, median room left to the edge of the plate. Counted: throws, drops, pushes, disturbances and new setpoints that came to a result (not interrupted). The room to the edge rather than the largest distance to the setpoint: for a throw, that one mostly tells where the ball was thrown from |
-| Bottom | Light or dark theme (that of the system at startup), English or French (that of the system). The panel is at least 300 pixels wide, wider if a row needs it (texts and fonts change with the language and the system): nothing of it is cut or under its scroll bar |
+| Bottom | Light or dark theme, English or French: those of the system until the user chooses, then the last ones chosen (kept from one launch to the next, with the size and position of the window; not the setting of the robot: every launch starts from the nominal conditions). The panel is at least 300 pixels wide, wider if a row needs it (texts and fonts change with the language and the system): nothing of it is cut or under its scroll bar |
 
 Over the 3D view: what the robot is doing, the position of the ball, the simulated time with its speed compared
 with real time and the frames per second, the x and y axes of the plate (they turn with the view), the setpoint
@@ -315,10 +316,16 @@ acrylic: a clear one hardly stood out from the white background (measured: the p
 seen through it by 23 units of L* against 13 for the clear one; 29 in the dark theme). The orange of the ball marks
 what is selected (brain, theme, language, pause); the buttons that act are neutral.
 
+The 3D is rendered with at most 1920 × 1080 pixels, all views together (side by side: half each); a larger view
+gets a smaller image, of the same proportions, that Qt enlarges smoothly (`app/view3d.RENDER_PIXELS`). The cost of a
+frame grows with the pixels rendered (measured above: 25 ms at 1920 × 1080, 39 ms at 2560 × 1440). The gestures stay
+in place: the camera computes in the pixels of the view, not of the image (a test checks it, within 2 pixels).
+
 `python -m app.benchmark` measures what a frame costs on the computer where it runs: the simulation, the 3D
 rendering (with the image read back) for three sizes of the view and several qualities, the drawing of the image
-by Qt; then the frames per second they allow together. It serves to choose the quality of the rendering, and to
-check the software on other computers.
+by Qt (at the size of the view, and enlarged from the image the software renders); then the frames per second they
+allow together, first for the software as it runs, then rendering every pixel of the view. It serves to choose the
+quality of the rendering, and to check the software on other computers.
 
 A single loop, in the thread of the interface: at every frame (60 per second), the simulation catches up with the
 real time elapsed (at most 100 ms: beyond, it slows down), then MuJoCo renders the 3D view off screen, and the

@@ -6,7 +6,9 @@ them, for several sizes of the 3D view and several qualities of rendering, and t
 allow together. Measured on the computer where it runs: the numbers depend on its graphics card.
 
 Qualities: that of the software (app/scene.py), then one change at a time (antialiasing, size of the shadow map,
-shadows, fog), and the look of phase D1 (the physics model as it is, without the display scene).
+shadows, fog), and the look of phase D1 (the physics model as it is, without the display scene). The software renders
+at most app/view3d.RENDER_PIXELS pixels and Qt enlarges the image to the view: the first line of frames per second is
+the software as it runs, the others render every pixel of the view.
 """
 import argparse
 import platform
@@ -17,7 +19,7 @@ import numpy as np
 
 from app.scene import ANTIALIASING, MAX_SIZE, SHADOW_MAP, DisplayScene
 from app.theme import scene_style
-from app.view3d import Camera
+from app.view3d import Camera, image_size
 from simulation.mujoco_physics import model_xml
 from simulation.session import Session, sandbox_config
 
@@ -99,21 +101,24 @@ def measure_rendering(quality, size: tuple, frames: int) -> float:
     return 1000 * elapsed / frames
 
 
-def measure_drawing(size: tuple, frames: int) -> float:
-    """(ms) for Qt to turn the image into a QImage and draw it at the same size, as the 3D view does."""
+def measure_drawing(size: tuple, frames: int, image: tuple = None) -> float:
+    """(ms) for Qt to turn the image into a QImage and draw it in a view of `size`, as the 3D view does: an image of
+    the size of the view, or of the size `image` (smaller), enlarged smoothly."""
     from PySide6.QtCore import QRect
     from PySide6.QtGui import QGuiApplication, QImage, QPainter
     global _application
     if QGuiApplication.instance() is None:           # Qt needs an application, kept alive as long as the module
         _application = QGuiApplication([])
     width, height = size
-    pixels = np.random.default_rng(0).integers(0, 255, (height, width, 3), dtype=np.uint8)
+    w, h = image or size
+    pixels = np.random.default_rng(0).integers(0, 255, (h, w, 3), dtype=np.uint8)
     target = QImage(width, height, QImage.Format_RGB32)
     start = time.perf_counter()
     for _ in range(frames):
-        image = QImage(pixels.data, width, height, 3 * width, QImage.Format_RGB888)
+        picture = QImage(pixels.data, w, h, 3 * w, QImage.Format_RGB888)
         painter = QPainter(target)
-        painter.drawImage(QRect(0, 0, width, height), image)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform)
+        painter.drawImage(QRect(0, 0, width, height), picture)
         painter.end()
     return 1000 * (time.perf_counter() - start) / frames
 
@@ -133,11 +138,15 @@ def graphics_card() -> str:
 
 
 def run(sizes=SIZES, frames: int = 30) -> dict:
-    """All the measurements, in ms per frame: {"simulation": x, "drawing": {size: x}, "rendering": {quality:
-    {size: x}}}."""
+    """All the measurements, in ms per frame: {"simulation": x, "drawing": {size: x}, "enlarged": {size: x},
+    "rendered": {size: size of the image the software renders}, "rendering": {quality: {size: x}}}."""
+    rendered = {size: image_size(*size) for size in sizes}
+    measured = sorted(set(sizes) | set(rendered.values()))
     return dict(simulation=measure_simulation(2 * frames),
                 drawing={size: measure_drawing(size, frames) for size in sizes},
-                rendering={name: {size: measure_rendering(q, size, frames) for size in sizes}
+                enlarged={size: measure_drawing(size, frames, rendered[size]) for size in sizes},
+                rendered=rendered,
+                rendering={name: {size: measure_rendering(q, size, frames) for size in measured}
                            for name, q in QUALITIES.items()})
 
 
@@ -146,11 +155,16 @@ def report(results: dict, sizes) -> str:
     heads = "".join(f"{w}×{h}".rjust(13) for w, h in sizes)
     lines = [f"Simulation (1/60 s simulated per frame): {results['simulation']:.1f} ms",
              "", f"{'Drawing in the window (Qt), ms':34}{heads}",
-             f"{'':34}" + "".join(f"{results['drawing'][size]:13.1f}" for size in sizes),
+             f"{'image of the size of the view':34}" + "".join(f"{results['drawing'][size]:13.1f}" for size in sizes),
+             f"{'image rendered, enlarged':34}" + "".join(f"{results['enlarged'][size]:13.1f}" for size in sizes),
              "", f"{'3D rendering + read back, ms':34}{heads}"]
     for name, row in results["rendering"].items():
         lines.append(f"{name:34}" + "".join(f"{row[size]:13.1f}" for size in sizes))
     lines += ["", f"{'Frames per second allowed':34}{heads}"]
+    software = results["rendering"]["software"]
+    total = [results["simulation"] + software[results["rendered"][size]] + results["enlarged"][size] for size in sizes]
+    lines.append(f"{'software, as it runs':34}" + "".join(f"{1000 / t:13.0f}" for t in total))
+    lines.append(f"{'rendering every pixel of the view:':34}")
     for name, row in results["rendering"].items():
         total = [results["simulation"] + row[size] + results["drawing"][size] for size in sizes]
         lines.append(f"{name:34}" + "".join(f"{1000 / t:13.0f}" for t in total))

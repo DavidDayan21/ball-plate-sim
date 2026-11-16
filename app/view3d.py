@@ -11,9 +11,12 @@ zoomed(notches): another view can follow). With a tool (tool = "throw",
 - push: drag from the ball; on release, pushed(Δvx, Δvy) (horizontal, frame of the world);
 - draw: drag a path on the plate (a point every DRAW_STEP); on release, drawn(points) (frame of the plate). It is
   drawn in the good color while it stays within draw_radius of the center, in the bad color beyond.
-The image has the size of the widget in physical pixels (high-resolution screens), up to scene.MAX_SIZE. After a
-change of size, the renderer is created again at the new size once the size has stopped changing for RESIZE_DELAY;
-until then, the last image is stretched.
+The image has the size of the widget in physical pixels (high-resolution screens), reduced if needed to max_pixels
+pixels (the window shares RENDER_PIXELS between its views) and to scene.MAX_SIZE; Qt then enlarges it to the widget.
+The cost of a frame grows with the number of pixels rendered, not with the parts of the robot (measured with
+python -m app.benchmark on an integrated card: 25 ms at 1920 × 1080, 39 ms at 2560 × 1440, as much as the bare physics
+model). After a change of size, the renderer is created again at the new size once the size has stopped changing for
+RESIZE_DELAY; until then, the last image is stretched.
 """
 from dataclasses import dataclass, field
 import math
@@ -28,6 +31,7 @@ from app.gestures import MIN_SPEED, drop_flight, plate_hit, velocity
 from app.scene import MAX_SIZE, VIEW_DISTANCE, DisplayScene
 
 RESIZE_DELAY = 150              # (ms)
+RENDER_PIXELS = 1920 * 1080     # at most this many pixels rendered for the 3D, all views together
 DEGREES_PER_PIXEL = 0.3         # turn of the view per pixel of mouse drag
 ZOOM_PER_NOTCH = 0.9            # distance multiplied by this per notch of the wheel (forward: closer)
 DISTANCE = (0.25, 2.0)          # (m) closest and farthest view
@@ -105,11 +109,12 @@ class Camera:
         return (float(r[0]), float(u[0])), (float(r[1]), float(u[1]))
 
 
-def image_size(width: int, height: int) -> tuple:
-    """Size of the image rendered for a widget of width × height physical pixels: the same, reduced if needed to fit
-    in MAX_SIZE (same proportions), at least 1 × 1."""
-    f = min(1.0, MAX_SIZE[0] / max(width, 1), MAX_SIZE[1] / max(height, 1))
-    return max(1, int(width * f)), max(1, int(height * f))
+def image_size(width: int, height: int, max_pixels: int = RENDER_PIXELS) -> tuple:
+    """Size of the image rendered for a widget of width × height physical pixels: the same, reduced if needed (same
+    proportions) to max_pixels pixels and to fit in MAX_SIZE, at least 1 × 1."""
+    f = min(1.0, math.sqrt(max_pixels / max(width * height, 1)),
+            MAX_SIZE[0] / max(width, 1), MAX_SIZE[1] / max(height, 1))
+    return max(1, int(width * f + 1e-9)), max(1, int(height * f + 1e-9))
 
 
 @dataclass
@@ -148,6 +153,7 @@ class View3D(QWidget):
         self.draw_radius = math.inf    # (m) a drawn path must stay within this distance of the center
         self.describe = lambda kind, start, end: ("", "accent")    # text and color of a gesture (set by the window)
         self.renderer = None
+        self.max_pixels = RENDER_PIXELS     # pixels rendered at most (set by the window: shared between the views)
         self.pixels = None             # last image (height, width, 3), kept alive for self.image
         self.image = None
         self._drag = None              # last mouse position while turning the view
@@ -162,6 +168,13 @@ class View3D(QWidget):
         self.close_renderer()
         self.scene = scene
 
+    def set_max_pixels(self, max_pixels: int) -> None:
+        """At most this many pixels rendered: the renderer is created again if its size changes."""
+        if max_pixels != self.max_pixels:
+            self.max_pixels = max_pixels
+            if self.renderer is not None:
+                self._resize_timer.start()
+
     def set_tool(self, tool) -> None:
         self.tool, self.gesture, self.hover = tool, None, None
         self.setCursor(Qt.ArrowCursor if tool is None else Qt.CrossCursor)
@@ -170,7 +183,7 @@ class View3D(QWidget):
     # --- Rendering ---------------------------------------------------------------------------
     def _physical_size(self) -> tuple:
         ratio = self.devicePixelRatioF()
-        return image_size(round(self.width() * ratio), round(self.height() * ratio))
+        return image_size(round(self.width() * ratio), round(self.height() * ratio), self.max_pixels)
 
     def _create_renderer(self) -> None:
         self._free_renderer()
@@ -320,6 +333,7 @@ class View3D(QWidget):
         o, c = self.overlay, self.overlay.colors
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
+        p.setRenderHint(QPainter.SmoothPixmapTransform)     # an image smaller than the widget, enlarged smoothly
         rect = QRectF(self.rect())
         frame = QPainterPath()
         frame.addRoundedRect(rect, RADIUS, RADIUS)

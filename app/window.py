@@ -38,7 +38,7 @@ from app.readouts import distance_history, readouts
 from app.robot import Robot
 from app.scene import DisplayScene
 from app.theme import COLORS, MODES, load_fonts, scene_style, stylesheet, system_mode
-from app.view3d import View3D
+from app.view3d import RENDER_PIXELS, View3D
 from app.widgets import Card, Readout, Segmented, Sparkline, Table, Wrapped, label
 from controller.policy import MAX_LATENCY
 from simulation.config import G, DrawnPath
@@ -89,11 +89,13 @@ class _Together:
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, texts: Texts, brain: str = "pid", mode: str = None, clock=time.perf_counter):
+    def __init__(self, texts: Texts, brain: str = "pid", mode: str = None, clock=time.perf_counter, settings=None):
         """mode: "light" or "dark" (None: that of the system). clock: real time (s), at every frame (replaced by a
-        simulated clock in the tests)."""
+        simulated clock in the tests). settings: where the choices of the user are remembered (app/settings.py;
+        None: nowhere)."""
         super().__init__()
         load_fonts()
+        self.settings = settings
         self.texts = texts
         self.mode = mode or system_mode()
         self.clock = clock
@@ -164,6 +166,7 @@ class MainWindow(QMainWindow):
     def _place_views(self) -> None:
         for r in self.robots:
             self.views.removeWidget(r.view)
+            r.view.set_max_pixels(RENDER_PIXELS // len(self.robots))     # the pixels rendered, shared
         for r in self._ordered():
             self.views.addWidget(r.view, 1)
 
@@ -191,6 +194,7 @@ class MainWindow(QMainWindow):
             robot.view.close_renderer()
             self.views.removeWidget(robot.view)
             robot.view.deleteLater()
+            self._place_views()                             # the pixels rendered, all for the first robot again
         self.b_split.setChecked(on)
         self.s_brain.setEnabled(not on)
         self.retranslate()
@@ -306,10 +310,10 @@ class MainWindow(QMainWindow):
         self.c_compare.body.addWidget(self.l_compare)
 
         self.s_mode = Segmented(MODES, self.mode)
-        self.s_mode.changed.connect(self.set_mode)
+        self.s_mode.changed.connect(self.choose_mode)
         self.s_language = Segmented(LANGUAGES, self.texts.code)
         self.s_language.set_texts({code: code.upper() for code in LANGUAGES})
-        self.s_language.changed.connect(self.set_language)
+        self.s_language.changed.connect(self.choose_language)
 
         panel = QWidget(objectName="window")
         column = QVBoxLayout(panel)
@@ -551,6 +555,16 @@ class MainWindow(QMainWindow):
         for r in self.robots:
             r.view.update()
 
+    def choose_language(self, code: str) -> None:
+        """The language chosen by the user: shown, and remembered for the next launch."""
+        self.set_language(code)
+        self._remember("language", code)
+
+    def choose_mode(self, mode: str) -> None:
+        """The theme chosen by the user: shown, and remembered for the next launch."""
+        self.set_mode(mode)
+        self._remember("theme", mode)
+
     def set_language(self, code: str) -> None:
         self.texts.set_language(code)
         self.retranslate()
@@ -688,7 +702,14 @@ class MainWindow(QMainWindow):
                         latency=row["latency_ms"]))
         return "\n".join(lines)
 
+    def _remember(self, key: str, value) -> None:
+        """A choice of the user, kept for the next launch (the theme and the language when changed, the size and
+        position of the window when it closes)."""
+        if self.settings is not None:
+            self.settings.setValue(key, value)
+
     def closeEvent(self, event) -> None:
+        self._remember("geometry", self.saveGeometry())
         self.timer.stop()
         for r in self.robots:
             r.view.close_renderer()

@@ -6,18 +6,22 @@ from PySide6.QtWidgets import QApplication
 
 from app import NAME
 from app.i18n import Texts, language_of
+from app.settings import remembered, restore_geometry, settings
 from app.window import MainWindow
 
-SIZE = (1200, 750)          # (pixels) at startup, reduced to fit in the screen
+SIZE = (1200, 750)          # (pixels) at the first launch, reduced to fit in the screen
 
 
 def main() -> int:
     application = QApplication(sys.argv)
     application.setApplicationName(NAME)
     application.setStyle("Fusion")          # same base on Windows and Mac, under the style sheet of app/theme.py
-    window = MainWindow(Texts(language_of(QLocale.system().name())))
-    screen = application.primaryScreen().availableGeometry()
-    window.resize(min(SIZE[0], int(0.9 * screen.width())), min(SIZE[1], int(0.9 * screen.height())))
+    kept = settings()
+    language, theme = remembered(kept)
+    window = MainWindow(Texts(language or language_of(QLocale.system().name())), mode=theme, settings=kept)
+    if not restore_geometry(window, kept):
+        screen = application.primaryScreen().availableGeometry()
+        window.resize(min(SIZE[0], int(0.9 * screen.width())), min(SIZE[1], int(0.9 * screen.height())))
     window.show()
     return application.exec()
 
