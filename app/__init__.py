@@ -4,3 +4,4 @@ Interface only: the physics, the brains and the attempts are those of simulation
 """
 NAME = "SAPIR"                  # the name of the robot and of the software (title of the window, front panel):
                                 # Self-balancing AI-PID Interactive Robot; Sapir (ספיר), "sapphire", an Israeli name
+VERSION = "1.0.0"               # of the packages (release/sapir.spec)

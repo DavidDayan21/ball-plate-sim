@@ -1,0 +1,4 @@
+# Building the packages of the software (python -m PyInstaller release/sapir.spec), on top of requirements-app.txt
+-r requirements-app.txt
+pyinstaller==6.22.3
+pyinstaller-hooks-contrib==2026.10

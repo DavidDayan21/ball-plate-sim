@@ -1,0 +1,89 @@
+# Builds the packages of SAPIR on the machines of GitHub, then checks them (app/self_check.py). Started by hand: tab
+# Actions, Build, Run workflow. The files, under Artifacts at the bottom of the run, are kept 3 days:
+#   SAPIR-Windows: SAPIR.exe, a single file;   SAPIR-macOS: SAPIR.dmg, for the Macs with Apple Silicon.
+name: Build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.os }}
+    strategy:
+      fail-fast: false                          # one system failing does not stop the other
+      matrix:
+        os: [windows-latest, macos-latest]      # macos-latest: Apple Silicon (arm64)
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+
+      - name: Install
+        run: python -m pip install -r requirements-build.txt
+
+      - name: Build
+        run: python -m PyInstaller --noconfirm release/sapir.spec
+
+      # Exit code of the check: 0 passed; 2 passed but the 3D could not be drawn on this machine (no usable OpenGL),
+      # a warning; anything else, the build fails. The time includes the unpacking of the exe.
+      - name: Check the package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        timeout-minutes: 5
+        run: |
+          $arguments = "--self-check", "$PWD\self-check.txt"
+          $watch = [Diagnostics.Stopwatch]::StartNew()
+          $process = Start-Process -FilePath dist\SAPIR.exe -ArgumentList $arguments -Wait -PassThru
+          $watch.Stop()
+          if (Test-Path self-check.txt) { Get-Content self-check.txt -Encoding utf8 }
+          else { "No report: SAPIR.exe did not start" }
+          $code = $process.ExitCode
+          "Exit code $code, $([math]::Round($watch.Elapsed.TotalSeconds, 1)) s"
+          if ($code -eq 2) { "::warning::The 3D could not be drawn here (no usable OpenGL); the rest passed" }
+          elseif ($code -ne 0) { exit 1 }
+          exit 0
+
+      - name: Check the package (Mac)
+        if: runner.os == 'macOS'
+        shell: bash
+        timeout-minutes: 5
+        run: |
+          SECONDS=0
+          code=0
+          dist/SAPIR.app/Contents/MacOS/SAPIR --self-check "$PWD/self-check.txt" || code=$?
+          echo "Exit code $code, $SECONDS s"
+          [ -f self-check.txt ] || echo "No report: SAPIR did not start"
+          if [ "$code" -eq 2 ]; then
+            echo "::warning::The 3D could not be drawn here (no usable OpenGL); the rest passed"
+            exit 0
+          fi
+          exit "$code"
+
+      - name: Disk image (Mac)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          mkdir dmg
+          ditto dist/SAPIR.app dmg/SAPIR.app
+          ln -s /Applications dmg/Applications          # in the window of the disk: drag SAPIR onto Applications
+          for attempt in 1 2 3; do                       # hdiutil sometimes finds the disk busy
+            hdiutil create -volname SAPIR -srcfolder dmg -ov -format UDZO dist/SAPIR.dmg && break
+            sleep 10
+          done
+          test -f dist/SAPIR.dmg
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: SAPIR-${{ runner.os }}
+          path: ${{ runner.os == 'Windows' && 'dist/SAPIR.exe' || 'dist/SAPIR.dmg' }}
+          retention-days: 3
+          if-no-files-found: error

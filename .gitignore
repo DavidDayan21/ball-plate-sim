@@ -28,3 +28,7 @@ results/reference/
 
 # Trainings of the AI brain (models and progress, regenerated with python -m training.train)
 results/training/
+
+# Packages of the software and their intermediate files (python -m PyInstaller release/sapir.spec)
+build/
+dist/

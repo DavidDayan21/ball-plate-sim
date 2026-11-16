@@ -4,6 +4,7 @@ A Mesh is vertices, normals and triangles, in the coordinates of the body it bel
 or smooth edges, as each shape needs). Built with NumPy, written in MuJoCo's binary mesh format (MSH).
 """
 import math
+from pathlib import Path
 import struct
 
 import numpy as np
@@ -240,12 +241,18 @@ def ribbon(points, half_width, half_thickness) -> Mesh:
 
 
 # --- Text: rasterized with the DejaVu font of Matplotlib, cut into rectangles -----------------------------------
+def font_file() -> Path:
+    """DejaVu Sans Bold, the file shipped with Matplotlib: the one its font_manager finds (checked by the tests),
+    without building its list of all the fonts of the system (measured on Linux: 1.7 s for 530 fonts; the package would
+    build it at every launch, its settings folder of Matplotlib being temporary)."""
+    import matplotlib
+    return Path(matplotlib.get_data_path(), "fonts", "ttf", "DejaVuSans-Bold.ttf")
+
+
 def text_runs(text: str, height: float, px: int = 48):
     """Rectangles (x0, x1, y0, y1) in meters covering the text, centered on (0, 0); `height`: that of a capital H."""
-    from matplotlib import font_manager
     from matplotlib.ft2font import FT2Font
-    font = FT2Font(font_manager.findfont(font_manager.FontProperties(family="DejaVu Sans", weight="bold"),
-                                         fallback_to_default=False))
+    font = FT2Font(str(font_file()))
 
     def bitmap(s):
         font.set_size(px, 72)

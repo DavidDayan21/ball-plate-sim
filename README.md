@@ -22,7 +22,7 @@ Building the real robot remains a distant goal: the code will then be ready.
 | A. Reliable measurements | Bit-exact regression check, spread over N draws, robust metrics, simple physics → MuJoCo gap | Done |
 | B. PID brain | Objectives in the report, integral limited to the neighborhood of the setpoint, aimed bounce of a dropped ball, thrown ball (start with the speed, fast motor ramps for the large moves), gains tuned by LQR, adaptive control (model gain c·g estimated online), every gap of more than 0.5 mm explained (report, section 12) | Done |
 | C. Local AI brain | A policy (neural network) learned by reinforcement in MuJoCo, same rules as the PID (sensor, motors, ±10°). Done: interchangeable brains, training environment, training by reinforcement, imitation of the PID brain: the policy alone then meets the four objectives, dropped ball included (campaign section 13, which compares both brains: return to the center better than the PID, circle about 0.2 mm behind). The sandbox can be driven by either brain. Left for later: the gaps of more than 0.5 mm between the two brains explained (circle with a large calibration error of the plate, return to the center), then reinforcement from the imitating policy, to go beyond the PID | Done |
-| D. Software for the general public | An application installed with a double click, for Windows and Mac: the robot in 3D, driven by either brain; throws, drops and pushes with the mouse, drawn trajectories, choice of the ball, latency and friction, both robots side by side; in English and French. Done: prototype (`python -m app`): 3D view in its own window, throw, drop, center, choice of the brain, pause, English and French; visual foundations: light and dark themes, panel of measurements; throws, drops and pushes with the mouse, physical limit of a throw, setpoints (center, circle, square); choice of the ball, friction and latency; both brains side by side, comparison of the brains; drawn trajectories; the robot shown as a lab prototype (motors, arms, rod ends, electronics, battery, camera under the plate, front panel with the LED of the brain), the ball printed according to its kind, the name SAPIR; the 3D capped at 1920 × 1080 pixels (large screens), theme, language and window remembered between launches; the icon | **In progress** |
+| D. Software for the general public | An application installed with a double click, for Windows and Mac: the robot in 3D, driven by either brain; throws, drops and pushes with the mouse, drawn trajectories, choice of the ball, latency and friction, both robots side by side; in English and French. Done: prototype (`python -m app`): 3D view in its own window, throw, drop, center, choice of the brain, pause, English and French; visual foundations: light and dark themes, panel of measurements; throws, drops and pushes with the mouse, physical limit of a throw, setpoints (center, circle, square); choice of the ball, friction and latency; both brains side by side, comparison of the brains; drawn trajectories; the robot shown as a lab prototype (motors, arms, rod ends, electronics, battery, camera under the plate, front panel with the LED of the brain), the ball printed according to its kind, the name SAPIR; the 3D capped at 1920 × 1080 pixels (large screens), theme, language and window remembered between launches; the icon. In progress: the packages to download, built and checked by GitHub (Windows: a single `SAPIR.exe`; Macs with Apple Silicon: `SAPIR.app` in a `.dmg`) | **In progress** |
 | E. Construction (distant) | Design, real-world defects, complete error budget; first, simulate what the software shows and the campaign does not: the camera under the transparent plate (the campaign: 50 cm above it), the ball joints of the rods 1 cm under the plate surface (the physics: on it) | Later |
 
 Quantified goals for both brains: thrown ball caught up to at least 90 % of the physical limit,
@@ -46,11 +46,15 @@ app/                     The software for the general public (interface only, on
   readouts.py            Measurements of the panel, read from the session
   gestures.py            Mouse gestures on the plate: throws, drops (fall along a parabola), pushes; physical limit of a throw
   benchmark.py           Cost of a frame on this computer: simulation, 3D rendering, drawing (python -m app.benchmark)
+  self_check.py          Check of the software as packaged: files, brains, window, 3D (python -m app --self-check)
   i18n.py, locales/      Texts of the interface, one file per language (English, French)
   settings.py            What is remembered from one launch to the next: theme, language, size of the window
   icon.py                The icon, drawn by code at every size (ball on the tilted plate, dark rounded square)
   fonts/                 Inter, the font of the interface (SIL Open Font License, OFL.txt)
 brains/                  Learned policies of the AI brain (weights of the network): imitation.npz
+release/                 The packages of the software (built by .github/workflows/build.yml)
+  sapir.spec             PyInstaller recipe: SAPIR.exe (Windows, a single file), SAPIR.app (Mac)
+  icons.py               The icon files, SAPIR.ico and SAPIR.icns, drawn by app/icon.py at every build
 controller/              What would run on the real robot (independent of the simulator)
   pid.py                 PID: derivative filter, saturation, anti-windup, integration zone, feedforward
   plate.py               PID brain: 2 PIDs (x, y axes) + feedforward + latency predictor + aimed bounce
@@ -77,7 +81,8 @@ training/
   train.py               Training of the policy by reinforcement (PPO), on several robots in parallel
   evaluation.py          Evaluation of a brain on the reference scenario, for both training scripts
 tests/                   Automated tests, by theme (controller, mechanics, sensors, physics,
-                         scenarios, metrics, session, regression check, campaign, training, display, software)
+                         scenarios, metrics, session, regression check, campaign, training, display, software,
+                         packages)
 campaign.py              Full measurement campaign over N draws, in parallel -> results/report.md
 sandbox.py               The robot in 3D and in real time, driven from a control panel (working tool)
 regression_check.py      Checks that a change leaves all the results bit-identical
@@ -106,6 +111,12 @@ To run the software for the general public (not needed for the rest: without it,
 pip install -r requirements-app.txt
 ```
 
+To build the packages of the software on this computer (GitHub builds them: see Packages), add PyInstaller:
+
+```powershell
+pip install -r requirements-build.txt
+```
+
 ## Usage
 
 ```powershell
@@ -114,6 +125,8 @@ python campaign.py            # full measurement campaign, writes results/report
 python campaign.py --draws 1  # same, nominal configuration only (one simulation per case)
 python -m app                 # the software for the general public (phase D, prototype)
 python -m app.benchmark       # cost of a frame of the software on this computer (about a minute)
+python -m app --self-check    # check of the packages (app/self_check.py), here on the software installed
+python -m PyInstaller --noconfirm release/sapir.spec   # the package for this system, in dist/ (about a minute)
 python sandbox.py             # 3D sandbox (see below)
 python sandbox.py --camera                             # same, ball measured by the virtual camera
 python sandbox.py --brain imitation                    # same, driven by the AI brain instead of the PID brain
@@ -340,6 +353,23 @@ real time elapsed (at most 100 ms: beyond, it slows down), then MuJoCo renders t
 image is drawn in the window. The virtual camera, which also renders with MuJoCo, will need it: its OpenGL context
 can only be used in the thread that created it.
 
+### Packages
+
+The software is packaged with PyInstaller (`release/sapir.spec`) on the build machines of GitHub
+(`.github/workflows/build.yml`, started by hand from the tab Actions; the files are kept 3 days): for Windows,
+`SAPIR.exe`, a single file, which unpacks itself in a temporary folder at every launch (nothing to install); for the
+Macs with Apple Silicon, `SAPIR.app` in a disk image, `SAPIR.dmg`. Neither is signed. The icon files are drawn by
+`app/icon.py` at every build (`release/icons.py`); the version is set in `app/__init__.py`. Left out: OpenCV, used
+only by the virtual camera, which the software does not use. After the build, each machine runs the package with
+`--self-check` (`app/self_check.py`): the texts of every language, the fonts, the two brains (a ball dropped 5 cm off
+center must be back within 5 mm of it 3 s later; measured: 1.4 and 1.5 mm), the OpenGL library, the robot shown, the
+window (not shown on the screen, with settings of its own), then one drawing of the 3D. A file left out of the package
+fails its check, and the build. A machine that cannot draw the 3D (no usable OpenGL) checks the rest, and the build
+passes with a warning. The texts of the parts are drawn with the font file shipped with Matplotlib, read directly:
+its font manager first lists all the fonts of the system (measured on Linux: 1.7 s for 530 fonts), which a package
+would do at every launch (its settings folder of Matplotlib is temporary). The same recipe tried on Linux (no package
+published for it): a single file of 107 MB, whose check passes.
+
 ## 3D sandbox
 
 The working tool of the development, kept until the software does all it does. Two windows: the MuJoCo 3D view
@@ -387,5 +417,5 @@ International CSV format: `,` separator, decimal point, UTF-8 encoding (no BOM).
 
 ## Technologies
 
-Python, NumPy, Matplotlib, MuJoCo, OpenCV, pytest. For the software: Qt (PySide6), the Inter font. For the training
-of the AI brain only: PyTorch, Stable-Baselines3.
+Python, NumPy, Matplotlib, MuJoCo, OpenCV, pytest. For the software: Qt (PySide6), the Inter font; for its
+packages: PyInstaller, GitHub Actions. For the training of the AI brain only: PyTorch, Stable-Baselines3.

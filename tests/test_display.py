@@ -1,10 +1,12 @@
 """What the software shows, without Qt: the display scene (app/scene.py) and the parts of the robot (app/parts.py),
 the themes (app/theme.py) and the measurements of the panel (app/readouts.py)."""
 from dataclasses import replace
+from pathlib import Path
 
 import mujoco
 import numpy as np
 
+from app.meshes import font_file
 from app.parts import BASE_TOP, EYE_DEPTH, GROUND, PRINTS, robot_meshes
 from app.readouts import distance_history, readouts
 from app.scene import (ANTIALIASING, FOG, HIDDEN, SHADOW_CLIP, SHADOW_MAP, VIEW_DISTANCE, DisplayScene, display_assets,
@@ -126,6 +128,15 @@ def test_parts_built_once():
     assert after.misses == before.misses
     assert all(file.endswith(".msh") for file in display_assets(s.cfg))
     assert s.phys.model.geom("ground").pos[2] == GROUND                               # the parts stand on its floor
+
+
+def test_font_of_the_texts():
+    """The texts of the parts (name, labels, printings) are drawn with the font file that the font manager of
+    Matplotlib finds for DejaVu Sans Bold: that shipped with Matplotlib, read directly (app/meshes.font_file)."""
+    from matplotlib import font_manager
+    found = font_manager.findfont(font_manager.FontProperties(family="DejaVu Sans", weight="bold"),
+                                  fallback_to_default=False)
+    assert Path(found).resolve() == font_file().resolve()
 
 
 def test_display_scene_leaves_the_physics_alone():
