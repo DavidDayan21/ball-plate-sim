@@ -4,7 +4,10 @@ All physical parameters are initial assumptions (no real reference model):
 they can be changed to explore other designs.
 """
 from dataclasses import dataclass, field
+import hashlib
 import math
+
+import numpy as np
 
 from controller.kinematics import Geometry
 from controller.lqr import pid_gains
@@ -125,6 +128,69 @@ def square(t: float):
     k, s = int(t // 2.0) % 4, (t % 2.0) / 2.0
     (x0, y0), (x1, y1) = corners[k], corners[(k + 1) % 4]
     return x0 + (x1 - x0) * s, y0 + (y1 - y0) * s, 0.0, 0.0
+
+
+@dataclass(frozen=True, eq=False)
+class DrawnPath:
+    """Closed path through `points` ((x, y), as drawn by hand), traveled at `speed` (m/s) from the first point, back
+    to it in a straight line, and again. The points are resampled every PATH_STEP of length, smoothed over about
+    PATH_SMOOTH (the hand trembles), and resampled again: the path is then traveled at constant speed. Its
+    acceleration is that of the smoothed path, speed² × its second derivative along it (taken over PATH_SPAN, then
+    smoothed over PATH_SMOOTH_CURVATURE: a tremble of the hand weighs much more on it): on a circle, v²/R toward the
+    center, as Circle gives it."""
+    points: tuple
+    speed: float
+
+    def __post_init__(self):
+        drawn = np.asarray(self.points, dtype=float)
+        loop = _resample(drawn, PATH_STEP)
+        loop = _resample(_smooth(loop, PATH_SMOOTH), PATH_STEP)
+        h = max(1, round(PATH_SPAN / PATH_STEP))
+        curvature = (np.roll(loop, -h, axis=0) - 2 * loop + np.roll(loop, h, axis=0)) / (h * PATH_STEP) ** 2
+        object.__setattr__(self, "samples", loop)
+        object.__setattr__(self, "accelerations", self.speed ** 2 * _smooth(curvature, PATH_SMOOTH_CURVATURE))
+        object.__setattr__(self, "length", len(loop) * PATH_STEP)
+
+    def __call__(self, t: float):
+        u = (self.speed * t % self.length) / PATH_STEP
+        i = int(u) % len(self.samples)
+        j, f = (i + 1) % len(self.samples), u - int(u)
+        x, y = (1 - f) * self.samples[i] + f * self.samples[j]
+        ax, ay = (1 - f) * self.accelerations[i] + f * self.accelerations[j]
+        return float(x), float(y), float(ax), float(ay)
+
+    @property
+    def key(self) -> str:
+        """Short name of this path and speed, to tell the attempts made on it from others."""
+        rounded = repr((np.round(np.asarray(self.points), 4).tolist(), round(self.speed, 4)))
+        return hashlib.sha1(rounded.encode()).hexdigest()[:8]
+
+
+PATH_STEP = 0.001       # (m) between the samples of a drawn path
+PATH_SMOOTH = 0.015     # (m) length of the smoothing window
+PATH_SPAN = 0.010       # (m) on each side, for the second derivative
+PATH_SMOOTH_CURVATURE = 0.040   # (m) length of the smoothing window of the second derivative
+
+
+def _smooth(values: np.ndarray, length: float) -> np.ndarray:
+    """Moving average of the samples of a closed path (every PATH_STEP) over about `length`, applied twice
+    (triangular weights)."""
+    n = max(1, round(length / PATH_STEP)) | 1                 # odd window
+    for _ in range(2):
+        values = sum(np.roll(values, k, axis=0) for k in range(-(n // 2), n // 2 + 1)) / n
+    return values
+
+
+def _resample(points: np.ndarray, step: float) -> np.ndarray:
+    """Points every `step` of length along the polyline `points`, closed (back to the first point); the last
+    sample is short of the first one."""
+    closed = np.vstack([points, points[:1]])
+    lengths = np.hypot(*np.diff(closed, axis=0).T)
+    s = np.concatenate([[0.0], np.cumsum(lengths)])
+    keep = np.concatenate([[True], lengths > 1e-12])          # repeated points add nothing
+    s, closed = s[keep], closed[keep]
+    at = np.arange(0.0, s[-1] - step / 2, step)
+    return np.column_stack([np.interp(at, s, closed[:, 0]), np.interp(at, s, closed[:, 1])])
 
 
 # --- Configuration of a simulation --------------------------------------------------------------

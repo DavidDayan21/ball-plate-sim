@@ -21,7 +21,7 @@ Building the real robot remains a distant goal: the code will then be ready.
 | A. Reliable measurements | Bit-exact regression check, spread over N draws, robust metrics, simple physics → MuJoCo gap | Done |
 | B. PID brain | Objectives in the report, integral limited to the neighborhood of the setpoint, aimed bounce of a dropped ball, thrown ball (start with the speed, fast motor ramps for the large moves), gains tuned by LQR, adaptive control (model gain c·g estimated online), every gap of more than 0.5 mm explained (report, section 12) | Done |
 | C. Local AI brain | A policy (neural network) learned by reinforcement in MuJoCo, same rules as the PID (sensor, motors, ±10°). Done: interchangeable brains, training environment, training by reinforcement, imitation of the PID brain: the policy alone then meets the four objectives, dropped ball included (campaign section 13, which compares both brains: return to the center better than the PID, circle about 0.2 mm behind). The sandbox can be driven by either brain. Left for later: the gaps of more than 0.5 mm between the two brains explained (circle with a large calibration error of the plate, return to the center), then reinforcement from the imitating policy, to go beyond the PID | Done |
-| D. Software for the general public | An application installed with a double click, for Windows and Mac: the robot in 3D, driven by either brain; throws, drops and pushes with the mouse, drawn trajectories, choice of the ball, latency and friction, both robots side by side; in English and French. Done: prototype (`python -m app`): 3D view in its own window, throw, drop, center, choice of the brain, pause, English and French; visual foundations: light and dark themes, robot dressed for display (pedestal, motors), panel of measurements; throws, drops and pushes with the mouse, physical limit of a throw, setpoints (center, circle, square); choice of the ball, friction and latency; both brains side by side, comparison of the brains | **In progress** |
+| D. Software for the general public | An application installed with a double click, for Windows and Mac: the robot in 3D, driven by either brain; throws, drops and pushes with the mouse, drawn trajectories, choice of the ball, latency and friction, both robots side by side; in English and French. Done: prototype (`python -m app`): 3D view in its own window, throw, drop, center, choice of the brain, pause, English and French; visual foundations: light and dark themes, robot dressed for display (pedestal, motors), panel of measurements; throws, drops and pushes with the mouse, physical limit of a throw, setpoints (center, circle, square); choice of the ball, friction and latency; both brains side by side, comparison of the brains; drawn trajectories | **In progress** |
 | E. Construction (distant) | Design, real-world defects, complete error budget | Later |
 
 Quantified goals for both brains: thrown ball caught up to at least 90 % of the physical limit,
@@ -237,12 +237,12 @@ simulations advance step by step together.
 |---|---|
 | Brain | PID or AI; changing it ends the current attempt (an attempt has a single brain). Side by side: both brains, a robot each; when it ends, the first robot stays |
 | Ball | Tools Throw, Drop and Push (active until clicked again), Center, Pause; the height of a drop (0 to 40 cm; the AI brain saw 5 to 35 cm in training, said outside them) |
-| Setpoint | Center, circle (6 cm in 4 s) or square (10 cm sides at 5 cm/s): where the brain must hold the ball. A new one starts an attempt "new setpoint" |
+| Setpoint | Center, circle (6 cm in 4 s), square (10 cm sides at 5 cm/s) or Drawing: where the brain must hold the ball. A new one starts an attempt "new setpoint". Drawing: the tool Draw; the path drawn on the plate closes by itself in a straight line and is traveled in a loop at the speed chosen (2 to 10 cm/s). It is resampled every mm and smoothed over 1.5 cm (the hand trembles), its acceleration over 4 cm (measured on a 6 cm circle drawn with 0.5 mm of tremble: within 2 mm of the circle setpoint, its acceleration within 6 %). A path farther than 10 cm from the center is refused (the ball keeps 3 cm from the edge). The AI brain never saw a drawn path in training (points, steps, circles) |
 | Settings of the robot | Ball: ping-pong (hollow, 2.7 g), solid (J = 2/5·m·r²) or heavy (hollow, 27 g); friction ball-plate μ = 1, 0.2 or 0.02; latency of the camera, 20 to 100 ms. As in the robustness variants of the campaign, and all within what the AI brain saw in training (the comparison stays fair; 100 ms is also the most it can take). Changing one ends the current attempt. The ball and the friction are changed in the MuJoCo model in place, exactly as if it had been built with them (a test checks it, to the last bit) |
 | Measurements | Distance to the setpoint, speed and height of the ball, tilt of the plate (x, y), largest torque of the 3 motors; the distance over the last 10 s. True values of the simulation, not those measured by the sensor of the robot. Side by side: a column per brain, a curve per brain, in its color |
 | Last attempt | Its action, its brain and its result (stabilized in, fell after...); its ball, friction and latency. Side by side: that of each robot |
-| Comparison | By brain, over the finished attempts of the session made in the current conditions (setpoint, ball, friction, latency), side by side or not: number of attempts, share of the balls caught, median time to stabilize, median room left to the edge of the plate. Counted: throws, drops, pushes, disturbances and new setpoints that came to a result (not interrupted). The room to the edge rather than the largest distance to the setpoint: for a throw, that one mostly tells where the ball was thrown from |
-| Bottom | Light or dark theme (that of the system at startup), English or French (that of the system) |
+| Comparison | By brain, over the finished attempts of the session made in the current conditions (setpoint, the same drawn path at the same speed, ball, friction, latency), side by side or not: number of attempts, share of the balls caught, median time to stabilize, median room left to the edge of the plate. Counted: throws, drops, pushes, disturbances and new setpoints that came to a result (not interrupted). The room to the edge rather than the largest distance to the setpoint: for a throw, that one mostly tells where the ball was thrown from |
+| Bottom | Light or dark theme (that of the system at startup), English or French (that of the system). The panel is at least 300 pixels wide, wider if a row needs it (texts and fonts change with the language and the system): nothing of it is cut or under its scroll bar |
 
 Over the 3D view: what the robot is doing, the position of the ball, the simulated time with its speed compared
 with real time and the frames per second, the x and y axes of the plate (they turn with the view), the setpoint
@@ -257,6 +257,7 @@ Mouse: the wheel zooms; a drag turns the view, unless a tool is active and the d
 |---|---|---|
 | Throw | Drag from where the ball starts | The ball starts there, rolling along the arrow. Speed = length of the arrow / 0.2 s (10 cm: 0.5 m/s), up to 1.5 m/s. While dragging: the speed, and the physical limit of this throw √(2·c·g·sin θmax·d), d the distance to the edge along the arrow (nominal ball); green within it, red beyond (allowed, to see the ball fall) |
 | Drop | Click where the ball falls, or drag from there | Click: the ball is dropped from the height chosen, without speed. Drag: it is released above the point pressed with the horizontal speed of the arrow (same scale), and falls along a parabola; while dragging, its fall, where it lands and its angle of arrival from the vertical (green if it lands on the plate, red if not; no limit shown: not computed, bounce then rolling, so on the plate does not mean caught) |
+| Draw | Drag a path on the plate (setpoint Drawing) | It becomes the setpoint; drawn in green within 10 cm of the center, in red beyond (refused) |
 | Push | Drag from the ball | Its velocity changes by the arrow (same scale); the brain keeps its memory |
 
 When the ball falls, the camera glides to look between the robot and the ball and moves back to keep both in view
@@ -318,12 +319,12 @@ has no latency compensation to switch off).
 | Space bar (3D view) or Pause | Pause / resume |
 | Double-click on the ball then Ctrl + right drag (3D view) | Pushes the ball: a "disturbance" attempt starts by itself as soon as the ball moves more than 2 cm away |
 
-An attempt ends when the ball falls, stays within 1 cm of the setpoint for 2 s (stabilized), lasts longer than
-30 s, when another one starts (a new setpoint starts one too), or when a setting changes (brain, latency, compensation; in the software, also the
-ball and the friction): an attempt has a single setting of each. A fallen ball lands on the ground, which touches
-nothing else. Each attempt is recorded in `results/attempts/<date_time>/`: `attempt_001.csv`… (all the measurements
-at 50 Hz) and `summary.csv` (one row per attempt: parameters, brain, ball, friction, latency, result, stabilization
-time, bounces, edge margin…).
+An attempt ends when the ball falls, stays within 1 cm of the setpoint for 2 s (stabilized), lasts longer than 30 s,
+when another one starts (a new setpoint starts one too), or when a setting changes (brain, latency, compensation; in
+the software, also the ball and the friction): an attempt has a single setting of each. A fallen ball lands on the
+ground, which touches nothing else. Each attempt is recorded in `results/attempts/<date_time>/`: `attempt_001.csv`…
+(all the measurements at 50 Hz) and `summary.csv` (one row per attempt: parameters, setpoint and drawn path, brain,
+ball, friction, latency, result, stabilization time, bounces, edge margin…).
 International CSV format: `,` separator, decimal point, UTF-8 encoding (no BOM).
 
 ## Conventions

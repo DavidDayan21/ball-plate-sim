@@ -92,5 +92,14 @@
   "compare.caught": "Balles rattrapées",
   "compare.stabilized": "Stabilisée en (médiane)",
   "compare.margin": "Marge au bord (médiane)",
-  "caption.compare": "Essais terminés de cette séance dans les conditions actuelles : {setpoint} · {ball} · μ = {mu} · {latency} ms. Lancers, lâchers, poussées et nouvelles consignes ; côte à côte ou non."
+  "caption.compare": "Essais terminés de cette séance dans les conditions actuelles : {setpoint} · {ball} · μ = {mu} · {latency} ms. Lancers, lâchers, poussées et nouvelles consignes ; côte à côte ou non.",
+  "setpoint.drawn": "Dessin",
+  "tip.drawn": "Dessinez un chemin sur le plateau : le cerveau doit le suivre, en boucle",
+  "hint.draw": "Dessinez un chemin sur le plateau · Ailleurs : tourner",
+  "label.speed": "Vitesse sur le chemin : {speed} cm/s",
+  "draw.how": "Dessinez un chemin sur le plateau à la souris : il se referme tout seul, en ligne droite.",
+  "draw.path": "Chemin de {length} cm, un tour toutes les {time} s.",
+  "draw.short": "Chemin trop court : glissez sur le plateau.",
+  "draw.refused": "Chemin refusé : il passe à plus de {radius} cm du centre, trop près du bord.",
+  "draw.untrained": "Le cerveau IA n'a jamais vu de chemin dessiné à l'entraînement (des points, des sauts et des cercles)."
 }

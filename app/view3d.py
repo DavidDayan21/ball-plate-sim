@@ -8,7 +8,9 @@ zoomed(notches): another view can follow). With a tool (tool = "throw",
 - throw: drag from where the ball starts; on release, thrown(x, y, vx, vy) (frame of the plate);
 - drop: click where the ball falls, or drag from there to give it a horizontal speed; on release, dropped(x, y,
   vx, vy) (frame of the plate; no speed for a click); while dragging, its fall from drop_height is drawn;
-- push: drag from the ball; on release, pushed(Δvx, Δvy) (horizontal, frame of the world).
+- push: drag from the ball; on release, pushed(Δvx, Δvy) (horizontal, frame of the world);
+- draw: drag a path on the plate (a point every DRAW_STEP); on release, drawn(points) (frame of the plate). It is
+  drawn in the good color while it stays within draw_radius of the center, in the bad color beyond.
 The image has the size of the widget in physical pixels (high-resolution screens), up to scene.MAX_SIZE. After a
 change of size, the renderer is created again at the new size once the size has stopped changing for RESIZE_DELAY;
 until then, the last image is stretched.
@@ -33,6 +35,7 @@ ELEVATION = (-89.0, -5.0)       # (°) from straight above to almost level with 
 RADIUS = 8                      # (pixels) corners of the view
 AXIS_LENGTH = 28                # (pixels) axes of the plate, drawn in the corner
 PUSH_REACH = 3                  # a push starts within this many ball radii of the ball
+DRAW_STEP = 0.002               # (m) between the points of a drawn path
 FIT_ASPECT = 1.0                # a view narrower than this (width / height; side by side) moves its camera back,
                                 # to keep the width of the scene in sight (the default window is wider: 1.2)
 
@@ -128,6 +131,7 @@ class View3D(QWidget):
     pushed = Signal(float, float)
     turned = Signal(float, float)       # the view was turned by the mouse, by (dx, dy) pixels
     zoomed = Signal(float)              # the view was zoomed by the wheel, by this many notches
+    drawn = Signal(list)                # a path drawn on the plate: [(x, y)]
 
     def __init__(self, scene: DisplayScene, physics_data, lookat_height: float, plate_radius: float,
                  ball_radius: float, parent=None):
@@ -141,6 +145,7 @@ class View3D(QWidget):
         self.gesture = None            # dict(kind, start, end) while a gesture is drawn
         self.hover = None              # point of the plate under the mouse (drop tool)
         self.drop_height = 0.0         # (m) height of a drop, for drawing its fall (set by the window)
+        self.draw_radius = math.inf    # (m) a drawn path must stay within this distance of the center
         self.describe = lambda kind, start, end: ("", "accent")    # text and color of a gesture (set by the window)
         self.renderer = None
         self.pixels = None             # last image (height, width, 3), kept alive for self.image
@@ -247,13 +252,16 @@ class View3D(QWidget):
             start = self.ball_on_plate()
             if math.hypot(p[0] - start[0], p[1] - start[1]) > PUSH_REACH * self.ball_radius:
                 return False
-        self.gesture, self.hover = dict(kind=self.tool, start=start, end=start), None
+        self.gesture, self.hover = dict(kind=self.tool, start=start, end=start, points=[start]), None
         return True
 
     def move(self, x: float, y: float) -> None:
         p = self.to_plate(x, y)
         if self.gesture is not None and p is not None:
             self.gesture["end"] = p
+            last = self.gesture["points"][-1]
+            if self.gesture["kind"] == "draw" and math.hypot(p[0] - last[0], p[1] - last[1]) >= DRAW_STEP:
+                self.gesture["points"].append(p)
         elif self.tool == "drop":
             self.hover = p if p is not None and math.hypot(*p) <= self.plate_radius - self.ball_radius else None
         self.update()
@@ -262,6 +270,9 @@ class View3D(QWidget):
         g, self.gesture = self.gesture, None
         self.update()
         if g is None:
+            return
+        if g["kind"] == "draw":
+            self.drawn.emit(g["points"])
             return
         vx, vy = velocity(g["start"], g["end"])
         moving = math.hypot(vx, vy) >= MIN_SPEED
@@ -384,6 +395,9 @@ class View3D(QWidget):
         g = self.gesture
         if g is None:
             return
+        if g["kind"] == "draw":
+            self._path(p, g["points"], c)
+            return
         a, b = self._point(g["start"]), self._point(g["end"])
         if a is None or b is None:
             return
@@ -413,6 +427,22 @@ class View3D(QWidget):
             p.drawRoundedRect(box, 6, 6)
             p.setPen(QColor(c["text"]))
             p.drawText(box, Qt.AlignCenter, text)
+
+    def _path(self, p: QPainter, points: list, c: dict) -> None:
+        """A path being drawn, and the straight line that will close it (dashed)."""
+        inside = all(math.hypot(*q) <= self.draw_radius for q in points)
+        color = QColor(c["good" if inside else "bad"])
+        screen = [q for q in (self._point(q) for q in points) if q is not None]
+        if len(screen) < 2:
+            return
+        line = QPainterPath(screen[0])
+        for q in screen[1:]:
+            line.lineTo(q)
+        p.setBrush(Qt.NoBrush)
+        p.setPen(QPen(color, 3, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        p.drawPath(line)
+        p.setPen(QPen(color, 1.5, Qt.DashLine))
+        p.drawLine(screen[-1], screen[0])
 
     def _fall(self, p: QPainter, g: dict, start: QPointF, color: QColor) -> None:
         """Fall of a drop (app/gestures.drop_flight, the plate as it is now): from the plate up to the point of

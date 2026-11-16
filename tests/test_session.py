@@ -10,6 +10,7 @@ import numpy as np
 from controller.plate import PlateController
 from controller.policy import PolicyController
 from simulation.mujoco_physics import MujocoPhysics
+from simulation.config import DrawnPath, circle
 from simulation.session import BALLS, RealTime, Session, sandbox_config
 
 
@@ -71,6 +72,29 @@ def test_new_setpoint_starts_an_attempt(session):
     assert session.summary[-1]["action"] == "setpoint" and session.summary[-1]["result"] == "stabilized"
     session.set_setpoint("center")                         # the same one: no new attempt
     assert session.attempt is None
+
+
+def test_drawn_path(session):
+    rng = np.random.default_rng(0)                         # a circle drawn by hand: 0.5 mm of tremble
+    a = np.linspace(math.pi / 4, math.pi / 4 + 2 * math.pi, 180, endpoint=False)
+    points = np.column_stack([0.06 * np.cos(a), 0.06 * np.sin(a)]) + rng.normal(0, 0.0005, (180, 2))
+    path = DrawnPath(tuple(map(tuple, points)), 2 * math.pi * 0.06 / 4.0)       # at the speed of the circle setpoint
+    for t in np.linspace(0.0, 4.0, 41):                   # one loop: as the circle setpoint (measured: within
+        x, y, ax, ay = path(t)                             # 2.0 mm, the smoothing makes it a little shorter;
+        cx, cy, cax, cay = circle(t)                       # acceleration within 6 %)
+        assert math.hypot(x - cx, y - cy) < 0.003
+        assert math.hypot(ax - cax, ay - cay) < 0.1 * math.hypot(cax, cay)
+    assert path(0.0)[:2] == pytest.approx(path(path.length / path.speed)[:2], abs=1e-6)     # it loops
+    session.set_path(path)
+    assert session.setpoint == "drawn" and session.attempt["action"] == "setpoint"
+    assert session.attempt["path"] == path.key and len(path.key) == 8
+    advance(session, 1.0)
+    xr, yr, _, _ = session.sim.cfg.trajectory(session.t)
+    assert (xr, yr) == pytest.approx(path(1.0)[:2], abs=1e-3)
+    session.set_path(DrawnPath(path.points, 0.05))              # the same path slower: another setpoint
+    assert session.summary[-1]["path"] == path.key and session.attempt["path"] != path.key
+    session.set_setpoint("center")
+    assert session.path is None and session.attempt["path"] == ""
 
 
 def test_files_written(session):

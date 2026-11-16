@@ -1,6 +1,7 @@
 """Comparison of the brains on the finished attempts of the session (rows of Session.summary). Without Qt.
 
-Only the attempts made in the same conditions are compared: setpoint, ball, friction, latency. An attempt counts if
+Only the attempts made in the same conditions are compared: setpoint (the same drawn path, at the same speed), ball,
+friction, latency. An attempt counts if
 it tested the brain (a throw, a drop, a push, a disturbance or a new setpoint; not a centering nor a free attempt),
 and if it has a result (not interrupted by another action or a change of setting).
 
@@ -18,8 +19,8 @@ COUNTED = ("throw", "drop", "push", "disturbance", "setpoint")
 
 
 def conditions(row: dict) -> tuple:
-    """What an attempt was made in, besides its brain: (setpoint, ball, friction, latency in ms)."""
-    return row["setpoint"], row["ball"], row["friction"], row["latency_ms"]
+    """What an attempt was made in, besides its brain: (setpoint, drawn path, ball, friction, latency in ms)."""
+    return row["setpoint"], row.get("path", ""), row["ball"], row["friction"], row["latency_ms"]
 
 
 def compare(rows, condition: tuple, brains) -> dict:

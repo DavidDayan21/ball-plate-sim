@@ -29,7 +29,7 @@ from pathlib import Path
 import numpy as np
 
 from simulation.loop import Results, Simulation
-from simulation.config import Config, MujocoParams, square, center, circle
+from simulation.config import Config, DrawnPath, MujocoParams, square, center, circle
 
 SETPOINTS = {"center": center, "circle": circle, "square": square}
 # The balls that can be chosen (same radius): the ping-pong ball of the model, a solid one, a heavy one, as in the
@@ -85,7 +85,8 @@ class Session:
         self.dt = self.cfg.dt_physics
         self.ppc = self.sim.steps_per_control
         self.max_duration = max_duration
-        self.setpoint = "center"
+        self.setpoint = "center"           # a name of SETPOINTS, or "drawn" (self.path)
+        self.path = None                   # the drawn path (simulation.config.DrawnPath), while it is the setpoint
         self.t_setpoint = 0.0
         self._apply_config()
         pm = self.cfg.mujoco_params
@@ -125,16 +126,24 @@ class Session:
 
     def _apply_config(self, **changes) -> None:
         self.cfg = replace(self.cfg, **changes)
-        self.sim.cfg = replace(self.cfg, trajectory=_shift(SETPOINTS[self.setpoint], self.t_setpoint))
+        function = self.path if self.setpoint == "drawn" else SETPOINTS[self.setpoint]
+        self.sim.cfg = replace(self.cfg, trajectory=_shift(function, self.t_setpoint))
 
     def set_setpoint(self, name: str) -> None:
         """Setpoint of SETPOINTS, from its beginning (a circle from its starting point). A new one starts an attempt
         "setpoint": the ball must reach it (while waiting, its distance to the new setpoint would otherwise start
         a "disturbance" attempt)."""
         changed = name != self.setpoint
-        self.setpoint, self.t_setpoint = name, self.sim.t
+        self.setpoint, self.path, self.t_setpoint = name, None, self.sim.t
         self._apply_config()
         if changed and self.state != "fallen":
+            self._new_attempt("setpoint", {})
+
+    def set_path(self, path: DrawnPath) -> None:
+        """A drawn path as the setpoint, from its first point; always a new attempt "setpoint"."""
+        self.setpoint, self.path, self.t_setpoint = "drawn", path, self.sim.t
+        self._apply_config()
+        if self.state != "fallen":
             self._new_attempt("setpoint", {})
 
     # A change of setting ends the current attempt (interrupted): an attempt has a single setting of each. The ball
@@ -266,7 +275,8 @@ class Session:
         self.sim.r = before if before is not None else Results()
         self.attempt = dict(number=self.number, action=action, params=params, t0=self.t,
                               time=datetime.datetime.now().strftime("%H:%M:%S"),
-                              setpoint=self.setpoint, brain=self.cfg.brain, sensor=self.sensor, ball=self.ball,
+                              setpoint=self.setpoint, path=self.path.key if self.path else "",
+                              brain=self.cfg.brain, sensor=self.sensor, ball=self.ball,
                               friction=self.cfg.mujoco_params.friction,
                               latency_ms=round(1000 * self.cfg.latency * self.cfg.control_period),
                               compensation=self.cfg.latency_compensation,
@@ -287,7 +297,7 @@ class Session:
         airborne = [r.airborne[i] for i in after] if r.airborne else []
         row = dict(
             number=att["number"], time=att["time"], action=att["action"], **att["params"],
-            setpoint=att["setpoint"], brain=att["brain"], sensor=att["sensor"], ball=att["ball"],
+            setpoint=att["setpoint"], path=att["path"], brain=att["brain"], sensor=att["sensor"], ball=att["ball"],
             friction=att["friction"], latency_ms=att["latency_ms"],
             compensation=att["compensation"],
             result=result, duration_s=self.t - t0,

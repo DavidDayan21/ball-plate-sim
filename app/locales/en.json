@@ -92,5 +92,14 @@
   "compare.caught": "Balls caught",
   "compare.stabilized": "Stabilized in (median)",
   "compare.margin": "Room to the edge (median)",
-  "caption.compare": "Finished attempts of this session in the current conditions: {setpoint} · {ball} · μ = {mu} · {latency} ms. Throws, drops, pushes and new setpoints; side by side or not."
+  "caption.compare": "Finished attempts of this session in the current conditions: {setpoint} · {ball} · μ = {mu} · {latency} ms. Throws, drops, pushes and new setpoints; side by side or not.",
+  "setpoint.drawn": "Drawing",
+  "tip.drawn": "Draw a path on the plate: the brain must follow it, in a loop",
+  "hint.draw": "Draw a path on the plate · Elsewhere: turn",
+  "label.speed": "Speed along the path: {speed} cm/s",
+  "draw.how": "Draw a path on the plate with the mouse: it closes by itself, in a straight line.",
+  "draw.path": "Path of {length} cm, one loop every {time} s.",
+  "draw.short": "Path too short: drag on the plate.",
+  "draw.refused": "Path not taken: it goes farther than {radius} cm from the center, too close to the edge.",
+  "draw.untrained": "The AI brain never saw a drawn path in training (points, steps and circles)."
 }

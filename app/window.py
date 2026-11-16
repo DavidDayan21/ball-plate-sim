@@ -17,13 +17,16 @@ sessions advance step by step together. The panel shows the measurements of both
 (app/comparison.py) covers the attempts of the whole session, side by side or not.
 
 When a ball falls, the camera of its view follows it, then the ball comes back to the center (app/robot.py).
+
+Setpoint "drawn": the tool Draw traces a path on the plate, which becomes the setpoint (simulation.config.DrawnPath),
+traveled in a loop at the speed chosen. A path that goes farther than DRAW_RADIUS from the center is refused.
 """
 import math
 import time
 from dataclasses import replace
 
 import numpy as np
-from PySide6.QtCore import QTimer, Qt
+from PySide6.QtCore import QEvent, QTimer, Qt
 from PySide6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QMainWindow, QPushButton, QScrollArea, QSlider,
                                QVBoxLayout, QWidget)
 
@@ -37,7 +40,7 @@ from app.theme import COLORS, MODES, load_fonts, scene_style, stylesheet, system
 from app.view3d import View3D
 from app.widgets import Card, Readout, Segmented, Sparkline, Table, Wrapped, label
 from controller.policy import MAX_LATENCY
-from simulation.config import G
+from simulation.config import G, DrawnPath
 from simulation.session import BALLS, FRICTIONS, SETPOINTS, RealTime, Session, sandbox_config
 from training.environment import DROP_HEIGHT as TRAINED_HEIGHT
 
@@ -53,7 +56,13 @@ FRICTION_NAMES = dict(zip(FRICTIONS, ("normal", "slippery", "very_slippery")))
 # The settings stay within what the AI brain saw in training: balls and frictions (simulation/session.py), latency
 # from 1 to MAX_LATENCY control periods (20 to 100 ms), which is also the most it can take.
 PATH_DURATION = 8.0                                         # (s) of setpoint drawn: a square, two circles
-PANEL_WIDTH = 300                                           # (pixels)
+SETPOINT_NAMES = (*SETPOINTS, "drawn")
+DRAW_RADIUS = 0.10      # (m) a drawn path must stay within this distance of the center: the ball (2 cm) then keeps
+                        # 3 cm from the edge of the plate (15 cm)
+MIN_DRAW_LENGTH = 0.03  # (m) a shorter path is a click
+DRAW_SPEED = (2, 10, 5)                                     # (cm/s) range and start value of the speed on a path
+PANEL_WIDTH = 300       # (pixels) at least: wider if its widest row needs it (texts and fonts change with the
+                        # language and the system; measured: 318 needed in English with the setpoint Drawing)
 # The measurements of the panel: (key of readouts(), key of the text, unit, decimals)
 MEASURES = (("distance_mm", "distance", "mm", 1), ("speed_mm_s", "speed", "mm/s", 0),
             ("tilt_x_deg", "tilt_x", "°", 2), ("tilt_y_deg", "tilt_y", "°", 2),
@@ -94,6 +103,7 @@ class MainWindow(QMainWindow):
         self.robots = []                                    # the first one is always there: its time is the window's
         self.past_rows = []                                 # attempts of the robots taken away (side by side ended)
         self.path = []                                      # path of the setpoint, drawn on the plates
+        self.drawn_path = None                              # the last path drawn (DrawnPath)
         self.views = QHBoxLayout()
         self.views.setSpacing(12)
         self._add_robot(Session(replace(sandbox_config(), brain=brain), record=False))
@@ -133,6 +143,8 @@ class MainWindow(QMainWindow):
         view.thrown.connect(self.throw)
         view.dropped.connect(self.drop)
         view.pushed.connect(self.push)
+        view.drawn.connect(self.draw)
+        view.draw_radius = DRAW_RADIUS
         view.turned.connect(lambda dx, dy: [r.view.camera.turn(dx, dy) for r in self.robots if r.view is not view])
         view.zoomed.connect(lambda notches: [r.view.camera.zoom(notches) for r in self.robots if r.view is not view])
         if self.robots:                                     # the same point of view as the first one, and its look
@@ -166,8 +178,11 @@ class MainWindow(QMainWindow):
             self._add_robot(Session(replace(sandbox_config(), brain=other, latency=first.cfg.latency,
                                             latency_compensation=first.cfg.latency_compensation,
                                             mujoco_params=first.cfg.mujoco_params), record=False))
-            for r in self.robots:
-                r.session.set_setpoint(first.setpoint)
+            for r in self.robots:                           # the setpoints from their beginning, together
+                if first.setpoint == "drawn":
+                    r.session.set_path(first.path)
+                else:
+                    r.session.set_setpoint(first.setpoint)
             self.center()
         else:
             robot = self.robots.pop()
@@ -227,10 +242,23 @@ class MainWindow(QMainWindow):
         self.c_ball.body.addLayout(actions)
 
         self.c_setpoint = Card()
-        self.s_setpoint = Segmented(tuple(SETPOINTS), self.session.setpoint)
+        self.s_setpoint = Segmented(SETPOINT_NAMES, self.session.setpoint)
         self.s_setpoint.changed.connect(self.set_setpoint)
         self.l_setpoint = Wrapped("caption")
+        self.draw_row = QWidget()                           # shown with the setpoint "drawn"
+        draw = QVBoxLayout(self.draw_row)
+        draw.setContentsMargins(0, 2, 0, 2)
+        draw.setSpacing(4)
+        self.l_speed = label("caption")
+        self.s_speed = QSlider(Qt.Horizontal, minimum=DRAW_SPEED[0], maximum=DRAW_SPEED[1], value=DRAW_SPEED[2],
+                               pageStep=1)
+        self.s_speed.valueChanged.connect(self.set_draw_speed)
+        self.l_draw = Wrapped("caption")
+        for w in (self.l_speed, self.s_speed, self.l_draw):
+            draw.addWidget(w)
+        self.draw_row.setVisible(False)
         self.c_setpoint.body.addWidget(self.s_setpoint)
+        self.c_setpoint.body.addWidget(self.draw_row)
         self.c_setpoint.body.addWidget(self.l_setpoint)
 
         self.c_settings = Card()
@@ -299,16 +327,17 @@ class MainWindow(QMainWindow):
         settings.addWidget(self.s_mode, 3)
         settings.addWidget(self.s_language, 2)
         column.addLayout(settings)
-        scroll = QScrollArea(widgetResizable=True, frameShape=QFrame.NoFrame,
-                             horizontalScrollBarPolicy=Qt.ScrollBarAlwaysOff)
-        scroll.setWidget(panel)
-        scroll.setFixedWidth(PANEL_WIDTH)
+        self.scroll = QScrollArea(widgetResizable=True, frameShape=QFrame.NoFrame,
+                                  horizontalScrollBarPolicy=Qt.ScrollBarAlwaysOff)
+        self.scroll.setWidget(panel)
+        self.scroll.setFixedWidth(PANEL_WIDTH)
+        panel.installEventFilter(self)                      # its layout changes: _fit_panel
 
         central = QWidget(objectName="window")
         row = QHBoxLayout(central)
         row.setContentsMargins(12, 12, 12, 12)
         row.setSpacing(12)
-        row.addWidget(scroll)
+        row.addWidget(self.scroll)
         row.addLayout(self.views, 1)
         self.setCentralWidget(central)
 
@@ -332,7 +361,10 @@ class MainWindow(QMainWindow):
         self.b_pause.setText(tr("button.resume" if self.real_time.paused else "button.pause"))
         self._show_height()
         self.c_setpoint.set_title(tr("section.setpoint"))
-        self.s_setpoint.set_texts({name: tr(f"setpoint.{name}") for name in SETPOINTS})
+        self.s_setpoint.set_texts({name: tr(f"setpoint.{name}") for name in SETPOINT_NAMES})
+        self.s_setpoint.buttons["drawn"].setToolTip(tr("tip.drawn"))
+        self.l_speed.setText(tr("label.speed", speed=self.s_speed.value()))
+        self._show_drawing()
         self.l_setpoint.setText(tr("caption.setpoint"))
         self.c_settings.set_title(tr("section.settings"))
         self.l_ball.setText(tr("label.ball"))
@@ -365,6 +397,19 @@ class MainWindow(QMainWindow):
             r.view.overlay.hint = tr(f"hint.{self.tool or 'view'}")
         self.refresh()
 
+    def eventFilter(self, watched, event) -> bool:
+        if event.type() == QEvent.LayoutRequest and watched is self.scroll.widget():
+            self._fit_panel()
+        return super().eventFilter(watched, event)
+
+    def _fit_panel(self) -> None:
+        """The panel as wide as its widest row needs (once styled: texts, fonts, language), and at least
+        PANEL_WIDTH, beside its scroll bar: nothing of it is cut, nothing is under the bar."""
+        need = self.scroll.widget().minimumSizeHint().width() + self.scroll.verticalScrollBar().sizeHint().width()
+        width = max(PANEL_WIDTH, need)
+        if width != self.scroll.width():
+            self.scroll.setFixedWidth(width)
+
     def _show_height(self) -> None:
         height = self.s_height.value()
         self.l_height.setText(self.texts("label.height", height=height))
@@ -384,7 +429,10 @@ class MainWindow(QMainWindow):
     # --- Actions (on every robot) ------------------------------------------------------------
     def set_tool(self, name) -> None:
         """Activates the tool `name`, or deactivates it if it is the active one."""
-        self.tool = None if name == self.tool else name
+        self._use_tool(None if name == self.tool else name)
+
+    def _use_tool(self, name) -> None:
+        self.tool = name
         for n, b in self.tool_buttons.items():
             b.setChecked(n == self.tool)
         self.height_row.setVisible(self.tool == "drop")
@@ -432,14 +480,68 @@ class MainWindow(QMainWindow):
         self._show_latency()
 
     def set_setpoint(self, name: str) -> None:
-        """Center, circle or square, drawn on the plates."""
+        """Center, circle or square, drawn on the plates; "drawn": the tool Draw, and the last path drawn if any."""
+        self.draw_row.setVisible(name == "drawn")
+        if name == "drawn":
+            self._use_tool("draw")
+            if self.drawn_path is not None:
+                self._set_path(self.drawn_path)
+            self._show_drawing()
+            return
+        if self.tool == "draw":
+            self._use_tool(None)
         for r in self.robots:
             r.session.set_setpoint(name)
         f = SETPOINTS[name]
         path = [f(t)[:2] for t in np.linspace(0.0, PATH_DURATION, 161)]
-        self.path = path if np.ptp(np.array(path), axis=0).max() > 0 else []
+        self._show_path(path if np.ptp(np.array(path), axis=0).max() > 0 else [])
+
+    def _show_path(self, path: list) -> None:
+        self.path = path
         for r in self.robots:
-            r.view.overlay.path = self.path
+            r.view.overlay.path = path
+
+    def draw(self, points: list) -> None:
+        """A path drawn on the plate: the setpoint, if it is long enough and stays within DRAW_RADIUS."""
+        length = float(np.hypot(*np.diff(np.asarray(points + points[:1]), axis=0).T).sum()) if len(points) > 1 else 0
+        if length < MIN_DRAW_LENGTH:
+            self._show_drawing("draw.short")
+            return
+        if max(math.hypot(*p) for p in points) > DRAW_RADIUS:
+            self._show_drawing("draw.refused")
+            return
+        self.s_setpoint.buttons["drawn"].setChecked(True)
+        self.draw_row.setVisible(True)
+        self._set_path(DrawnPath(tuple(points), self.s_speed.value() / 100))
+        self._show_drawing()
+
+    def set_draw_speed(self, speed: int) -> None:
+        """(cm/s) The last path drawn, at another speed (a new setpoint, if it is the setpoint)."""
+        self.l_speed.setText(self.texts("label.speed", speed=speed))
+        if self.drawn_path is not None:
+            path = DrawnPath(self.drawn_path.points, speed / 100)
+            if self.session.setpoint == "drawn":
+                self._set_path(path)
+            self.drawn_path = path
+            self._show_drawing()
+
+    def _set_path(self, path: DrawnPath) -> None:
+        self.drawn_path = path
+        for r in self.robots:
+            r.session.set_path(path)
+        samples = path.samples[::4]
+        self._show_path([tuple(p) for p in samples] + [tuple(samples[0])])
+
+    def _show_drawing(self, problem: str = None) -> None:
+        """Under the speed: what to do, the path in force, or why a path was not taken."""
+        tr, p = self.texts, self.drawn_path
+        if problem is not None:
+            text = tr(problem, radius=round(100 * DRAW_RADIUS))
+        elif p is None:
+            text = tr("draw.how")
+        else:
+            text = tr("draw.path", length=tr.number(100 * p.length, 0), time=tr.number(p.length / p.speed, 1))
+        self.l_draw.setText(text + "\n" + tr("draw.untrained"))
 
     def set_pause(self, paused: bool) -> None:
         self.real_time.paused = paused
@@ -527,7 +629,7 @@ class MainWindow(QMainWindow):
     def _show_comparison(self) -> None:
         tr, s = self.texts, self.session
         rows = self.past_rows + [row for r in self.robots for row in r.session.summary]
-        condition = (s.setpoint, s.ball, s.cfg.mujoco_params.friction, self.latency_ms())
+        condition = (s.setpoint, s.path.key if s.path else "", s.ball, s.cfg.mujoco_params.friction, self.latency_ms())
         result = compare(rows, condition, BRAINS)
         for row, (key, _, unit, decimals) in enumerate(INDICATORS):
             for column, brain in enumerate(BRAINS):

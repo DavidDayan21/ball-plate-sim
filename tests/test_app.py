@@ -224,6 +224,41 @@ def test_new_setpoint(window):
     assert window.state_text() == "New setpoint (PID) in progress"
 
 
+def drag(view, points) -> None:
+    """A gesture of the mouse through these points of the plate."""
+    assert view.press(*view.to_screen(points[0]))
+    for p in points[1:]:
+        view.move(*view.to_screen(p))
+    view.release()
+
+
+def test_drawn_path(window):
+    window.tick()
+    window.s_setpoint.buttons["drawn"].click()                 # the tool Draw
+    assert window.view.tool == "draw" and window.draw_row.isVisibleTo(window)
+    assert window.session.setpoint == "center"                 # nothing drawn yet
+    a = np.linspace(0.0, 2 * np.pi, 120, endpoint=False)
+    drag(window.view, [(0.05 * np.cos(t), 0.03 * np.sin(t)) for t in a])            # an ellipse
+    s = window.session
+    assert s.setpoint == "drawn" and s.attempt["action"] == "setpoint" and len(window.view.overlay.path) > 50
+    assert window.l_draw.text().startswith("Path of 25 cm, one loop every 5.0 s.")    # ellipse 10 × 6 cm (25.5 cm
+                                                               # round, a little less once smoothed), 5 cm/s
+    key = s.path.key
+    window.s_speed.setValue(8)                                 # faster: a new setpoint
+    assert s.path.speed == 0.08 and s.path.key != key and s.summary[-1]["path"] == key
+    drag(window.view, [(0.0, 0.0), (0.12, 0.0), (0.12, 0.02)])                        # too close to the edge
+    assert s.path.speed == 0.08 and window.l_draw.text().startswith("Path not taken: it goes farther than 10 cm")
+    drag(window.view, [(0.0, 0.0), (0.01, 0.0)])                                     # a click
+    assert window.l_draw.text().startswith("Path too short")
+    window.tool_buttons["throw"].click()                       # another tool: the path stays the setpoint
+    assert window.view.tool == "throw" and s.setpoint == "drawn"
+    window.b_split.click()                                     # side by side: the same path on both
+    assert window.robots[1].session.path is s.path
+    window.s_setpoint.buttons["center"].click()
+    assert all(r.session.setpoint == "center" for r in window.robots) and window.view.overlay.path == []
+    assert not window.draw_row.isVisibleTo(window)
+
+
 def test_side_by_side(window):
     window.tick()
     window.s_ball.buttons["solid"].click()
@@ -297,6 +332,18 @@ def test_fall_followed_then_back_to_the_plate(window):
     assert (x * x + y * y) ** 0.5 < 0.02
     play(window, 120)                                      # the camera is back where it was
     assert camera.lookat == home[0] and camera.distance == home[1]
+
+
+def test_panel_fits(window, application):
+    """Nothing of the panel is cut or under its scroll bar, in either language (measured before: 318 pixels needed
+    in English for 292 given, once the setpoint Drawing was added)."""
+    for code in ("en", "fr"):
+        window.s_language.buttons[code].click()
+        for _ in range(3):
+            application.processEvents()
+        panel = window.scroll.widget()
+        assert panel.minimumSizeHint().width() <= window.scroll.viewport().width(), code
+        assert window.scroll.width() >= 300
 
 
 def test_language(window):

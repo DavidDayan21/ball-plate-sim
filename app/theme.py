@@ -88,7 +88,7 @@ def stylesheet(mode: str) -> str:
                                   margin: -6px 0; border-radius: 8px; }}
     #segment {{ background: {c['surface2']}; border: 1px solid {c['border']}; border-radius: {rs}px; }}
     #segment QPushButton {{ background: transparent; border: none; color: {c['text2']}; min-height: 28px;
-                            border-radius: {rs - 2}px; }}
+                            padding: 0 6px; border-radius: {rs - 2}px; }}
     #segment QPushButton:checked {{ background: {c['accent']}; color: {c['accent_text']}; font-weight: 600; }}
     """
 
