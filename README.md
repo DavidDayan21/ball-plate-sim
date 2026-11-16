@@ -1,7 +1,8 @@
-# PABLO
+# SAPIR
 
-PABLO is a balancing robot ("ball and plate"), simulated (repository: ball-plate-sim): a plate tilted by 3 motors
-keeps a ball balanced, catches it when it is thrown, and makes it follow a trajectory.
+SAPIR (Self-balancing AI-PID Interactive Robot; Sapir, ספיר, "sapphire", is an Israeli first name) is a balancing
+robot ("ball and plate"), simulated (repository: ball-plate-sim): a plate tilted by 3 motors keeps a ball balanced,
+catches it when it is thrown, and makes it follow a trajectory.
 Goal: a piece of software for the general public, usable without any knowledge of code: a scientific sandbox
 where one plays with the ball and compares two "brains" that drive the robot, a PID and a local AI. No game:
 the statistics are only informative. The physics is computed by MuJoCo.
@@ -21,7 +22,7 @@ Building the real robot remains a distant goal: the code will then be ready.
 | A. Reliable measurements | Bit-exact regression check, spread over N draws, robust metrics, simple physics → MuJoCo gap | Done |
 | B. PID brain | Objectives in the report, integral limited to the neighborhood of the setpoint, aimed bounce of a dropped ball, thrown ball (start with the speed, fast motor ramps for the large moves), gains tuned by LQR, adaptive control (model gain c·g estimated online), every gap of more than 0.5 mm explained (report, section 12) | Done |
 | C. Local AI brain | A policy (neural network) learned by reinforcement in MuJoCo, same rules as the PID (sensor, motors, ±10°). Done: interchangeable brains, training environment, training by reinforcement, imitation of the PID brain: the policy alone then meets the four objectives, dropped ball included (campaign section 13, which compares both brains: return to the center better than the PID, circle about 0.2 mm behind). The sandbox can be driven by either brain. Left for later: the gaps of more than 0.5 mm between the two brains explained (circle with a large calibration error of the plate, return to the center), then reinforcement from the imitating policy, to go beyond the PID | Done |
-| D. Software for the general public | An application installed with a double click, for Windows and Mac: the robot in 3D, driven by either brain; throws, drops and pushes with the mouse, drawn trajectories, choice of the ball, latency and friction, both robots side by side; in English and French. Done: prototype (`python -m app`): 3D view in its own window, throw, drop, center, choice of the brain, pause, English and French; visual foundations: light and dark themes, panel of measurements; throws, drops and pushes with the mouse, physical limit of a throw, setpoints (center, circle, square); choice of the ball, friction and latency; both brains side by side, comparison of the brains; drawn trajectories; the robot shown as a lab prototype (motors, arms, rod ends, electronics, battery, camera under the plate, front panel with the LED of the brain), the ball printed according to its kind, the name PABLO; the 3D capped at 1920 × 1080 pixels (large screens), theme, language and window remembered between launches; the icon | **In progress** |
+| D. Software for the general public | An application installed with a double click, for Windows and Mac: the robot in 3D, driven by either brain; throws, drops and pushes with the mouse, drawn trajectories, choice of the ball, latency and friction, both robots side by side; in English and French. Done: prototype (`python -m app`): 3D view in its own window, throw, drop, center, choice of the brain, pause, English and French; visual foundations: light and dark themes, panel of measurements; throws, drops and pushes with the mouse, physical limit of a throw, setpoints (center, circle, square); choice of the ball, friction and latency; both brains side by side, comparison of the brains; drawn trajectories; the robot shown as a lab prototype (motors, arms, rod ends, electronics, battery, camera under the plate, front panel with the LED of the brain), the ball printed according to its kind, the name SAPIR; the 3D capped at 1920 × 1080 pixels (large screens), theme, language and window remembered between launches; the icon | **In progress** |
 | E. Construction (distant) | Design, real-world defects, complete error budget; first, simulate what the software shows and the campaign does not: the camera under the transparent plate (the campaign: 50 cm above it), the ball joints of the rods 1 cm under the plate surface (the physics: on it) | Later |
 
 Quantified goals for both brains: thrown ball caught up to at least 90 % of the physical limit,
@@ -282,7 +283,7 @@ lights, a floor that continues the background of the window, and the parts of a 
 aluminium base on rubber pads; per leg, a NEMA 17 stepper motor on its bracket, a machined arm, a threaded rod
 between two rod ends, a bracket under the plate; the camera under the transparent plate, looking up, with its ring of
 LEDs; a small computer, a board of three stepper drivers, a LiPo battery (no cable leaves the robot); a front panel
-with the name, PABLO (set in one place: `app/__init__.py`), and two LEDs, PID and AI (in the language of the
+with the name, SAPIR (set in one place: `app/__init__.py`), and two LEDs, PID and AI (in the language of the
 interface), the one of the brain lit in green; on the ball, its seam and a printing according to its kind (40+ ★★★
 for the ping-pong ball, 2/5 mr² for the solid one, 27 g for the heavy one), which shows it turning, rolling or
 sliding. At every frame, the positions of the physics are copied into it and its geometry is computed, without
