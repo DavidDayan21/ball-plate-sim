@@ -6,6 +6,7 @@ from PySide6.QtWidgets import QApplication
 
 from app import NAME
 from app.i18n import Texts, language_of
+from app.icon import WINDOWS_ID, icon
 from app.settings import remembered, restore_geometry, settings
 from app.window import MainWindow
 
@@ -13,8 +14,12 @@ SIZE = (1200, 750)          # (pixels) at the first launch, reduced to fit in th
 
 
 def main() -> int:
+    if sys.platform == "win32":             # the task bar of Windows then shows the icon of the software
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(WINDOWS_ID)
     application = QApplication(sys.argv)
     application.setApplicationName(NAME)
+    application.setWindowIcon(icon())
     application.setStyle("Fusion")          # same base on Windows and Mac, under the style sheet of app/theme.py
     kept = settings()
     language, theme = remembered(kept)

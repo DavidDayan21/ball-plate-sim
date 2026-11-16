@@ -21,7 +21,7 @@ Building the real robot remains a distant goal: the code will then be ready.
 | A. Reliable measurements | Bit-exact regression check, spread over N draws, robust metrics, simple physics → MuJoCo gap | Done |
 | B. PID brain | Objectives in the report, integral limited to the neighborhood of the setpoint, aimed bounce of a dropped ball, thrown ball (start with the speed, fast motor ramps for the large moves), gains tuned by LQR, adaptive control (model gain c·g estimated online), every gap of more than 0.5 mm explained (report, section 12) | Done |
 | C. Local AI brain | A policy (neural network) learned by reinforcement in MuJoCo, same rules as the PID (sensor, motors, ±10°). Done: interchangeable brains, training environment, training by reinforcement, imitation of the PID brain: the policy alone then meets the four objectives, dropped ball included (campaign section 13, which compares both brains: return to the center better than the PID, circle about 0.2 mm behind). The sandbox can be driven by either brain. Left for later: the gaps of more than 0.5 mm between the two brains explained (circle with a large calibration error of the plate, return to the center), then reinforcement from the imitating policy, to go beyond the PID | Done |
-| D. Software for the general public | An application installed with a double click, for Windows and Mac: the robot in 3D, driven by either brain; throws, drops and pushes with the mouse, drawn trajectories, choice of the ball, latency and friction, both robots side by side; in English and French. Done: prototype (`python -m app`): 3D view in its own window, throw, drop, center, choice of the brain, pause, English and French; visual foundations: light and dark themes, panel of measurements; throws, drops and pushes with the mouse, physical limit of a throw, setpoints (center, circle, square); choice of the ball, friction and latency; both brains side by side, comparison of the brains; drawn trajectories; the robot shown as a lab prototype (motors, arms, rod ends, electronics, battery, camera under the plate, front panel with the LED of the brain), the ball printed according to its kind, the name PABLO; the 3D capped at 1920 × 1080 pixels (large screens), theme, language and window remembered between launches | **In progress** |
+| D. Software for the general public | An application installed with a double click, for Windows and Mac: the robot in 3D, driven by either brain; throws, drops and pushes with the mouse, drawn trajectories, choice of the ball, latency and friction, both robots side by side; in English and French. Done: prototype (`python -m app`): 3D view in its own window, throw, drop, center, choice of the brain, pause, English and French; visual foundations: light and dark themes, panel of measurements; throws, drops and pushes with the mouse, physical limit of a throw, setpoints (center, circle, square); choice of the ball, friction and latency; both brains side by side, comparison of the brains; drawn trajectories; the robot shown as a lab prototype (motors, arms, rod ends, electronics, battery, camera under the plate, front panel with the LED of the brain), the ball printed according to its kind, the name PABLO; the 3D capped at 1920 × 1080 pixels (large screens), theme, language and window remembered between launches; the icon | **In progress** |
 | E. Construction (distant) | Design, real-world defects, complete error budget; first, simulate what the software shows and the campaign does not: the camera under the transparent plate (the campaign: 50 cm above it), the ball joints of the rods 1 cm under the plate surface (the physics: on it) | Later |
 
 Quantified goals for both brains: thrown ball caught up to at least 90 % of the physical limit,
@@ -47,6 +47,7 @@ app/                     The software for the general public (interface only, on
   benchmark.py           Cost of a frame on this computer: simulation, 3D rendering, drawing (python -m app.benchmark)
   i18n.py, locales/      Texts of the interface, one file per language (English, French)
   settings.py            What is remembered from one launch to the next: theme, language, size of the window
+  icon.py                The icon, drawn by code at every size (ball on the tilted plate, dark rounded square)
   fonts/                 Inter, the font of the interface (SIL Open Font License, OFL.txt)
 brains/                  Learned policies of the AI brain (weights of the network): imitation.npz
 controller/              What would run on the real robot (independent of the simulator)
@@ -314,12 +315,18 @@ floor seen; none now). MuJoCo counts these lengths in sizes of the scene (1.2 m)
 context, an internal attribute of `mujoco.Renderer` (a test checks it). In the light theme the plate is smoked
 acrylic: a clear one hardly stood out from the white background (measured: the plate changes the lightness of what is
 seen through it by 23 units of L* against 13 for the clear one; 29 in the dark theme). The orange of the ball marks
-what is selected (brain, theme, language, pause); the buttons that act are neutral.
+what is selected (brain, theme, language, pause); the buttons that act are neutral. The icon (`app/icon.py`): the
+orange ball on the tilted plate, carried by two rods, on a dark rounded square that stands out on light and dark task
+bars; drawn by code at each size of use, from 16 to 512 pixels (still recognizable at 16). On Windows, the software
+gives itself an identity of its own, so that the task bar shows this icon rather than that of Python.
 
 The 3D is rendered with at most 1920 × 1080 pixels, all views together (side by side: half each); a larger view
 gets a smaller image, of the same proportions, that Qt enlarges smoothly (`app/view3d.RENDER_PIXELS`). The cost of a
-frame grows with the pixels rendered (measured above: 25 ms at 1920 × 1080, 39 ms at 2560 × 1440). The gestures stay
-in place: the camera computes in the pixels of the view, not of the image (a test checks it, within 2 pixels).
+frame grows with the pixels rendered (measured above: 25 ms at 1920 × 1080, 39 ms at 2560 × 1440). Measured with
+`python -m app.benchmark` on the same card: a view of 2560 × 1440 runs at 34 frames per second, against 25 when every
+pixel was rendered (21 ms to render 1920 × 1080, 6.5 ms to enlarge it); views of 1920 × 1080 and less are unchanged.
+The gestures stay in place: the camera computes in the pixels of the view, not of the image (a test checks it, within
+2 pixels).
 
 `python -m app.benchmark` measures what a frame costs on the computer where it runs: the simulation, the 3D
 rendering (with the image read back) for three sizes of the view and several qualities, the drawing of the image

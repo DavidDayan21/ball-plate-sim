@@ -17,6 +17,7 @@ from PySide6.QtWidgets import QApplication
 
 from app import NAME
 from app.i18n import Texts
+from app.icon import SIZES as ICON_SIZES, ball_center, draw, icon
 from app.settings import remembered, restore_geometry
 from app.theme import COLORS
 from app.view3d import RENDER_PIXELS
@@ -438,6 +439,17 @@ def test_pause(window):
     play(window, 10)
     assert window.session.t > t
 
+
+
+def test_icon(application):
+    """Drawn at every size of use: transparent in its corners (rounded square), the orange ball where it is."""
+    assert [s.width() for s in icon().availableSizes()] == list(ICON_SIZES)
+    x, y = ball_center()
+    for size in (16, 64, 256):
+        image = draw(size)
+        ball = image.pixelColor(int((x + 0.04) * size), int((y + 0.04) * size))      # below the shine
+        assert image.pixelColor(0, 0).alpha() == 0 and image.pixelColor(size // 2, size - 2).alpha() == 255
+        assert ball.red() > 200 and 60 < ball.green() < 140 and ball.blue() < 60, (size, ball.getRgb())
 
 def test_benchmark(application):
     from app.benchmark import QUALITIES, report, run
