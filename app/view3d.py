@@ -194,7 +194,7 @@ class View3D(QWidget):
         self.scene.view(self.renderer._mjr_context, self.camera.lookat, self.camera.fit * self.camera.distance)
         self.scene.follow(self.physics_data)
         self.renderer.update_scene(self.scene.data, camera=self.camera.mujoco())
-        self.renderer.scene.flags[mujoco.mjtRndFlag.mjRND_FOG] = 1     # the floor fades into the background
+        self.scene.prepare(self.renderer.scene)                        # fog; the floor casts no shadow
         self.pixels = np.ascontiguousarray(self.renderer.render())
         height, width, _ = self.pixels.shape
         self.image = QImage(self.pixels.data, width, height, 3 * width, QImage.Format_RGB888)

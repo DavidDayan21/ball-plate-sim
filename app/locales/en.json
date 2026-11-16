@@ -1,7 +1,7 @@
 {
-  "window.title": "ball-plate-sim: balancing robot",
-  "app.name": "ball-plate-sim",
+  "window.title": "{name}: balancing robot",
   "app.subtitle": "Balancing robot · MuJoCo physics",
+  "robot.ai": "AI",
   "section.brain": "Brain",
   "brain.pid": "PID",
   "brain.imitation": "AI",

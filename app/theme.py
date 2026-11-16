@@ -42,12 +42,8 @@ def scene_style(mode: str) -> SceneStyle:
     bg = rgb(c["bg"])
     if mode == "light":
         floor = tuple(v / LIT_FLOOR for v in bg)
-        return SceneStyle(sky=bg, floor=floor, pedestal=rgb(c["surface"]),
-                          motor=(0.14, 0.15, 0.17), metal=(0.85, 0.86, 0.88), arm=(0.32, 0.35, 0.39),
-                          plate=(0.40, 0.45, 0.52), plate_alpha=0.38, ambient=0.45)   # smoked acrylic
-    return SceneStyle(sky=bg, floor=bg, pedestal=rgb(c["surface2"]),
-                      motor=(0.24, 0.26, 0.30), metal=(0.72, 0.74, 0.78), arm=(0.50, 0.53, 0.58),
-                      plate=(0.80, 0.90, 1.0), plate_alpha=0.32, ambient=0.35)
+        return SceneStyle(sky=bg, floor=floor, plate=(0.40, 0.45, 0.52), plate_alpha=0.38, ambient=0.45)  # smoked
+    return SceneStyle(sky=bg, floor=bg, plate=(0.80, 0.90, 1.0), plate_alpha=0.32, ambient=0.35)
 
 
 def stylesheet(mode: str) -> str:

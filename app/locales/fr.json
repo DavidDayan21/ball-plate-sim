@@ -1,7 +1,7 @@
 {
-  "window.title": "ball-plate-sim : robot équilibriste",
-  "app.name": "ball-plate-sim",
+  "window.title": "{name} : robot équilibriste",
   "app.subtitle": "Robot équilibriste · physique MuJoCo",
+  "robot.ai": "IA",
   "section.brain": "Cerveau",
   "brain.pid": "PID",
   "brain.imitation": "IA",

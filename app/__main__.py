@@ -4,6 +4,7 @@ import sys
 from PySide6.QtCore import QLocale
 from PySide6.QtWidgets import QApplication
 
+from app import NAME
 from app.i18n import Texts, language_of
 from app.window import MainWindow
 
@@ -12,7 +13,7 @@ SIZE = (1200, 750)          # (pixels) at startup, reduced to fit in the screen
 
 def main() -> int:
     application = QApplication(sys.argv)
-    application.setApplicationName("ball-plate-sim")
+    application.setApplicationName(NAME)
     application.setStyle("Fusion")          # same base on Windows and Mac, under the style sheet of app/theme.py
     window = MainWindow(Texts(language_of(QLocale.system().name())))
     screen = application.primaryScreen().availableGeometry()

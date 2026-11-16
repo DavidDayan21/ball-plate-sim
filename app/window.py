@@ -30,6 +30,7 @@ from PySide6.QtCore import QEvent, QTimer, Qt
 from PySide6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QMainWindow, QPushButton, QScrollArea, QSlider,
                                QVBoxLayout, QWidget)
 
+from app import NAME
 from app.comparison import compare
 from app.gestures import MIN_SPEED, drop_arguments, drop_flight, throw_arguments, throw_limit, velocity
 from app.i18n import LANGUAGES, Texts
@@ -344,8 +345,8 @@ class MainWindow(QMainWindow):
     def retranslate(self) -> None:
         """Writes all the texts in the current language (and shows what depends on side by side)."""
         tr, c = self.texts, COLORS[self.mode]
-        self.setWindowTitle(tr("window.title"))
-        self.l_title.setText(tr("app.name"))
+        self.setWindowTitle(tr("window.title", name=NAME))
+        self.l_title.setText(NAME)
         self.l_subtitle.setText(tr("app.subtitle"))
         self.c_brain.set_title(tr("section.brain"))
         self.s_brain.set_texts({name: tr(f"brain.{name}") for name in BRAINS})
@@ -603,6 +604,7 @@ class MainWindow(QMainWindow):
         else:
             self._update_overlays()
         for r in self.robots:
+            r.view.scene.show(r.brain, r.session.ball, self.texts.code)
             r.view.render_frame()
 
     def refresh(self) -> None:

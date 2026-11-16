@@ -14,6 +14,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")      # before the applicat
 
 from PySide6.QtWidgets import QApplication
 
+from app import NAME
 from app.i18n import Texts
 from app.theme import COLORS
 from app.window import READOUT_EVERY, MainWindow
@@ -346,10 +347,29 @@ def test_panel_fits(window, application):
         assert window.scroll.width() >= 300
 
 
+
+def test_robot_shows_brain_ball_and_language(window):
+    """On the robot: the LED of its brain lit, the printing of the ball in play, the label of the AI in the language of
+    the interface; and the name on its front panel and in the title."""
+    window.s_language.buttons["fr"].click()
+    window.set_ball("heavy")
+    window.set_brain("imitation")
+    window.tick()
+    m = window.view.scene.model
+    shown = lambda name: m.geom_group[m.geom(name).id] == 0
+    assert shown("deco_ball_print_heavy") and not shown("deco_ball_print_ping_pong")
+    assert shown("deco_world_engraving_fr") and not shown("deco_world_engraving_en")
+    assert m.mat_emission[m.material("part_led_ai").id] == 1.0 and m.mat_emission[m.material("part_led_pid").id] == 0.0
+    window.set_mode("dark")                                # a new scene: the same parts shown at the next frame
+    window.tick()
+    m = window.view.scene.model
+    assert m.geom_group[m.geom("deco_ball_print_heavy").id] == 0
+    assert window.l_title.text() == NAME and window.windowTitle().startswith(NAME)
+
 def test_language(window):
     window.s_language.buttons["fr"].click()
     assert window.tool_buttons["throw"].text() == "Lancer"
-    assert window.windowTitle() == "ball-plate-sim : robot équilibriste"
+    assert window.windowTitle() == f"{NAME} : robot équilibriste"
     assert window.readouts["speed_mm_s"].name.text() == "VITESSE"
     assert window.s_setpoint.buttons["square"].text() == "Carré"
     window.throw(-0.10, 0.0, 0.4, 0.0)

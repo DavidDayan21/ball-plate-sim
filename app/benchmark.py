@@ -55,7 +55,8 @@ def measure_simulation(frames: int) -> float:
 
 
 def _model(session: Session, quality):
-    """Model and data to render, and the function that keeps them in step with the physics."""
+    """Model and data to render, the function that keeps them in step with the physics, and the one that prepares
+    the scene of MuJoCo before rendering (as the software does)."""
     if quality is None:                              # phase D1: the physics model itself
         model = mujoco.MjModel.from_xml_string(model_xml(session.cfg))
         model.vis.global_.offwidth, model.vis.global_.offheight = MAX_SIZE
@@ -64,24 +65,25 @@ def _model(session: Session, quality):
         def follow():
             data.qpos[:] = session.phys.data.qpos
             mujoco.mj_forward(model, data)
-        return model, data, follow
+        return model, data, follow, lambda _: None
     samples, shadow_map, _, _ = quality
     scene = DisplayScene(session.cfg, scene_style("light"))
     scene.model.vis.quality.offsamples = samples
     scene.model.vis.quality.shadowsize = shadow_map
-    return scene.model, scene.data, lambda: scene.follow(session.phys.data)
+    return scene.model, scene.data, lambda: scene.follow(session.phys.data), scene.prepare
 
 
 def measure_rendering(quality, size: tuple, frames: int) -> float:
     """(ms) to render the 3D view of size (width, height) and read the image back, as the software does."""
     s = session_after_throw()
-    model, data, follow = _model(s, quality)
+    model, data, follow, prepare = _model(s, quality)
     renderer = mujoco.Renderer(model, size[1], size[0])
     camera = Camera(s.cfg.geometry.height - 0.035).mujoco()
 
     def frame():
         follow()
         renderer.update_scene(data, camera=camera)
+        prepare(renderer.scene)
         if quality is not None:
             renderer.scene.flags[mujoco.mjtRndFlag.mjRND_SHADOW] = quality[2]
             renderer.scene.flags[mujoco.mjtRndFlag.mjRND_FOG] = quality[3]

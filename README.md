@@ -1,7 +1,7 @@
-# ball-plate-sim
+# PABLO
 
-Simulation of a balancing robot ("ball and plate"): a plate tilted by 3 motors keeps
-a ball balanced, catches it when it is thrown, and makes it follow a trajectory.
+PABLO is a balancing robot ("ball and plate"), simulated (repository: ball-plate-sim): a plate tilted by 3 motors
+keeps a ball balanced, catches it when it is thrown, and makes it follow a trajectory.
 Goal: a piece of software for the general public, usable without any knowledge of code: a scientific sandbox
 where one plays with the ball and compares two "brains" that drive the robot, a PID and a local AI. No game:
 the statistics are only informative. The physics is computed by MuJoCo.
@@ -21,8 +21,8 @@ Building the real robot remains a distant goal: the code will then be ready.
 | A. Reliable measurements | Bit-exact regression check, spread over N draws, robust metrics, simple physics → MuJoCo gap | Done |
 | B. PID brain | Objectives in the report, integral limited to the neighborhood of the setpoint, aimed bounce of a dropped ball, thrown ball (start with the speed, fast motor ramps for the large moves), gains tuned by LQR, adaptive control (model gain c·g estimated online), every gap of more than 0.5 mm explained (report, section 12) | Done |
 | C. Local AI brain | A policy (neural network) learned by reinforcement in MuJoCo, same rules as the PID (sensor, motors, ±10°). Done: interchangeable brains, training environment, training by reinforcement, imitation of the PID brain: the policy alone then meets the four objectives, dropped ball included (campaign section 13, which compares both brains: return to the center better than the PID, circle about 0.2 mm behind). The sandbox can be driven by either brain. Left for later: the gaps of more than 0.5 mm between the two brains explained (circle with a large calibration error of the plate, return to the center), then reinforcement from the imitating policy, to go beyond the PID | Done |
-| D. Software for the general public | An application installed with a double click, for Windows and Mac: the robot in 3D, driven by either brain; throws, drops and pushes with the mouse, drawn trajectories, choice of the ball, latency and friction, both robots side by side; in English and French. Done: prototype (`python -m app`): 3D view in its own window, throw, drop, center, choice of the brain, pause, English and French; visual foundations: light and dark themes, robot dressed for display (pedestal, motors), panel of measurements; throws, drops and pushes with the mouse, physical limit of a throw, setpoints (center, circle, square); choice of the ball, friction and latency; both brains side by side, comparison of the brains; drawn trajectories | **In progress** |
-| E. Construction (distant) | Design, real-world defects, complete error budget | Later |
+| D. Software for the general public | An application installed with a double click, for Windows and Mac: the robot in 3D, driven by either brain; throws, drops and pushes with the mouse, drawn trajectories, choice of the ball, latency and friction, both robots side by side; in English and French. Done: prototype (`python -m app`): 3D view in its own window, throw, drop, center, choice of the brain, pause, English and French; visual foundations: light and dark themes, panel of measurements; throws, drops and pushes with the mouse, physical limit of a throw, setpoints (center, circle, square); choice of the ball, friction and latency; both brains side by side, comparison of the brains; drawn trajectories; the robot shown as a lab prototype (motors, arms, rod ends, electronics, battery, camera under the plate, front panel with the LED of the brain), the ball printed according to its kind, the name PABLO | **In progress** |
+| E. Construction (distant) | Design, real-world defects, complete error budget; first, simulate what the software shows and the campaign does not: the camera under the transparent plate (the campaign: 50 cm above it), the ball joints of the rods 1 cm under the plate surface (the physics: on it) | Later |
 
 Quantified goals for both brains: thrown ball caught up to at least 90 % of the physical limit,
 error on the circle < 2 mm with 60 ms of latency, return to the center < 2 s (from 10 cm away, the ball
@@ -37,7 +37,9 @@ app/                     The software for the general public (interface only, on
   robot.py               A robot of the window: its session, its 3D view, its fallen ball followed by the camera
   comparison.py          Comparison of the brains on the attempts of the session
   view3d.py              3D view: rendered off screen by MuJoCo, drawn in the window with its texts; mouse: turn, zoom
-  scene.py               The robot as shown: a copy of the physics model, dressed (materials, floor, pedestal, motors)
+  scene.py               The robot as shown: a copy of the physics model, dressed (materials, lights, floor, parts)
+  parts.py               The parts of the robot shown: a lab prototype built around the simulated mechanism
+  meshes.py              Small mesh library for the parts (lathe, prism, tube, text), MuJoCo binary format
   theme.py               Light and dark themes: colors, font, style sheet, colors of the 3D scene
   widgets.py             Building blocks: card, segmented control, readout, table, curves
   readouts.py            Measurements of the panel, read from the session
@@ -274,23 +276,44 @@ computes its free camera, meets the plane of the plate surface. A test checks th
 center of the ball is where MuJoCo draws it (within 2 pixels).
 
 The robot shown is a copy of the MuJoCo model of the physics, dressed for display (`app/scene.py`): materials,
-lights, a floor that continues the background of the window, a pedestal, stepper motors
-(NEMA 17 format). At every frame, the positions of the physics are copied into it and its geometry is computed,
-without dynamics. The moving parts keep the sizes of the physics model, so the picture shows the robot that is
-simulated; the physics, and the virtual camera that renders it, see nothing of this (checked by the tests and
-the bit-exact regression check). Quality of the rendering, from the measurements of `python -m app.benchmark` on
-an integrated graphics card (Intel Arc): antialiasing with 4 samples (8 cost 13 to 46 % more), shadow map of 4096
-pixels and fog (making them cheaper saves nothing measurable). The shadows and the fog follow the view
-(`DisplayScene.view`): in the default view, the shadow map covers 0.72 m around the robot (0.35 mm per pixel of it:
-sharp edges) and the fog fades the floor into the sky from 1.2 to 3.6 m from the eye; zoomed out, or following a
-fallen ball, these lengths grow with the distance of the camera and the map is centered on the point looked at, so the
-floor keeps its look. Measured: image unchanged in the default view; dots on the floor beyond the map 2.3 % → 0.2 %
-zoomed out, 3.6 % → 0.2 % following a fallen ball (one map 6 m wide for every view gave steps on the edges of the
-shadows, a far fog a sharp horizon). MuJoCo counts these lengths in sizes of the scene (1.2 m); they are changed in its
-rendering context, an internal attribute of `mujoco.Renderer` (a test checks it). In the light theme the plate is
-smoked acrylic: a clear one hardly stood out from the white background (measured: the plate changes the lightness of
-what is seen through it by 23 units of L* against 13 for the clear one; 29 in the dark theme). The orange of the ball
-marks what is selected (brain, theme, language, pause); the buttons that act are neutral.
+lights, a floor that continues the background of the window, and the parts of a lab prototype (`app/parts.py`): an
+aluminium base on rubber pads; per leg, a NEMA 17 stepper motor on its bracket, a machined arm, a threaded rod
+between two rod ends, a bracket under the plate; the camera under the transparent plate, looking up, with its ring of
+LEDs; a small computer, a board of three stepper drivers, a LiPo battery (no cable leaves the robot); a front panel
+with the name, PABLO (set in one place: `app/__init__.py`), and two LEDs, PID and AI (in the language of the
+interface), the one of the brain lit in green; on the ball, its seam and a printing according to its kind (40+ ★★★
+for the ping-pong ball, 2/5 mr² for the solid one, 27 g for the heavy one), which shows it turning, rolling or
+sliding. At every frame, the positions of the physics are copied into it and its geometry is computed, without
+dynamics. The moving parts are carried by the bodies of the physics, on its joints (the arm turns about the motor
+axis and ends at the elbow, the rod is as long between its rod ends as the simulated one), so the picture shows the
+robot that is simulated; the simple shapes of the physics stay in the model, hidden. One liberty: the upper rod ends
+sit 10.5 mm under the plate surface, where the physics puts the ball joints (no real part can). When a rod leans on
+the plate by an angle a, the rod end and its bolt are 2 × 10.5 mm × sin(a/2) apart: 1.8 mm at 10° (measured over four
+hard catches: a up to 15.6°, 2.9 mm). The picture also shows the give of the simulated ball joints: 0.1 mm at rest,
+up to 1.9 mm in a hard catch (measured). In a hard catch an arm goes down by 28° (measured): the base is low enough
+for 30°, its lowest part stays 1.7 mm above it. The camera under the plate is only shown: the sandbox measures the
+ball with the synthetic sensor, and the campaign validated a camera 50 cm above the plate. The parts are meshes built
+once with NumPy (0.35 s on the development computer), then shared by every scene (themes, side by side): 45 000
+triangles. The physics, and the virtual camera that renders it, see nothing of this: the parts touch nothing (checked
+by the tests and the bit-exact regression check). Quality of the rendering, from the measurements of `python -m
+app.benchmark` on an integrated graphics card (Intel Arc), with the parts of the prototype: a frame costs 15.6, 25.0
+and 39.0 ms at 1280×720, 1920×1080 and 2560×1440 (58, 37 and 24 frames per second), as much as the bare physics model
+of phase D1 (16.3, 23.4 and 41.8 ms): the cost is in the number of pixels, not in the parts. Antialiasing with 4
+samples (8 cost 35 to 67 % more), shadow map of 4096 pixels and fog (without shadows, nothing measurable is saved;
+without fog or with a map of 2048 pixels, the frame came out slower, 23 to 52 ms: the measurements vary from one run
+to the next). The shadows and the fog follow the view (`DisplayScene.view`): in the default view, the shadow map
+covers 0.72 m around the robot (0.35 mm per pixel of it: sharp edges) and the fog fades the floor into the sky from
+1.2 to 3.6 m from the eye; zoomed out, or following a fallen ball, these lengths grow with the distance of the camera
+and the map is centered on the point looked at, so the floor keeps its look. Measured: image unchanged in the default
+view; dots on the floor beyond the map 2.3 % → 0.2 % zoomed out, 3.6 % → 0.2 % following a fallen ball (one map 6 m
+wide for every view gave steps on the edges of the shadows, a far fog a sharp horizon). The floor casts no shadow (it
+receives those of the robot, `DisplayScene.prepare`): drawn into the shadow map, it shadowed itself in dots wherever
+the camera saw it beyond the map, in a region bounded by a corner of the map (measured at azimuth 0°: 0.43 % of the
+floor seen; none now). MuJoCo counts these lengths in sizes of the scene (1.2 m); they are changed in its rendering
+context, an internal attribute of `mujoco.Renderer` (a test checks it). In the light theme the plate is smoked
+acrylic: a clear one hardly stood out from the white background (measured: the plate changes the lightness of what is
+seen through it by 23 units of L* against 13 for the clear one; 29 in the dark theme). The orange of the ball marks
+what is selected (brain, theme, language, pause); the buttons that act are neutral.
 
 `python -m app.benchmark` measures what a frame costs on the computer where it runs: the simulation, the 3D
 rendering (with the image read back) for three sizes of the view and several qualities, the drawing of the image
