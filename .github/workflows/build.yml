@@ -1,10 +1,15 @@
-# Builds the packages of SAPIR on the machines of GitHub, then checks them (app/self_check.py). Started by hand: tab
-# Actions, Build, Run workflow. The files, under Artifacts at the bottom of the run, are kept 3 days:
-#   SAPIR-Windows: SAPIR.exe, a single file;   SAPIR-macOS: SAPIR.dmg, for the Macs with Apple Silicon.
+# Builds the packages of SAPIR on the machines of GitHub, then checks them (app/self_check.py).
+# By hand (tab Actions, Build, Run workflow): the files, under Artifacts at the bottom of the run, are kept 3 days:
+#   SAPIR-Windows: SAPIR.exe, a single file, and THIRD-PARTY-LICENSES.txt;
+#   SAPIR-macOS: SAPIR.dmg, for the Macs with Apple Silicon (the licenses inside, next to the app).
+# On a tag v<version> pushed (git tag v1.0.0, git push origin v1.0.0): the same, then a draft release of that version
+# with SAPIR.exe, SAPIR.dmg and THIRD-PARTY-LICENSES.txt; it is published by hand on GitHub (Releases).
 name: Build
 
 on:
   workflow_dispatch:
+  push:
+    tags: ["v*"]
 
 permissions:
   contents: read
@@ -26,6 +31,16 @@ jobs:
           python-version: "3.13"
           cache: pip
           cache-dependency-path: requirements*.txt
+
+      - name: The tag is the version of the software
+        if: github.ref_type == 'tag'
+        shell: bash
+        run: |
+          version=$(python -c "from app import VERSION; print(VERSION)")
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME, but the version in app/__init__.py is $version"
+            exit 1
+          fi
 
       - name: Install
         run: python -m pip install -r requirements-build.txt
@@ -75,6 +90,7 @@ jobs:
           mkdir dmg
           ditto dist/SAPIR.app dmg/SAPIR.app
           ln -s /Applications dmg/Applications          # in the window of the disk: drag SAPIR onto Applications
+          cp dist/THIRD-PARTY-LICENSES.txt dmg/
           for attempt in 1 2 3; do                       # hdiutil sometimes finds the disk busy
             hdiutil create -volname SAPIR -srcfolder dmg -ov -format UDZO dist/SAPIR.dmg && break
             sleep 10
@@ -82,8 +98,42 @@ jobs:
           test -f dist/SAPIR.dmg
 
       - uses: actions/upload-artifact@v7
+        if: runner.os == 'Windows'
         with:
-          name: SAPIR-${{ runner.os }}
-          path: ${{ runner.os == 'Windows' && 'dist/SAPIR.exe' || 'dist/SAPIR.dmg' }}
+          name: SAPIR-Windows
+          path: |
+            dist/SAPIR.exe
+            dist/THIRD-PARTY-LICENSES.txt
           retention-days: 3
           if-no-files-found: error
+
+      - uses: actions/upload-artifact@v7
+        if: runner.os == 'macOS'
+        with:
+          name: SAPIR-macOS
+          path: dist/SAPIR.dmg
+          retention-days: 3
+          if-no-files-found: error
+
+  release:
+    if: github.ref_type == 'tag'
+    needs: build                                # both packages built and checked
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write                           # to create the release
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: files
+          merge-multiple: true
+
+      - name: Draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NOTES: >-
+            Windows 10 or 11: SAPIR.exe. Mac with Apple Silicon: SAPIR.dmg. The packages are not signed: how to
+            open them the first time is explained in the README (Download and install).
+        run: |
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft --verify-tag \
+            --title "SAPIR $GITHUB_REF_NAME" --notes "$NOTES" \
+            files/SAPIR.exe files/SAPIR.dmg files/THIRD-PARTY-LICENSES.txt
